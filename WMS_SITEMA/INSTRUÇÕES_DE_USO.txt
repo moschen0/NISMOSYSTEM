@@ -1,0 +1,128 @@
+=================================================================
+   WMS MASTER - SISTEMA DE GERENCIAMENTO DE ARMAZÉM v1.2.1
+=================================================================
+
+🚀 INSTALAÇÃO E USO
+
+1️⃣ INICIAR O SERVIDOR
+   Execute o arquivo: INICIAR_WMS_SERVIDOR.bat
+   
+   O servidor iniciará automaticamente na porta 5000
+
+2️⃣ ACESSAR O SISTEMA
+   
+   ➜ No próprio servidor:
+      http://localhost:5000
+      http://192.168.1.210:5000
+   
+   ➜ De outros computadores na rede:
+      http://192.168.1.210:5000
+
+3️⃣ CREDENCIAIS PADRÃO
+   Usuário: admin
+   Senha: admin
+
+   ⚠️ IMPORTANTE: Altere a senha após o primeiro acesso!
+
+=================================================================
+📦 CONTEÚDO DO PACOTE
+=================================================================
+
+✅ WMS_Server.exe (5.76 MB)
+   Servidor principal com Python embutido
+
+✅ wms_database.mdb (236 KB)
+   Banco de dados Microsoft Access
+
+✅ db_mdb.py (10.6 KB)
+   Módulo de acesso ao banco
+
+✅ templates/ (13 arquivos HTML)
+   Interface web do sistema
+
+✅ README.txt
+   Documentação da versão
+
+=================================================================
+🆕 NOVIDADES DA VERSÃO 1.2.1
+=================================================================
+
+✅ Gerenciamento de TAGs sem senha obrigatória
+   - Operadores autenticados podem adicionar/remover TAGs
+
+✅ Direitos autorais adicionados
+   - Desenvolvido por: Gustavo Detoni e Vitor Moschen
+
+✅ Email de suporte profissionalizado
+   - suporte@masterlabotico.com.br
+
+✅ Link "Sobre" no menu do usuário
+   - Facilita acesso às informações do sistema
+
+=================================================================
+🔧 REQUISITOS DO SISTEMA
+=================================================================
+
+Sistema Operacional: Windows 10/11 (64-bit)
+RAM: Mínimo 2 GB
+Disco: 50 MB livres
+Rede: Porta 5000 liberada no firewall
+Banco: Microsoft Access Database Engine (geralmente já instalado)
+Navegador: Chrome, Edge, Firefox ou Safari (versões recentes)
+
+=================================================================
+🌐 CONFIGURAÇÃO DE REDE
+=================================================================
+
+Para que outros computadores acessem o sistema:
+
+1. Certifique-se de que o servidor está rodando
+2. Libere a porta 5000 no Firewall do Windows:
+   - Painel de Controle
+   - Firewall do Windows
+   - Configurações Avançadas
+   - Regras de Entrada
+   - Nova Regra → Porta → TCP 5000
+
+3. Compartilhe o endereço com os usuários:
+   http://192.168.1.210:5000
+
+=================================================================
+❓ SOLUÇÃO DE PROBLEMAS
+=================================================================
+
+⚠️ Erro "Porta já em uso"
+   → Outro programa está usando a porta 5000
+   → Feche outros servidores ou reinicie o computador
+
+⚠️ Não consigo acessar pela rede
+   → Verifique o firewall
+   → Confirme que o IP 192.168.1.210 está correto
+   → Teste ping 192.168.1.210 no cmd
+
+⚠️ Erro no banco de dados
+   → Verifique se wms_database.mdb existe
+   → Confirme permissões de leitura/escrita
+
+=================================================================
+📧 SUPORTE
+=================================================================
+
+Email: suporte@masterlabotico.com.br
+
+Ao enviar um email de suporte, inclua:
+- Versão do sistema (1.2.1)
+- Descrição detalhada do problema
+- Mensagem de erro (se houver)
+- Prints de tela (se aplicável)
+
+=================================================================
+👨‍💻 DESENVOLVEDORES
+=================================================================
+
+Gustavo Detoni
+Vitor Moschen
+
+© 2026 WMS Master - Todos os direitos reservados
+
+=================================================================
