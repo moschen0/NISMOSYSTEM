@@ -1,8 +1,8 @@
 # Banco de dados
-*.mdb
+# *.mdb
 *.laccdb
 *.db
-wms_data.json
+# wms_data.json
 
 # Credenciais e configurações locais
 VFTVCAInterpreter.ini
@@ -11,7 +11,7 @@ VFTVCAInterpreter.ini
 WMS_SITEMA/.env
 
 # Build e distribuição
-WMS_Server/
+# WMS_Server/
 WMS_SITEMA/build_v4/
 WMS_SITEMA/dist_v4/
 WMS_SITEMA/_internal/
