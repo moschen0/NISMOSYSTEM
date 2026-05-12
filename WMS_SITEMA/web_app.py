@@ -67,7 +67,7 @@ TAG_RULES = {
     'priority': 'Prioridade (primeira da fila)',
     'none': 'Sem regra automatica'
 }
-# 𓃶
+# 𓃶𓃶
 # ============================================================================
 # GERENCIAMENTO DE CÉLULAS/SETORES
 # ============================================================================
