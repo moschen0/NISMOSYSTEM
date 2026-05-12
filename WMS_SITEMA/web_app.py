@@ -10,7 +10,14 @@ import json
 import os
 import re
 import sys
-import db_mdb  # ⭐ Importar módulo MDB em vez de JSON
+import db_mdb
+
+# Carrega variáveis do arquivo .env (se existir) sem sobrescrever vars de ambiente já definidas
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), override=False)
+except ImportError:
+    pass  # python-dotenv opcional; use variáveis de ambiente do sistema
 
 # ============================================================================
 # CONFIGURAÇÃO INICIAL
@@ -109,8 +116,8 @@ app = Flask(
     static_folder=os.path.join(RESOURCE_BASE_DIR, 'static'),
     static_url_path='/static'
 )
-app.secret_key = "wms-security-key-change-in-production"
-MASTER_PASSWORD = "masterkey"
+app.secret_key = os.environ.get('WMS_SECRET_KEY', 'wms-dev-key-insecure')
+MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT
 DEFAULT_SECTOR = db_mdb.DEFAULT_SECTOR
 AVAILABLE_UNITS = list(db_mdb.AVAILABLE_UNITS)
@@ -150,14 +157,9 @@ def is_master(password):
     return password == MASTER_PASSWORD
 
 
-def normalize_unit(unit):
-    """Padroniza nome da unidade para matriz/filial."""
-    return db_mdb.normalize_unit(unit)
-
-
 def get_current_unit():
     """Retorna a unidade associada ao usuário autenticado."""
-    return normalize_unit(session.get('unit', DEFAULT_UNIT))
+    return db_mdb.normalize_unit(session.get('unit', DEFAULT_UNIT))
 
 
 def get_current_sector():
@@ -175,7 +177,7 @@ def is_admin_user():
 
 def is_valid_unit(unit):
     """Valida se a unidade selecionada existe na lista permitida."""
-    return normalize_unit(unit) in AVAILABLE_UNITS
+    return db_mdb.normalize_unit(unit) in AVAILABLE_UNITS
 
 # ============================================================================
 # FUNÇÕES UTILITÁRIAS
@@ -588,9 +590,7 @@ def get_best_position_for_zone(zone):
         
         # get_shelf_positions ja retorna do maior andar para o menor.
         # Para colunas, ja retorna da menor para a maior.
-        positions_sorted = positions
-        
-        for position in positions_sorted:
+        for position in positions:
             count = position_counts.get(position, 0)
             
             # Pular posições cheias
@@ -659,7 +659,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        unit = normalize_unit(request.form.get('unit', ''))
+        unit = db_mdb.normalize_unit(request.form.get('unit', ''))
 
         if not is_valid_unit(unit):
             flash('Selecione uma unidade válida', 'danger')
@@ -684,7 +684,7 @@ def login():
                 available_units=AVAILABLE_UNITS
             ), 503
         
-        if user and user.get('password') == password:
+        if user and db_mdb.verify_password(password, user.get('password', '')):
             session['user'] = username
             session['sector'] = user.get('sector', '')
             # Admin usa a unidade selecionada no login; outros usam a unidade do cadastro
@@ -692,7 +692,7 @@ def login():
                 session['unit'] = unit
                 session['sector'] = 'ALL'  # Admin vê todos os setores por padrão
             else:
-                session['unit'] = normalize_unit(user.get('unit', unit))
+                session['unit'] = db_mdb.normalize_unit(user.get('unit', unit))
                 session['sector'] = user.get('sector', DEFAULT_SECTOR) or DEFAULT_SECTOR
             flash(f'Bem-vindo, {username}!', 'success')
             return redirect(url_for('dashboard'))
@@ -714,7 +714,7 @@ def register():
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
         sector = request.form.get('sector', 'geral').strip()
-        unit = normalize_unit(request.form.get('unit', ''))
+        unit = db_mdb.normalize_unit(request.form.get('unit', ''))
 
         if not is_valid_unit(unit):
             flash('Selecione uma unidade válida', 'danger')
@@ -771,7 +771,7 @@ def switch_unit(unit_name):
     if not is_admin_user():
         flash('Apenas o admin pode trocar de unidade', 'danger')
         return redirect(url_for('dashboard'))
-    unit_name = normalize_unit(unit_name)
+    unit_name = db_mdb.normalize_unit(unit_name)
     if not is_valid_unit(unit_name):
         flash('Unidade inválida', 'danger')
         return redirect(url_for('dashboard'))
@@ -978,11 +978,6 @@ def dashboard():
             zone = shelf.get('zone', '')
             shelves_by_zone.setdefault(zone, []).append(shelf)
 
-            # Fallback: se a tabela tiver zone_name no futuro, usa sem quebrar legado.
-            shelf_zone_name = str(shelf.get('zone_name', '')).strip()
-            if shelf_zone_name and zone not in zone_names:
-                zone_names[zone] = shelf_zone_name
-
         zone_tags_display = {}
         zone_tag_entries = {}
         zone_rule_flags = {}
@@ -1030,8 +1025,6 @@ def dashboard():
                              zone_rule_flags=zone_rule_flags,
                              tag_rules=TAG_RULES,
                              tag_options=tag_options,
-                             all_zone_codes=all_zone_codes,
-                             shelves=shelf_data,
                              order_map=order_map,
                              total_orders=len(orders))
     except Exception as e:
@@ -1072,7 +1065,8 @@ def add_zone():
         box='',
         details=f'Nova zona criada: {zone_name}' if zone_name else f'Nova zona: {zone}',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
     
     flash(f'Zona {zone} criada com sucesso!', 'success')
@@ -1115,7 +1109,8 @@ def add_tag():
         box='',
         details=f'TAG {tag_name} ({tag_rule}) criada/atualizada',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
 
     flash(f'TAG {tag_name} salva com sucesso', 'success')
@@ -1154,7 +1149,8 @@ def remove_tag_from_zone():
         box='',
         details=f'{removed_count} TAG(s) removida(s) da zona {zone}',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
 
     flash(f'{removed_count} TAG(s) removida(s) da zona {zone}', 'success')
@@ -1190,7 +1186,8 @@ def attach_tag_to_zone():
         box='',
         details=f'TAG {tag_name} anexada na zona {zone}',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
 
     flash(f'TAG {tag_name} adicionada na zona {zone}', 'success')
@@ -1235,7 +1232,8 @@ def create_and_attach_tag_to_zone():
         box='',
         details=f'TAG {tag_name} ({tag_rule}) criada e anexada na zona {zone}',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
 
     flash(f'TAG {tag_name} criada e adicionada na zona {zone}', 'success')
@@ -1271,7 +1269,8 @@ def delete_tag():
         box='',
         details=f'TAG {normalize_tag_key(tag_key)} excluida do catálogo',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        unit=unit
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
     )
 
     flash('TAG excluída do catálogo com sucesso', 'success')
@@ -1333,7 +1332,8 @@ def add_shelf():
             box='',
             details=f'Nova prateleira ({zone_name})' if zone_name else 'Nova prateleira',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
         flash(f'Prateleira {zone}-{module} criada com sucesso', 'success')
     
@@ -1468,7 +1468,8 @@ def remove_zone():
                     box=box,
                     details=f'Pedido removido automaticamente - Zona {zone_code} deletada',
                     timestamp=current_time,
-                    unit=unit
+                    unit=unit,
+                    sector=sector or DEFAULT_SECTOR
                 )
                 
                 total_removed_orders += 1
@@ -1508,7 +1509,8 @@ def remove_zone():
             box=box,
             details=f'Pedido removido automaticamente - Zona {zone} deletada (posição órfã)',
             timestamp=current_time,
-            unit=unit
+            unit=unit,
+            sector=sector or DEFAULT_SECTOR
         )
         
         total_removed_orders += 1
@@ -1526,7 +1528,8 @@ def remove_zone():
         box='',
         details=f'Zona removida - {len(zone_shelves)} módulo(s), {total_removed_orders} pedido(s) foram dados saída automaticamente',
         timestamp=current_time,
-        unit=unit
+        unit=unit,
+        sector=sector or DEFAULT_SECTOR
     )
 
     delete_zone_name(zone)
@@ -2018,7 +2021,8 @@ def reset_user_password():
             action='reset_password',
             details=f'Senha do usuário "{target_username}" foi resetada',
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
     except Exception as e:
         flash(f'Erro ao resetar senha: {str(e)}', 'danger')
@@ -2063,7 +2067,8 @@ def toggle_user_status():
             action='toggle_user_status',
             details=f'Usuário "{target_username}" {status_text}',
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
     except Exception as e:
         flash(f'Erro ao alterar status: {str(e)}', 'danger')
@@ -2105,7 +2110,8 @@ def delete_user():
             action='delete_user',
             details=f'Usuário "{target_username}" foi deletado do sistema',
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
     except Exception as e:
         flash(f'Erro ao deletar usuário: {str(e)}', 'danger')
@@ -2143,7 +2149,8 @@ def edit_user_sector():
             action='edit_user_sector',
             details=f'Setor do usuário "{target_username}" alterado para "{new_sector or "Geral"}"',
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
     except Exception as e:
         flash(f'Erro ao editar setor: {str(e)}', 'danger')

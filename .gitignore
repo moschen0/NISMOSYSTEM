@@ -6,6 +6,9 @@ wms_data.json
 
 # Credenciais e configurações locais
 VFTVCAInterpreter.ini
+.env
+*.env
+WMS_SITEMA/.env
 
 # Build e distribuição
 WMS_Server/

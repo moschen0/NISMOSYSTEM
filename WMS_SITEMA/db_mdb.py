@@ -13,10 +13,25 @@ import sys
 import threading
 import re
 from functools import lru_cache
+try:
+    from werkzeug.security import generate_password_hash, check_password_hash as _check_hash
+    _HASH_AVAILABLE = True
+except ImportError:
+    _HASH_AVAILABLE = False
 
-# Caminho do banco de dados (prioriza WMS_BD do projeto)
-DB_TEST_NETWORK_PATH = r'\\192.168.1.210\WMS Master\WMS CORRETO\DATABASE TESTE\wms_database.mdb'
-DB_NETWORK_PATH = r'\\192.168.1.210\WMS Master\WMS CORRETO\DATABASE\wms_database.mdb'
+
+def hash_password(plain: str) -> str:
+    """Retorna hash bcrypt/pbkdf2 da senha. Fallback para texto puro se werkzeug indisponivel."""
+    if _HASH_AVAILABLE:
+        return generate_password_hash(plain)
+    return plain
+
+
+def verify_password(plain: str, stored: str) -> bool:
+    """Verifica senha contra hash armazenado (ou texto puro legado)."""
+    if _HASH_AVAILABLE and stored.startswith(('pbkdf2:', 'scrypt:', 'bcrypt:')):
+        return _check_hash(stored, plain)
+    return plain == stored  # legado: texto puro
 
 
 def get_runtime_base_dir():
@@ -61,8 +76,8 @@ def resolve_db_path():
         *wms_bd_candidates,   # WMS_BD em diferentes niveis da execucao
         meipass_bd,           # arquivo bundlado dentro do _internal do EXE
         runtime_local_db,     # .mdb ao lado do executavel
-        DB_TEST_NETWORK_PATH,
-        DB_NETWORK_PATH,
+        r'\\192.168.1.210\WMS Master\WMS CORRETO\DATABASE TESTE\wms_database.mdb',
+        r'\\192.168.1.210\WMS Master\WMS CORRETO\DATABASE\wms_database.mdb',
     ]
 
     for path in candidates:
@@ -254,12 +269,6 @@ def get_connection():
     _ensure_unit_schema(_thread_local.connection)
     return _thread_local.connection
 
-def close_connection():
-    """Fecha a conexão da thread atual"""
-    if hasattr(_thread_local, 'connection') and _thread_local.connection:
-        _thread_local.connection.close()
-        _thread_local.connection = None
-
 def dict_from_row(cursor, row):
     """Converte uma linha do banco em dicionário"""
     if row is None:
@@ -309,7 +318,7 @@ def add_user(username, password, sector="", created_at="", active=True, unit=DEF
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO users (username, password, sector, created_at, active, [unit]) VALUES (?, ?, ?, ?, ?, ?)",
-        (username, password, sector, created_at, 1 if active else 0, unit)
+        (username, hash_password(password), sector, created_at, 1 if active else 0, unit)
     )
     conn.commit()
 
@@ -321,6 +330,8 @@ def update_user(username, unit=None, **kwargs):
         if key in ['password', 'sector', 'active', 'unit']:
             if key == 'unit':
                 value = normalize_unit(value)
+            elif key == 'password':
+                value = hash_password(value)
             fields.append(f"{key} = ?")
             values.append(value)
     
@@ -514,13 +525,6 @@ def update_order_position(order_id, destination, unit=None):
             "UPDATE orders SET position = ? WHERE order_id = ? AND [status] = 'add'",
             (destination, order_id)
         )
-    conn.commit()
-
-def delete_order_by_position(position):
-    """Remove pedido de uma posição"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM orders WHERE position = ? AND [status] = 'add'", (position,))
     conn.commit()
 
 def count_orders_in_position(position, unit=None, sector=None):
