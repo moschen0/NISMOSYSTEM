@@ -23,7 +23,15 @@ xcopy "templates" "dist\WMS_Server\templates" /E /I /Y >nul
 if not exist "dist\WMS_Server\static" mkdir "dist\WMS_Server\static"
 xcopy "static" "dist\WMS_Server\static" /E /I /Y >nul
 
-copy /Y "wms_database.mdb" "dist\WMS_Server\wms_database.mdb" >nul
+copy /Y "wms_database.mdb" "dist\WMS_Server\wms_database.mdb" >nul 2>nul
+
+rem Copiar arquivos de dados JSON (criados automaticamente se nao existirem)
+for %%f in (zone_metadata.json zone_tag_catalog.json zone_tags_map.json sectors.json) do (
+    if exist "%%f" copy /Y "%%f" "dist\WMS_Server\%%f" >nul
+)
+
+rem Copiar .env se existir
+if exist ".env" copy /Y ".env" "dist\WMS_Server\.env" >nul
 
 echo.
 echo [OK] Build concluido.

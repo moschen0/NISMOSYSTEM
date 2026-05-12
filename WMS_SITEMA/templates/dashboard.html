@@ -90,11 +90,10 @@
             {% for zone_name, shelf_list in zones.items() %}
             <!-- Zona Expansível -->
             <div class="card mb-4">
-                <a href="#" 
-                   class="zone-header text-decoration-none text-dark"
+                <div class="zone-header text-decoration-none text-dark"
                    data-zone="{{ zone_name }}"
                    style="display: block; padding: 15px; background: linear-gradient(135deg, #ff9800 0%, #ff7f00 100%); color: white; cursor: pointer;"
-                   onclick="event.preventDefault(); toggleZone(this);">
+                   onclick="toggleZone(this);">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h5 class="mb-0" style="display: inline-block;">
@@ -119,16 +118,16 @@
                         <div class="d-flex align-items-center gap-2">
                             <small>{{ shelf_list|length }} módulo{% if shelf_list|length != 1 %}s{% endif %}</small>
                             
-                            <form method="POST" action="{{ url_for('remove_zone') }}" style="display: inline;" onsubmit="return confirm('Tem certeza? Todos os pedidos desta zona serão dados saída do sistema.');">
+                            <form method="POST" action="{{ url_for('remove_zone') }}" style="display: inline;" onclick="event.stopPropagation();" onsubmit="event.stopPropagation(); return confirm('Tem certeza? Todos os pedidos desta zona serão dados saída do sistema.');">
                                 <input type="hidden" name="zone" value="{{ zone_name }}">
-                                <input type="password" class="form-control form-control-sm" name="master_key" placeholder="Chave mestre" style="display: inline-block; width: 120px; margin-right: 5px;" required>
-                                <button type="submit" class="btn btn-sm btn-outline-light" style="border-color: rgba(255,255,255,0.5); color: white;">
+                                <input type="password" class="form-control form-control-sm" name="master_key" placeholder="Chave mestre" style="display: inline-block; width: 120px; margin-right: 5px;" required onclick="event.stopPropagation();">
+                                <button type="submit" class="btn btn-sm btn-outline-light" style="border-color: rgba(255,255,255,0.5); color: white;" onclick="event.stopPropagation();">
                                     <i class="bi bi-trash"></i> Remover Zona
                                 </button>
                             </form>
                         </div>
                     </div>
-                </a>
+                </div>
                 
                 <!-- Conteúdo da Zona (Andares) -->
                 <div class="zone-content" style="display: none;">
