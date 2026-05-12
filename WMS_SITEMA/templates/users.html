@@ -124,9 +124,12 @@
                     
                     <div class="mb-3">
                         <label for="editSectorInput" class="form-label">Novo Setor:</label>
-                        <input type="text" class="form-control" id="editSectorInput" name="sector" 
-                               placeholder="Ex: Produção, Expedição, etc.">
-                        <small class="text-muted">Deixe em branco para "Geral"</small>
+                        <select class="form-select" id="editSectorInput" name="sector">
+                            {% set sectors_list = all_sectors.keys() if all_sectors is defined else ['AR', 'VTA'] %}
+                            {% for sec in sectors_list %}
+                            <option value="{{ sec }}">{{ sec }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     
                     <div class="mb-3">
@@ -267,7 +270,9 @@ editSectorModal.addEventListener('show.bs.modal', function (event) {
     
     document.getElementById('editSectorUsername').value = username;
     document.getElementById('editSectorDisplayName').textContent = username;
-    document.getElementById('editSectorInput').value = sector;
+    const sectorSelect = document.getElementById('editSectorInput');
+    sectorSelect.value = sector;
+    if (!sectorSelect.value) sectorSelect.value = 'AR';
 });
 
 // Modal Resetar Senha

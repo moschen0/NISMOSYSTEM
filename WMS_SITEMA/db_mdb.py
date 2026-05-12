@@ -75,6 +75,7 @@ def resolve_db_path():
 
 DB_PATH = resolve_db_path()
 DEFAULT_UNIT = 'MASTER'
+DEFAULT_SECTOR = 'AR'
 AVAILABLE_UNITS = ('MASTER', 'WR', 'AMX')
 UNIT_ALIASES = {
     'MATRIZ SAO LOURENCO': 'MASTER',
@@ -102,9 +103,22 @@ def _column_exists(cursor, table_name, column_name):
     """Verifica se uma coluna existe em uma tabela."""
     try:
         cursor.columns(table=table_name, column=column_name)
-        return cursor.fetchone() is not None
+        row = cursor.fetchone()
+        # Esgota o result set para liberar o cursor para próximas operações
+        cursor.fetchall()
+        return row is not None
     except Exception:
         return False
+
+
+def _run_ddl_on_conn(conn, sql):
+    """Executa DDL no Access via autocommit na conexão existente."""
+    old_autocommit = conn.autocommit
+    conn.autocommit = True
+    try:
+        conn.execute(sql)
+    finally:
+        conn.autocommit = old_autocommit
 
 
 def _ensure_unit_schema(conn):
@@ -122,20 +136,50 @@ def _ensure_unit_schema(conn):
 
         for table_name in target_tables:
             if not _column_exists(cursor, table_name, 'unit'):
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN [unit] TEXT(100)")
+                try:
+                    _run_ddl_on_conn(conn, f"ALTER TABLE {table_name} ADD COLUMN [unit] TEXT(100)")
+                except Exception as _e:
+                    if not _column_exists(cursor, table_name, 'unit'):
+                        import logging
+                        logging.warning(f"Nao foi possivel adicionar [unit] em {table_name}: {_e}")
+                        continue
 
-            cursor.execute(
-                f"UPDATE {table_name} SET [unit] = ? WHERE [unit] IS NULL OR [unit] = ''",
-                (DEFAULT_UNIT,)
-            )
+            try:
+                cursor.execute(
+                    f"UPDATE {table_name} SET [unit] = ? WHERE [unit] IS NULL OR [unit] = ''",
+                    (DEFAULT_UNIT,)
+                )
+            except Exception:
+                pass
 
             # Migra nomes legados para o nome canonico atual da unidade.
             for alias, canonical in UNIT_ALIASES.items():
                 if alias != canonical:
-                    cursor.execute(
-                        f"UPDATE {table_name} SET [unit] = ? WHERE UCASE([unit]) = ?",
-                        (canonical, alias)
-                    )
+                    try:
+                        cursor.execute(
+                            f"UPDATE {table_name} SET [unit] = ? WHERE UCASE([unit]) = ?",
+                            (canonical, alias)
+                        )
+                    except Exception:
+                        pass
+
+        # Adiciona coluna sector em shelves/orders/movements e migra dados legados para AR
+        for table_name in ['shelves', 'orders', 'movements']:
+            if not _column_exists(cursor, table_name, 'sector'):
+                try:
+                    _run_ddl_on_conn(conn, f"ALTER TABLE {table_name} ADD COLUMN [sector] TEXT(50)")
+                except Exception as _e:
+                    if not _column_exists(cursor, table_name, 'sector'):
+                        import logging
+                        logging.warning(f"Nao foi possivel adicionar [sector] em {table_name}: {_e}")
+                        continue
+            try:
+                cursor.execute(
+                    f"UPDATE {table_name} SET [sector] = ? WHERE [sector] IS NULL OR [sector] = ''",
+                    (DEFAULT_SECTOR,)
+                )
+            except Exception:
+                pass
 
         conn.commit()
         _schema_checked = True
@@ -310,27 +354,33 @@ def delete_user(username, unit=None):
 # SHELVES
 # ============================================================================
 
-def get_all_shelves(unit=None):
+def get_all_shelves(unit=None, sector=None):
     """Retorna todas as prateleiras"""
     conn = get_connection()
     cursor = conn.cursor()
+    conditions = []
+    params = []
     if unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM shelves WHERE [unit] = ? ORDER BY zone, module", (unit,))
-    else:
-        cursor.execute("SELECT * FROM shelves ORDER BY zone, module")
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(f"SELECT * FROM shelves {where} ORDER BY zone, module", params)
     rows = cursor.fetchall()
     shelves = dicts_from_rows(cursor, rows)
     return shelves
 
-def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT):
+def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
     """Adiciona uma nova prateleira"""
     unit = normalize_unit(unit)
+    sector = sector or DEFAULT_SECTOR
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO shelves (zone, module, levels, columns, slots, [unit]) VALUES (?, ?, ?, ?, ?, ?)",
-        (zone, module, levels, columns, slots, unit)
+        "INSERT INTO shelves (zone, module, levels, columns, slots, [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (zone, module, levels, columns, slots, unit, sector)
     )
     conn.commit()
 
@@ -349,22 +399,23 @@ def delete_shelf(zone, module, unit=None):
 # ORDERS
 # ============================================================================
 
-def get_all_orders(status_filter=None, unit=None):
+def get_all_orders(status_filter=None, unit=None, sector=None):
     """Retorna todos os pedidos, opcionalmente filtrados por status"""
     conn = get_connection()
     cursor = conn.cursor()
-
-    if status_filter and unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM orders WHERE [status] = ? AND [unit] = ? ORDER BY [timestamp] DESC", (status_filter, unit))
-    elif status_filter:
-        cursor.execute("SELECT * FROM orders WHERE [status] = ? ORDER BY [timestamp] DESC", (status_filter,))
-    elif unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM orders WHERE [unit] = ? ORDER BY [timestamp] DESC", (unit,))
-    else:
-        cursor.execute("SELECT * FROM orders ORDER BY [timestamp] DESC")
-    
+    conditions = []
+    params = []
+    if status_filter:
+        conditions.append("[status] = ?")
+        params.append(status_filter)
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
     rows = cursor.fetchall()
     orders = dicts_from_rows(cursor, rows)
     return orders
@@ -382,14 +433,15 @@ def get_order_by_id(order_id, unit=None):
     order = dict_from_row(cursor, row)
     return order
 
-def add_order(position, order_id, box, date, timestamp, created_by, status='add', unit=DEFAULT_UNIT):
+def add_order(position, order_id, box, date, timestamp, created_by, status='add', unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
     """Adiciona um novo pedido"""
     unit = normalize_unit(unit)
+    sector = sector or DEFAULT_SECTOR
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], [unit]) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (position, order_id, box, date, timestamp, created_by, status, unit)
+        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (position, order_id, box, date, timestamp, created_by, status, unit, sector)
     )
     conn.commit()
 
@@ -471,27 +523,36 @@ def delete_order_by_position(position):
     cursor.execute("DELETE FROM orders WHERE position = ? AND [status] = 'add'", (position,))
     conn.commit()
 
-def count_orders_in_position(position, unit=None):
+def count_orders_in_position(position, unit=None, sector=None):
     """Conta pedidos ativos em uma posição"""
     conn = get_connection()
     cursor = conn.cursor()
+    conditions = ["position = ?", "[status] = 'add'"]
+    params = [position]
     if unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT COUNT(*) FROM orders WHERE position = ? AND [status] = 'add' AND [unit] = ?", (position, unit))
-    else:
-        cursor.execute("SELECT COUNT(*) FROM orders WHERE position = ? AND [status] = 'add'", (position,))
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    cursor.execute(f"SELECT COUNT(*) FROM orders WHERE {' AND '.join(conditions)}", params)
     count = cursor.fetchone()[0]
     return count
 
-def count_all_orders_in_positions(unit=None):
+def count_all_orders_in_positions(unit=None, sector=None):
     """Retorna contagem de pedidos para TODAS as posições em uma só query (otimizado)"""
     conn = get_connection()
     cursor = conn.cursor()
+    conditions = ["[status] = 'add'"]
+    params = []
     if unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT position, COUNT(*) as count FROM orders WHERE [status] = 'add' AND [unit] = ? GROUP BY position", (unit,))
-    else:
-        cursor.execute("SELECT position, COUNT(*) as count FROM orders WHERE [status] = 'add' GROUP BY position")
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT position, COUNT(*) as count FROM orders {where} GROUP BY position", params)
     rows = cursor.fetchall()
     # Converter em dicionário para acesso rápido
     result = {}
@@ -503,34 +564,36 @@ def count_all_orders_in_positions(unit=None):
 # MOVEMENTS
 # ============================================================================
 
-def get_all_movements(limit=None, unit=None):
+def get_all_movements(limit=None, unit=None, sector=None):
     """Retorna movimentações, opcionalmente limitadas"""
     conn = get_connection()
     cursor = conn.cursor()
-
-    if limit and unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute(f"SELECT TOP {limit} * FROM movements WHERE [unit] = ? ORDER BY [timestamp] DESC", (unit,))
-    elif limit:
-        cursor.execute(f"SELECT TOP {limit} * FROM movements ORDER BY [timestamp] DESC")
-    elif unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM movements WHERE [unit] = ? ORDER BY [timestamp] DESC", (unit,))
+    conditions = []
+    params = []
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    if limit:
+        cursor.execute(f"SELECT TOP {int(limit)} * FROM movements {where} ORDER BY [timestamp] DESC", params)
     else:
-        cursor.execute("SELECT * FROM movements ORDER BY [timestamp] DESC")
-    
+        cursor.execute(f"SELECT * FROM movements {where} ORDER BY [timestamp] DESC", params)
     rows = cursor.fetchall()
     movements = dicts_from_rows(cursor, rows)
     return movements
 
-def add_movement(username, action, position="", order_id="", box="", details="", timestamp="", unit=DEFAULT_UNIT):
+def add_movement(username, action, position="", order_id="", box="", details="", timestamp="", unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
     """Adiciona uma nova movimentação"""
     unit = normalize_unit(unit)
+    sector = sector or DEFAULT_SECTOR
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO movements (username, action, position, order_id, box, details, [timestamp], [unit]) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (username, action, position, order_id, box, details, timestamp, unit)
+        "INSERT INTO movements (username, action, position, order_id, box, details, [timestamp], [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (username, action, position, order_id, box, details, timestamp, unit, sector)
     )
     conn.commit()
 
@@ -538,41 +601,41 @@ def add_movement(username, action, position="", order_id="", box="", details="",
 # QUERIES ESPECÍFICAS
 # ============================================================================
 
-def search_orders(query, unit=None):
+def search_orders(query, unit=None, sector=None):
     """Busca pedidos por ID, posição, caixa ou usuário (apenas ativos)"""
     conn = get_connection()
     cursor = conn.cursor()
-
     search_pattern = f"%{query}%"
+    conditions = [
+        "(order_id LIKE ? OR position LIKE ? OR box LIKE ? OR created_by LIKE ?)",
+        "[status] = 'add'"
+    ]
+    params = [search_pattern, search_pattern, search_pattern, search_pattern]
     if unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("""
-            SELECT * FROM orders
-            WHERE (order_id LIKE ? OR position LIKE ? OR box LIKE ? OR created_by LIKE ?)
-            AND [status] = 'add' AND [unit] = ?
-            ORDER BY [timestamp] DESC
-        """, (search_pattern, search_pattern, search_pattern, search_pattern, unit))
-    else:
-        cursor.execute("""
-            SELECT * FROM orders
-            WHERE (order_id LIKE ? OR position LIKE ? OR box LIKE ? OR created_by LIKE ?)
-            AND [status] = 'add'
-            ORDER BY [timestamp] DESC
-        """, (search_pattern, search_pattern, search_pattern, search_pattern))
-    
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
     rows = cursor.fetchall()
     orders = dicts_from_rows(cursor, rows)
     return orders
 
-def get_orders_by_position(position, unit=None):
+def get_orders_by_position(position, unit=None, sector=None):
     """Retorna pedidos de uma posição específica"""
     conn = get_connection()
     cursor = conn.cursor()
+    conditions = ["position = ?", "[status] = 'add'"]
+    params = [position]
     if unit is not None:
-        unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM orders WHERE position = ? AND [status] = 'add' AND [unit] = ? ORDER BY [timestamp]", (position, unit))
-    else:
-        cursor.execute("SELECT * FROM orders WHERE position = ? AND [status] = 'add' ORDER BY [timestamp]", (position,))
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    cursor.execute(f"SELECT * FROM orders WHERE {' AND '.join(conditions)} ORDER BY [timestamp]", params)
     rows = cursor.fetchall()
     orders = dicts_from_rows(cursor, rows)
     return orders

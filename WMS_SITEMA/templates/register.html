@@ -49,13 +49,13 @@
 
                     <div class="mb-4">
                         <label for="sector" class="form-label">
-                            <i class="bi bi-building"></i> Setor (Opcional)
+                            <i class="bi bi-building"></i> Setor
                         </label>
                         <select class="form-select" id="sector" name="sector">
-                            <option value="TI" selected>Geral</option>
-                            <option value="GERENCIA">Financeiro</option>
-                            <option value="TRATAMENTO ANTIREFLEXO">Operacional</option>
-                            <option value="VTA">Gerência</option>
+                            {% set sectors_list = available_sectors if available_sectors is defined else ['AR', 'VTA'] %}
+                            {% for sec in sectors_list %}
+                            <option value="{{ sec }}" {% if loop.first %}selected{% endif %}>{{ sec }}</option>
+                            {% endfor %}
                         </select>
                     </div>
 

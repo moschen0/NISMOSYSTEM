@@ -152,6 +152,44 @@
                         {% endfor %}
                     </ul>
                 </li>
+                <!-- Seletor de Setor (admin) -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="sectorDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-diagram-3"></i>
+                        {% if sector_is_all %}TODOS{% else %}{{ current_sector }}{% endif %}
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="sectorDropdown">
+                        <li>
+                            <a class="dropdown-item {% if sector_is_all %}active{% endif %}" href="{{ url_for('switch_sector', sector_name='ALL') }}">
+                                <i class="bi bi-layers"></i> Todos os setores
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% for key, s in all_sectors.items() %}
+                        {% if s.status == 'active' %}
+                        <li>
+                            <a class="dropdown-item {% if key == current_sector %}active{% endif %}" href="{{ url_for('switch_sector', sector_name=key) }}">
+                                <i class="bi bi-arrow-right-circle"></i> {{ s.name }}
+                                {% if s.description %}<small class="text-muted ms-1">{{ s.description }}</small>{% endif %}
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% endfor %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('list_cells') }}">
+                                <i class="bi bi-gear"></i> Gerenciar Setores
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% else %}
+                <!-- Badge de setor para usuário não-admin -->
+                <li class="nav-item d-flex align-items-center">
+                    <span class="badge me-2" style="background: rgba(255,255,255,0.25); color: white; font-size: 0.85rem; padding: 6px 10px; border-radius: 8px;">
+                        <i class="bi bi-diagram-3"></i> {{ current_sector }}
+                    </span>
+                </li>
                 {% endif %}
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('add_order', bipador=1, quick=1) }}" title="Atalho: Alt+N">

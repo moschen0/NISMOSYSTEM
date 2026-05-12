@@ -53,12 +53,55 @@ TEMPLATES_DIR = os.path.join(RESOURCE_BASE_DIR, 'templates')
 ZONE_METADATA_PATH = os.path.join(DATA_BASE_DIR, 'zone_metadata.json')
 TAG_CATALOG_PATH = os.path.join(DATA_BASE_DIR, 'zone_tag_catalog.json')
 ZONE_TAGS_PATH = os.path.join(DATA_BASE_DIR, 'zone_tags_map.json')
+SECTORS_PATH = os.path.join(DATA_BASE_DIR, 'sectors.json')
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
     'priority': 'Prioridade (primeira da fila)',
     'none': 'Sem regra automatica'
 }
+
+# ============================================================================
+# GERENCIAMENTO DE CÉLULAS/SETORES
+# ============================================================================
+
+def load_sectors():
+    """Carrega definições de células/setores do arquivo JSON."""
+    if not os.path.exists(SECTORS_PATH):
+        default = {
+            'AR': {
+                'name': 'AR',
+                'description': 'Setor AR',
+                'status': 'active',
+                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            },
+            'VTA': {
+                'name': 'VTA',
+                'description': 'Setor VTA',
+                'status': 'active',
+                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            }
+        }
+        save_sectors(default)
+        return default
+    try:
+        with open(SECTORS_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Erro ao ler sectors.json: {e}")
+        return {}
+
+def save_sectors(sectors):
+    """Salva setores de forma atômica."""
+    tmp_path = f"{SECTORS_PATH}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(sectors, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, SECTORS_PATH)
+
+def get_active_sector_keys():
+    """Retorna lista de chaves de setores ativos."""
+    sectors = load_sectors()
+    return [k for k, v in sectors.items() if v.get('status') == 'active']
 
 app = Flask(
     __name__,
@@ -69,16 +112,22 @@ app = Flask(
 app.secret_key = "wms-security-key-change-in-production"
 MASTER_PASSWORD = "masterkey"
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT
+DEFAULT_SECTOR = db_mdb.DEFAULT_SECTOR
 AVAILABLE_UNITS = list(db_mdb.AVAILABLE_UNITS)
 
 
 @app.context_processor
 def inject_admin_context():
     """Injeta variáveis globais úteis em todos os templates."""
+    sectors = load_sectors()
+    current_sec = session.get('sector', DEFAULT_SECTOR)
     return {
         'is_admin': session.get('user', '').lower() == 'admin',
         'all_units': AVAILABLE_UNITS,
         'current_unit': session.get('unit', DEFAULT_UNIT),
+        'all_sectors': sectors,
+        'current_sector': current_sec,
+        'sector_is_all': current_sec == 'ALL',
     }
 
 
@@ -109,6 +158,14 @@ def normalize_unit(unit):
 def get_current_unit():
     """Retorna a unidade associada ao usuário autenticado."""
     return normalize_unit(session.get('unit', DEFAULT_UNIT))
+
+
+def get_current_sector():
+    """Retorna o setor ativo na sessão. None = sem filtro (admin ALL)."""
+    sec = session.get('sector', DEFAULT_SECTOR)
+    if sec == 'ALL':
+        return None
+    return sec or DEFAULT_SECTOR
 
 
 def is_admin_user():
@@ -142,9 +199,9 @@ def find_user(username, unit=None):
     """Encontra usuário no banco de dados"""
     return db_mdb.get_user_by_username(username, unit=unit)
 
-def find_shelf(zone, module, unit=None):
+def find_shelf(zone, module, unit=None, sector=None):
     """Encontra prateleira específica"""
-    shelves = db_mdb.get_all_shelves(unit=unit)
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     return next((s for s in shelves 
                 if s.get('zone') == zone and s.get('module') == module), None)
 
@@ -159,9 +216,9 @@ def get_shelf_positions(zone, module, levels, columns):
                 positions.append(f"{zone}-{module}-{level:02d}-{col:02d}")
     return positions
 
-def count_orders_at_position(position, unit=None):
+def count_orders_at_position(position, unit=None, sector=None):
     """Conta quantos pedidos ativos (status add) estão em uma posição"""
-    return db_mdb.count_orders_in_position(position, unit=unit)
+    return db_mdb.count_orders_in_position(position, unit=unit, sector=sector)
 
 def load_zone_metadata():
     """Carrega descrições de zona salvas localmente."""
@@ -502,8 +559,9 @@ def get_best_position_for_zone(zone):
         return None
 
     unit = get_current_unit()
-    shelves = db_mdb.get_all_shelves(unit=unit)
-    position_counts = db_mdb.count_all_orders_in_positions(unit=unit)
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     
     # Filtrar prateleiras da zona especificada
     zone_shelves = [s for s in shelves if s.get('zone', '').upper() == zone.upper()]
@@ -632,8 +690,10 @@ def login():
             # Admin usa a unidade selecionada no login; outros usam a unidade do cadastro
             if username.lower() == 'admin':
                 session['unit'] = unit
+                session['sector'] = 'ALL'  # Admin vê todos os setores por padrão
             else:
                 session['unit'] = normalize_unit(user.get('unit', unit))
+                session['sector'] = user.get('sector', DEFAULT_SECTOR) or DEFAULT_SECTOR
             flash(f'Bem-vindo, {username}!', 'success')
             return redirect(url_for('dashboard'))
         
@@ -692,7 +752,8 @@ def register():
         flash(f'Usuário {username} registrado com sucesso na unidade {unit}! Faça login.', 'success')
         return redirect(url_for('login'))
     
-    return render_template('register.html', available_units=AVAILABLE_UNITS, default_unit=DEFAULT_UNIT)
+    return render_template('register.html', available_units=AVAILABLE_UNITS, default_unit=DEFAULT_UNIT,
+                           available_sectors=get_active_sector_keys())
 
 @app.route('/logout')
 def logout():
@@ -718,6 +779,144 @@ def switch_unit(unit_name):
     flash(f'Unidade alterada para {unit_name}', 'success')
     return redirect(request.referrer or url_for('dashboard'))
 
+
+@app.route('/switch-sector/<sector_name>')
+@login_required
+def switch_sector(sector_name):
+    """Troca o setor ativo na sessão (apenas admin)"""
+    if not is_admin_user():
+        flash('Apenas o admin pode trocar de setor', 'danger')
+        return redirect(url_for('dashboard'))
+    if sector_name != 'ALL':
+        sectors = load_sectors()
+        if sector_name not in sectors:
+            flash('Setor inválido', 'danger')
+            return redirect(url_for('dashboard'))
+    session['sector'] = sector_name
+    label = 'Todos os setores' if sector_name == 'ALL' else sector_name
+    flash(f'Setor alterado para {label}', 'success')
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+# ============================================================================
+# ROTAS DE GERENCIAMENTO DE CÉLULAS/SETORES
+# ============================================================================
+
+@app.route('/cells')
+@login_required
+def list_cells():
+    """Lista todas as células/setores cadastrados"""
+    sectors = load_sectors()
+    return render_template('cells.html', sectors=sectors)
+
+
+@app.route('/cells/add', methods=['POST'])
+@login_required
+def add_cell():
+    """Cria uma nova célula/setor"""
+    master_key = request.form.get('master_key', '')
+    if not is_master(master_key):
+        flash('Senha mestre incorreta', 'danger')
+        return redirect(url_for('list_cells'))
+
+    name = request.form.get('name', '').strip().upper()
+    description = request.form.get('description', '').strip()
+
+    if not name:
+        flash('Nome do setor é obrigatório', 'danger')
+        return redirect(url_for('list_cells'))
+
+    if not re.match(r'^[A-Z0-9_-]+$', name):
+        flash('Nome do setor deve conter apenas letras, números, hífen e underscore', 'danger')
+        return redirect(url_for('list_cells'))
+
+    sectors = load_sectors()
+    if name in sectors:
+        flash(f'Setor {name} já existe', 'warning')
+        return redirect(url_for('list_cells'))
+
+    sectors[name] = {
+        'name': name,
+        'description': description,
+        'status': 'active',
+        'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    }
+    save_sectors(sectors)
+
+    db_mdb.add_movement(
+        username=session.get('user'),
+        action='sector_create',
+        details=f'Setor {name} criado',
+        timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        unit=get_current_unit(),
+        sector=DEFAULT_SECTOR
+    )
+
+    flash(f'Setor {name} criado com sucesso!', 'success')
+    return redirect(url_for('list_cells'))
+
+
+@app.route('/cells/edit', methods=['POST'])
+@login_required
+def edit_cell():
+    """Edita descrição ou status de um setor"""
+    master_key = request.form.get('master_key', '')
+    if not is_master(master_key):
+        flash('Senha mestre incorreta', 'danger')
+        return redirect(url_for('list_cells'))
+
+    name = request.form.get('name', '').strip().upper()
+    description = request.form.get('description', '').strip()
+    status = request.form.get('status', 'active').strip()
+
+    sectors = load_sectors()
+    if name not in sectors:
+        flash(f'Setor {name} não encontrado', 'danger')
+        return redirect(url_for('list_cells'))
+
+    sectors[name]['description'] = description
+    sectors[name]['status'] = status if status in ('active', 'inactive') else 'active'
+    save_sectors(sectors)
+
+    flash(f'Setor {name} atualizado com sucesso!', 'success')
+    return redirect(url_for('list_cells'))
+
+
+@app.route('/cells/delete', methods=['POST'])
+@login_required
+def delete_cell():
+    """Remove um setor (apenas se não for o padrão)"""
+    master_key = request.form.get('master_key', '')
+    if not is_master(master_key):
+        flash('Senha mestre incorreta', 'danger')
+        return redirect(url_for('list_cells'))
+
+    name = request.form.get('name', '').strip().upper()
+
+    if name == DEFAULT_SECTOR:
+        flash(f'O setor padrão {DEFAULT_SECTOR} não pode ser removido', 'danger')
+        return redirect(url_for('list_cells'))
+
+    sectors = load_sectors()
+    if name not in sectors:
+        flash(f'Setor {name} não encontrado', 'warning')
+        return redirect(url_for('list_cells'))
+
+    del sectors[name]
+    save_sectors(sectors)
+
+    db_mdb.add_movement(
+        username=session.get('user'),
+        action='sector_delete',
+        details=f'Setor {name} removido',
+        timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        unit=get_current_unit(),
+        sector=DEFAULT_SECTOR
+    )
+
+    flash(f'Setor {name} removido com sucesso!', 'success')
+    return redirect(url_for('list_cells'))
+
 # ============================================================================
 # ROTAS DO DASHBOARD PRINCIPAL
 # ============================================================================
@@ -728,8 +927,9 @@ def dashboard():
     """Dashboard principal com visualização de prateleiras e pedidos"""
     try:
         unit = get_current_unit()
-        shelves = db_mdb.get_all_shelves(unit=unit)
-        orders = db_mdb.get_all_orders(status_filter='add', unit=unit)
+        sector = get_current_sector()
+        shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+        orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
         
         # Agrupar pedidos ativos por posição
         order_map = {}
@@ -739,7 +939,7 @@ def dashboard():
                 order_map.setdefault(pos, []).append(order)
         
         # Obter contagem de pedidos para TODAS as posições em uma única query
-        position_counts = db_mdb.count_all_orders_in_positions(unit=unit)
+        position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
         
         # Preparar dados das prateleiras (otimizado - evita N+1 queries)
         shelf_data = []
@@ -1118,13 +1318,13 @@ def add_shelf():
     unit = get_current_unit()
 
     # Verificar se já existe
-    existing = find_shelf(zone, module, unit=unit)
+    existing = find_shelf(zone, module, unit=unit, sector=get_current_sector())
     if existing:
         if zone_name:
             flash(f'Descrição da zona {zone} atualizada com sucesso', 'info')
         flash(f'Prateleira {zone}-{module} já existe', 'warning')
     else:
-        db_mdb.add_shelf(zone, module, levels, columns, slots, unit=unit)
+        db_mdb.add_shelf(zone, module, levels, columns, slots, unit=unit, sector=get_current_sector())
         db_mdb.add_movement(
             username=session.get('user'),
             action='shelf_add',
@@ -1153,7 +1353,8 @@ def remove_shelf():
     module = request.form.get('module', '').strip().zfill(2)
     
     unit = get_current_unit()
-    shelf = find_shelf(zone, module, unit=unit)
+    sector = get_current_sector()
+    shelf = find_shelf(zone, module, unit=unit, sector=sector)
     if shelf:
         # ANTES de deletar a prateleira, remover todos os pedidos dela
         levels = shelf.get('levels', 1)
@@ -1164,42 +1365,18 @@ def remove_shelf():
         current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         current_user = session.get('user', 'admin')
         
-        # Para cada posição da prateleira
         for position in positions:
-            # Buscar pedidos ativos naquela posição
-            orders = db_mdb.get_orders_by_position(position, unit=unit)
-            
+            orders = db_mdb.get_orders_by_position(position, unit=unit, sector=sector)
             for order in orders:
                 order_id = order.get('order_id', '')
                 box = order.get('box', '')
-                
-                # Marcar pedido como removido
-                db_mdb.update_order_status(
-                    order_id=order_id,
-                    status='removed',
-                    removed_at=current_time,
-                    removed_by=current_user,
-                    unit=unit
-                )
+                db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit)
                 db_mdb.clear_order_position(order_id, unit=unit)
-                
-                # Registrar movimento de saída
-                db_mdb.add_movement(
-                    username=current_user,
-                    action='order_checkout',
-                    position=position,
-                    order_id=order_id,
-                    box=box,
-                    details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada',
-                    timestamp=current_time,
-                    unit=unit
-                )
-                
+                db_mdb.add_movement(username=current_user, action='order_checkout', position=position, order_id=order_id, box=box,
+                    details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada', timestamp=current_time, unit=unit, sector=sector or DEFAULT_SECTOR)
                 removed_count += 1
         
-        # IMPORTANTE: Também remover pedidos órfãos que possam estar nesta prateleira
-        # (em posições não mapeadas pelas definições de levels/columns)
-        all_orders = db_mdb.get_all_orders(unit=unit)
+        all_orders = db_mdb.get_all_orders(unit=unit, sector=sector)
         orphaned_shelf_orders = [
             o for o in all_orders 
             if o.get('status') == 'add' and 
@@ -1211,44 +1388,14 @@ def remove_shelf():
             order_id = order.get('order_id', '')
             box = order.get('box', '')
             position = order.get('position', '')
-            
-            # Marcar pedido como removido
-            db_mdb.update_order_status(
-                order_id=order_id,
-                status='removed',
-                removed_at=current_time,
-                removed_by=current_user,
-                unit=unit
-            )
-            
-            # Registrar movimento de saída
-            db_mdb.add_movement(
-                username=current_user,
-                action='order_checkout',
-                position=position,
-                order_id=order_id,
-                box=box,
-                details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada (posição órfã)',
-                timestamp=current_time,
-                unit=unit
-            )
-            
+            db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit)
+            db_mdb.add_movement(username=current_user, action='order_checkout', position=position, order_id=order_id, box=box,
+                details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada (posição órfã)', timestamp=current_time, unit=unit, sector=sector or DEFAULT_SECTOR)
             removed_count += 1
         
-        # Agora deletar a prateleira
         db_mdb.delete_shelf(zone, module, unit=unit)
-        
-        # Registrar movimento da prateleira
-        db_mdb.add_movement(
-            username=current_user,
-            action='shelf_remove',
-            position=f'{zone}-{module}',
-            order_id='',
-            box='',
-            details=f'Prateleira removida - {removed_count} pedido(s) foram dados saída automaticamente',
-            timestamp=current_time,
-            unit=unit
-        )
+        db_mdb.add_movement(username=current_user, action='shelf_remove', position=f'{zone}-{module}', order_id='', box='',
+            details=f'Prateleira removida - {removed_count} pedido(s) foram dados saída automaticamente', timestamp=current_time, unit=unit, sector=sector or DEFAULT_SECTOR)
         
         if removed_count > 0:
             flash(f'Prateleira {zone}-{module} removida com sucesso. {removed_count} pedido(s) foram dados saída do sistema.', 'success')
@@ -1277,7 +1424,8 @@ def remove_zone():
     
     # Buscar todas as prateleiras da zona
     unit = get_current_unit()
-    shelves = db_mdb.get_all_shelves(unit=unit)
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     zone_shelves = [s for s in shelves if s.get('zone', '').upper() == zone]
     
     # Remover todos os pedidos de todas as prateleiras da zona
@@ -1395,8 +1543,9 @@ def remove_zone():
 def add_order():
     """Adiciona novo pedido"""
     unit = get_current_unit()
-    shelves = db_mdb.get_all_shelves(unit=unit)
-    position_counts = db_mdb.count_all_orders_in_positions(unit=unit)
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
 
     def redirect_add_order(zone_value='', bipador=False, quick=False):
@@ -1476,7 +1625,8 @@ def add_order():
                     timestamp=now_str,
                     created_by=session.get('user', 'Sistema'),
                     status='add',
-                    unit=unit
+                    unit=unit,
+                    sector=sector
                 )
                 movement_action = 'order_add'
                 movement_details = 'Pedido adicionado'
@@ -1493,7 +1643,8 @@ def add_order():
             box=box,
             details=movement_details,
             timestamp=now_str,
-            unit=unit
+            unit=unit,
+            sector=sector or DEFAULT_SECTOR
         )
         
         flash(f'Pedido {order_id} adicionado à posição {position}', 'success')
@@ -1533,10 +1684,11 @@ def add_order():
 def position_detail(code):
     """Página detalhada de uma posição"""
     unit = get_current_unit()
-    orders = db_mdb.get_orders_by_position(code, unit=unit)
+    sector = get_current_sector()
+    orders = db_mdb.get_orders_by_position(code, unit=unit, sector=sector)
     
     # Obter todas as posições disponíveis
-    shelves = db_mdb.get_all_shelves(unit=unit)
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     all_positions = []
     for shelf in shelves:
         zone = shelf.get('zone', '')
@@ -1590,7 +1742,8 @@ def checkout_order():
             box=box,
             details=f'Saída do sistema - estava em {position}',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
         
         flash(f'✅ Pedido {order_id} retirado com sucesso da posição {position}!', 'success')
@@ -1618,7 +1771,8 @@ def remove_order():
             box=order.get('box', ''),
             details='Pedido removido',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
         flash(f'Pedido {order_id} removido', 'success')
     else:
@@ -1659,8 +1813,8 @@ def move_order():
         return redirect(url_for('position_detail', code=position))
     
     # Verificar capacidade do destino
-    dest_count = count_orders_at_position(destination, unit=unit)
-    shelves = db_mdb.get_all_shelves(unit=unit)
+    dest_count = count_orders_at_position(destination, unit=unit, sector=get_current_sector())
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=get_current_sector())
     
     dest_capacity = 7  # default
     for shelf in shelves:
@@ -1688,7 +1842,8 @@ def move_order():
             box=order.get('box', ''),
             details=f'Pedido movido de {position} para {destination}',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            unit=unit
+            unit=unit,
+            sector=get_current_sector() or DEFAULT_SECTOR
         )
         
         flash(f'Pedido {order_id} movido de {position} para {destination}', 'success')
@@ -1706,7 +1861,7 @@ def move_order():
 @login_required
 def view_movements():
     """Visualiza histórico de movimentos"""
-    movements = db_mdb.get_all_movements(unit=get_current_unit())
+    movements = db_mdb.get_all_movements(unit=get_current_unit(), sector=get_current_sector())
     return render_template('movements.html', movements=movements)
 
 @app.route('/api/level/<zone>/<module>/<int:level>')
@@ -1714,7 +1869,8 @@ def view_movements():
 def api_level_detail(zone, module, level):
     """API que retorna pedidos ativos de um andar em JSON"""
     unit = get_current_unit()
-    shelves = db_mdb.get_all_shelves(unit=unit)
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     
     # Encontrar a prateleira
     shelf = None
@@ -1736,7 +1892,7 @@ def api_level_detail(zone, module, level):
             positions_in_level.append(f"{zone}-{module}-{level:02d}-{col:02d}")
     
     # Obter pedidos ativos deste andar
-    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit)
+    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
     level_orders = [o for o in all_orders if o.get('position', '').strip().upper() in positions_in_level]
     
     return jsonify({
@@ -1753,13 +1909,14 @@ def api_level_detail(zone, module, level):
 def search_orders():
     """Página de busca de pedidos"""
     unit = get_current_unit()
-    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit)
+    sector = get_current_sector()
+    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
     
     # Busca por query string
     query = request.args.get('q', '').strip().upper()
     
     if query:
-        filtered_orders = db_mdb.search_orders(query, unit=unit)
+        filtered_orders = db_mdb.search_orders(query, unit=unit, sector=sector)
         all_orders = filtered_orders
     
     return render_template('search.html', 
@@ -1776,7 +1933,7 @@ def search_autocomplete():
     if not query or len(query) < 2:
         return jsonify({'suggestions': []})
     
-    orders = db_mdb.get_all_orders(status_filter='add', unit=get_current_unit())
+    orders = db_mdb.get_all_orders(status_filter='add', unit=get_current_unit(), sector=get_current_sector())
     
     suggestions = []
     seen = set()
