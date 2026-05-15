@@ -218,6 +218,14 @@ def get_shelf_positions(zone, module, levels, columns):
                 positions.append(f"{zone}-{module}-{level:02d}-{col:02d}")
     return positions
 
+
+def shelf_sort_key(shelf):
+    """Ordena prateleiras numericamente quando possível e alfabeticamente no restante."""
+    module = str(shelf.get('module', '')).strip()
+    if module.isdigit():
+        return (0, int(module))
+    return (1, module.upper())
+
 def count_orders_at_position(position, unit=None, sector=None):
     """Conta quantos pedidos ativos (status add) estão em uma posição"""
     return db_mdb.count_orders_in_position(position, unit=unit, sector=sector)
@@ -1016,6 +1024,42 @@ def dashboard():
         ]
         all_zone_codes = ordered_zones
         
+        # ── Visualização de prateleiras (tema Prateleiras) ───────────────────────
+        preview_zones_dash = {}
+        for shelf in shelf_data:
+            z = shelf['zone']
+            m = shelf['module']
+            lv = shelf['levels']
+            cl = shelf['columns']
+            sl = shelf['slots']
+            rows_vis = []
+            for level in range(lv, 0, -1):
+                cells = []
+                for col in range(1, cl + 1):
+                    if cl == 1:
+                        position = f"{z}-{m}-{level:02d}"
+                    else:
+                        position = f"{z}-{m}-{level:02d}-{col:02d}"
+                    raw_boxes = [o.get('box') or o.get('order_id', '') for o in order_map.get(position, [])]
+                    raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
+                    cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
+                rows_vis.append({'level': level, 'cells': cells})
+            preview_zones_dash.setdefault(z, []).append({
+                'zone': z,
+                'module': m,
+                'levels': lv,
+                'columns': cl,
+                'has_modules': cl > 1,
+                'slots': sl,
+                'vis_slots': min(sl, 7),
+                'rows': rows_vis,
+                'occupancy_percent': shelf['usage_percent'],
+            })
+        ordered_preview_zones_dash = [
+            {'zone': z, 'shelves': sorted(preview_zones_dash[z], key=shelf_sort_key)}
+            for z in sorted(preview_zones_dash.keys())
+        ]
+
         return render_template('dashboard.html',
                              current_user=session.get('user'),
                              zones=zones_data,
@@ -1026,13 +1070,134 @@ def dashboard():
                              tag_rules=TAG_RULES,
                              tag_options=tag_options,
                              order_map=order_map,
-                             total_orders=len(orders))
+                             total_orders=len(orders),
+                             preview_zones=ordered_preview_zones_dash)
     except Exception as e:
         flash(f'Erro ao carregar dashboard: {str(e)}', 'danger')
         print(f"ERRO NO DASHBOARD: {e}")
         import traceback
         traceback.print_exc()
         return redirect(url_for('index'))
+
+
+@app.route('/prototype/shelves')
+def shelf_preview():
+    """Protótipo público de visualização física das prateleiras."""
+    unit = get_current_unit()
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    active_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
+    source_shelves = shelves if shelves else [
+        {'zone': 'A', 'module': '01', 'levels': 6, 'columns': 1, 'slots': 7},
+        {'zone': 'A', 'module': '02', 'levels': 6, 'columns': 3, 'slots': 3},
+        {'zone': 'A', 'module': '03', 'levels': 6, 'columns': 4, 'slots': 3},
+        {'zone': 'A', 'module': '04', 'levels': 6, 'columns': 2, 'slots': 4},
+        {'zone': 'A', 'module': '05', 'levels': 6, 'columns': 1, 'slots': 7},
+    ]
+
+    orders_by_position = {}
+    for order in active_orders:
+        position = order.get('position', '').strip().upper()
+        if not position:
+            continue
+        box_label = str(order.get('box', '') or order.get('order_id', '')).strip()
+        if not box_label:
+            box_label = order.get('order_id', '')
+        orders_by_position.setdefault(position, []).append(box_label)
+
+    demo_mode = not bool(active_orders)
+    demo_positions = {}
+
+    if demo_mode:
+        # Preenche ~70% com variação. Módulos de coluna única recebem até 4 colunas
+        # visuais de 'slots' caixas — o template distribui horizontalmente (spreading).
+        fill_pattern = [1.0, 1.0, 0.75, 0.5, 1.0, 0.75, 0.0, 1.0, 0.5, 0.75]
+        box_num = 1000
+        pos_idx = 0
+        for s in source_shelves:
+            z = str(s.get('zone', '')).strip().upper()
+            m = str(s.get('module', '')).strip().upper()
+            lv = int(s.get('levels', 1) or 1)
+            cl = int(s.get('columns', 1) or 1)
+            sl = int(s.get('slots', 7) or 7)
+            # coluna única: preenche até 4 × slots boxes por posição para mostrar spreading
+            vis_cols = 4 if cl == 1 else 1
+            for pos in get_shelf_positions(z, m, lv, cl):
+                ratio = fill_pattern[pos_idx % len(fill_pattern)]
+                count = round(sl * vis_cols * ratio)
+                if count > 0:
+                    demo_positions[pos] = [f'CX-{box_num + j}' for j in range(count)]
+                    box_num += count
+                pos_idx += 1
+
+    preview_zones = {}
+    for shelf in source_shelves:
+        zone = str(shelf.get('zone', '')).strip().upper() or 'SEM ZONA'
+        module = str(shelf.get('module', '')).strip().upper() or '01'
+        levels = int(shelf.get('levels', 1) or 1)
+        columns = int(shelf.get('columns', 1) or 1)
+        slots = int(shelf.get('slots', 7) or 7)
+
+        rows = []
+        shelf_display_count = 0
+        for level in range(levels, 0, -1):
+            cells = []
+            for col in range(1, columns + 1):
+                if columns == 1:
+                    position = f"{zone}-{module}-{level:02d}"
+                else:
+                    position = f"{zone}-{module}-{level:02d}-{col:02d}"
+
+                raw_boxes = orders_by_position.get(position, [])
+                if demo_mode and not raw_boxes:
+                    raw_boxes = demo_positions.get(position, [])
+                else:
+                    raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
+
+                shelf_display_count += min(len(raw_boxes), slots)
+
+                cells.append({
+                    'position': position,
+                    'boxes': raw_boxes,
+                    'count': len(raw_boxes)
+                })
+
+            rows.append({
+                'level': level,
+                'cells': cells,
+            })
+
+        preview_zones.setdefault(zone, []).append({
+            'zone': zone,
+            'module': module,
+            'levels': levels,
+            'columns': columns,
+            'has_modules': columns > 1,
+            'slots': slots,
+            'vis_slots': min(slots, 7),
+            'rows': rows,
+            'position_count': levels * columns,
+            'occupied_count': shelf_display_count,
+            'capacity': levels * columns * slots,
+            'occupancy_percent': min(100, int((shelf_display_count / (levels * columns * slots)) * 100)) if (levels * columns * slots) > 0 else 0
+        })
+
+    ordered_preview_zones = []
+    for zone in sorted(preview_zones.keys()):
+        ordered_preview_zones.append({
+            'zone': zone,
+            'shelves': sorted(preview_zones[zone], key=shelf_sort_key)
+        })
+
+    return render_template(
+        'shelf_preview.html',
+        preview_zones=ordered_preview_zones,
+        shelf_total=sum(len(item['shelves']) for item in ordered_preview_zones),
+        order_total=len(active_orders),
+        demo_mode=demo_mode,
+        unit=unit,
+        sector=sector or DEFAULT_SECTOR,
+    )
 
 @app.route('/zone/add', methods=['POST'])
 @login_required

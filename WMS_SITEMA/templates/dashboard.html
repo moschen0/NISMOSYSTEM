@@ -2,16 +2,111 @@
 {% block title %}Dashboard - WMS{% endblock %}
 
 {% block content %}
+<style>
+    /* ── Visualização de Prateleiras ── */
+    .racks-wrap {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        padding: 16px 0;
+    }
+    .rack {
+        flex: 0 0 360px;
+        width: 360px;
+    }
+    .rack-header {
+        background: #b8b8b8;
+        border-radius: 7px 7px 0 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1a1a1a;
+        border-bottom: 2px solid #a0a0a0;
+    }
+    .rack-pct { font-weight: 400; font-size: 12px; color: #3a3a3a; }
+    .rack-body {
+        border-left: 10px solid #b0b0b0;
+        border-right: 10px solid #b0b0b0;
+        border-bottom: 10px solid #b0b0b0;
+        background: #d6d6d6;
+        min-height: 200px;
+    }
+    .rack-level {
+        border-top: 10px solid #b0b0b0;
+        padding: 4px 8px 8px;
+    }
+    .level-lbl {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        color: #2a2a2a;
+        background: #d6d6d6;
+        padding: 1px 4px;
+        margin-bottom: 6px;
+        margin-top: -1px;
+    }
+    .modules-grid { display: grid; gap: 6px; align-items: end; }
+    .mod-slot { min-width: 0; display: flex; flex-direction: column; align-items: stretch; }
+    .box-stack {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 2px;
+        min-height: 44px;
+    }
+    .box-block {
+        height: 19px;
+        background: #0a0a0a;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 0 4px;
+        border-radius: 2px;
+    }
+    .slot-lbl {
+        font-size: 9px;
+        font-weight: 600;
+        color: #2a2a2a;
+        text-align: center;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+    }
+</style>
 <div class="row mb-4">
     <div class="col-md-12">
         <div class="text-center mb-4">
             <img src="{{ url_for('get_logo') }}" alt="Logo da Empresa" height="100" loading="lazy" style="object-fit: contain;">
         </div>
-        <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <h1 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h1>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-palette"></i> Mudar Tema
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('lista')" data-view="lista"><i class="bi bi-list-ul me-2"></i>Lista</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('prateleiras')" data-view="prateleiras"><i class="bi bi-grid-3x3-gap me-2"></i>Prateleiras</a></li>
+                </ul>
+            </div>
+        </div>
         <p class="text-muted">Bem-vindo, <strong>{{ current_user }}</strong>! Total de <strong>{{ total_orders }}</strong> pedidos no sistema.</p>
     </div>
 </div>
 
+<div id="view-lista">
 <!-- Nova Prateleira -->
 <div class="row mb-4">
     <div class="col-lg-12">
@@ -279,6 +374,73 @@
         {% endif %}
     </div>
 </div>
+</div><!-- /view-lista -->
+
+<div id="view-prateleiras" style="display:none;">
+    <div class="racks-wrap">
+        {% if preview_zones %}
+            {% for zone_group in preview_zones %}
+                {% for shelf in zone_group.shelves %}
+                    <article class="rack">
+                        <div class="rack-header">
+                            <span>Zona {{ shelf.zone }} · Módulo {{ shelf.module|int if shelf.module.isdigit() else shelf.module }}</span>
+                            <span class="rack-pct">{{ shelf.occupancy_percent }}% ocupação</span>
+                        </div>
+                        <div class="rack-body">
+                            {% for row in shelf.rows %}
+                                <div class="rack-level">
+                                    {% if row.cells %}
+                                        <div class="level-lbl">
+                                            {{ row.cells[0].position if not shelf.has_modules else row.cells[0].position.rsplit('-', 1)[0] }}
+                                        </div>
+                                    {% endif %}
+                                    {% if shelf.has_modules %}
+                                        <div class="modules-grid" style="grid-template-columns: repeat({{ shelf.columns }}, 1fr);">
+                                            {% for cell in row.cells %}
+                                                <div class="mod-slot">
+                                                    <div class="box-stack">
+                                                        {% for box in cell.boxes %}
+                                                            <div class="box-block">{{ box }}</div>
+                                                        {% endfor %}
+                                                    </div>
+                                                    <div class="slot-lbl" title="{{ cell.position }}">{{ cell.position }}</div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        {% set only_cell = row.cells[0] %}
+                                        {% set chunks_list = only_cell.boxes | batch(shelf.vis_slots) | list %}
+                                        {% set n_chunks = chunks_list | length %}
+                                        <div class="modules-grid" style="grid-template-columns: repeat(4, 1fr);">
+                                            {% for chunk in chunks_list %}
+                                                <div class="mod-slot">
+                                                    <div class="box-stack">
+                                                        {% for box in chunk %}
+                                                            <div class="box-block">{{ box }}</div>
+                                                        {% endfor %}
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                            {% if n_chunks < 4 %}
+                                                {% for pad in range(4 - n_chunks) %}
+                                                    <div class="mod-slot"><div class="box-stack"></div></div>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </article>
+                {% endfor %}
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info w-100">
+                <i class="bi bi-info-circle"></i> Nenhuma prateleira cadastrada.
+            </div>
+        {% endif %}
+    </div>
+</div><!-- /view-prateleiras -->
 
 <div class="mt-4 pt-3 text-center">
     <a href="{{ url_for('add_order', bipador=1, quick=1) }}" class="btn btn-lg btn-success" title="Modo rapido (menos cliques)">
@@ -296,6 +458,27 @@
 </div>
 
 <script>
+// Toggle entre tema Lista e Prateleiras
+function setView(view) {
+    const lista = document.getElementById('view-lista');
+    const prat  = document.getElementById('view-prateleiras');
+    if (view === 'prateleiras') {
+        lista.style.display = 'none';
+        prat.style.display  = 'block';
+    } else {
+        lista.style.display = 'block';
+        prat.style.display  = 'none';
+    }
+    localStorage.setItem('wms_tema', view);
+    document.querySelectorAll('[data-view]').forEach(el => {
+        el.classList.toggle('active', el.dataset.view === view);
+    });
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('wms_tema') || 'lista';
+    if (saved === 'prateleiras') setView('prateleiras');
+});
+
 // Função para expandir/colapsar formulário de nova prateleira
 function toggleShelfForm(element) {
     const formContent = element.nextElementSibling;
