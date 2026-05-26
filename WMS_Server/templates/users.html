@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}Usuários - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1><i class="bi bi-people"></i> Gerenciamento de Usuários</h1>
+        <p class="mb-1"><span class="badge bg-primary">Unidade ativa: {{ current_unit }}</span></p>
+        <p class="text-muted">Total de {{ users|length }} usuário(s) cadastrado(s)</p>
+    </div>
+</div>
+
+{% if users %}
+<div class="table-responsive">
+    <table class="table table-hover table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th><i class="bi bi-person"></i> Usuário</th>
+                <th><i class="bi bi-building"></i> Setor</th>
+                <th><i class="bi bi-calendar-check"></i> Data de Criação</th>
+                <th><i class="bi bi-toggles"></i> Status</th>
+                <th><i class="bi bi-gear"></i> Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>
+                    <strong>{{ user.username }}</strong>
+                    {% if user.username == current_user %}
+                        <span class="badge bg-primary">Você</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge bg-info">{{ user.sector or 'Geral' }}</span></td>
+                <td><small class="text-muted">{{ user.created_at or '-' }}</small></td>
+                <td>
+                    {% if user.active %}
+                        <span class="badge bg-success"><i class="bi bi-check-lg"></i> Ativo</span>
+                    {% else %}
+                        <span class="badge bg-secondary"><i class="bi bi-x-lg"></i> Inativo</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if user.username != current_user %}
+                    <div class="btn-group btn-group-sm" role="group">
+                        <!-- Editar Setor -->
+                        <button type="button" class="btn btn-info" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editSectorModal"
+                                data-username="{{ user.username }}"
+                                data-sector="{{ user.sector or '' }}"
+                                title="Editar Setor">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        
+                        <!-- Resetar Senha -->
+                        <button type="button" class="btn btn-warning" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#resetPasswordModal"
+                                data-username="{{ user.username }}"
+                                title="Resetar Senha">
+                            <i class="bi bi-key"></i>
+                        </button>
+                        
+                        <!-- Ativar/Desativar -->
+                        <button type="button" class="btn btn-{% if user.active %}secondary{% else %}success{% endif %}" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#toggleStatusModal"
+                                data-username="{{ user.username }}"
+                                data-active="{{ user.active }}"
+                                title="{% if user.active %}Desativar{% else %}Ativar{% endif %}">
+                            <i class="bi bi-{% if user.active %}x-circle{% else %}check-circle{% endif %}"></i>
+                        </button>
+                        
+                        <!-- Deletar -->
+                        <button type="button" class="btn btn-danger" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#deleteUserModal"
+                                data-username="{{ user.username }}"
+                                title="Deletar Usuário">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    {% else %}
+                    <span class="text-muted"><i>Sem permissão</i></span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Nenhum usuário cadastrado no sistema.
+</div>
+{% endif %}
+
+<div class="mt-4">
+    <a href="{{ url_for('register') }}" class="btn btn-success">
+        <i class="bi bi-person-plus"></i> Novo Usuário
+    </a>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
+        <i class="bi bi-arrow-left"></i> Voltar ao Dashboard
+    </a>
+</div>
+
+<!-- Modal: Editar Setor -->
+<div class="modal fade" id="editSectorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Editar Setor</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('edit_user_sector') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="username" id="editSectorUsername">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Usuário:</label>
+                        <p class="fw-bold" id="editSectorDisplayName"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="editSectorInput" class="form-label">Novo Setor:</label>
+                        <select class="form-select" id="editSectorInput" name="sector">
+                            {% set sectors_list = all_sectors.keys() if all_sectors is defined else ['AR', 'VTA'] %}
+                            {% for sec in sectors_list %}
+                            <option value="{{ sec }}">{{ sec }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="editSectorMasterPass" class="form-label">Senha Mestre:</label>
+                        <input type="password" class="form-control" id="editSectorMasterPass" 
+                               name="master_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-info">
+                        <i class="bi bi-save"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Resetar Senha -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-key"></i> Resetar Senha</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('reset_user_password') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="username" id="resetPasswordUsername">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Usuário:</label>
+                        <p class="fw-bold" id="resetPasswordDisplayName"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="resetPasswordNew" class="form-label">Nova Senha:</label>
+                        <input type="password" class="form-control" id="resetPasswordNew" 
+                               name="new_password" required minlength="4">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="resetPasswordMasterPass" class="form-label">Senha Mestre:</label>
+                        <input type="password" class="form-control" id="resetPasswordMasterPass" 
+                               name="master_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-key"></i> Resetar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Ativar/Desativar -->
+<div class="modal fade" id="toggleStatusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header" id="toggleStatusHeader">
+                <h5 class="modal-title" id="toggleStatusTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('toggle_user_status') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="username" id="toggleStatusUsername">
+                    
+                    <div class="mb-3">
+                        <p id="toggleStatusMessage"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="toggleStatusMasterPass" class="form-label">Senha Mestre:</label>
+                        <input type="password" class="form-control" id="toggleStatusMasterPass" 
+                               name="master_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn" id="toggleStatusBtn"></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Deletar Usuário -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Deletar Usuário</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('delete_user') }}">
+                <div class="modal-body">
+                    <input type="hidden" name="username" id="deleteUserUsername">
+                    
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>ATENÇÃO:</strong> Esta ação não pode ser desfeita!
+                    </div>
+                    
+                    <div class="mb-3">
+                        <p>Tem certeza que deseja deletar o usuário <strong id="deleteUserDisplayName"></strong>?</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="deleteUserMasterPass" class="form-label">Senha Mestre:</label>
+                        <input type="password" class="form-control" id="deleteUserMasterPass" 
+                               name="master_password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash"></i> Deletar Permanentemente
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Script para preencher os modais com dados do usuário selecionado
+
+// Modal Editar Setor
+const editSectorModal = document.getElementById('editSectorModal');
+editSectorModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const username = button.getAttribute('data-username');
+    const sector = button.getAttribute('data-sector');
+    
+    document.getElementById('editSectorUsername').value = username;
+    document.getElementById('editSectorDisplayName').textContent = username;
+    const sectorSelect = document.getElementById('editSectorInput');
+    sectorSelect.value = sector;
+    if (!sectorSelect.value) sectorSelect.value = 'AR';
+});
+
+// Modal Resetar Senha
+const resetPasswordModal = document.getElementById('resetPasswordModal');
+resetPasswordModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const username = button.getAttribute('data-username');
+    
+    document.getElementById('resetPasswordUsername').value = username;
+    document.getElementById('resetPasswordDisplayName').textContent = username;
+});
+
+// Modal Ativar/Desativar
+const toggleStatusModal = document.getElementById('toggleStatusModal');
+toggleStatusModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const username = button.getAttribute('data-username');
+    const active = button.getAttribute('data-active') === 'True';
+    
+    document.getElementById('toggleStatusUsername').value = username;
+    
+    const header = document.getElementById('toggleStatusHeader');
+    const title = document.getElementById('toggleStatusTitle');
+    const message = document.getElementById('toggleStatusMessage');
+    const btn = document.getElementById('toggleStatusBtn');
+    
+    if (active) {
+        header.className = 'modal-header bg-secondary text-white';
+        title.innerHTML = '<i class="bi bi-x-circle"></i> Desativar Usuário';
+        message.textContent = `Deseja desativar o usuário "${username}"? Ele não poderá mais fazer login.`;
+        btn.className = 'btn btn-secondary';
+        btn.innerHTML = '<i class="bi bi-x-circle"></i> Desativar';
+    } else {
+        header.className = 'modal-header bg-success text-white';
+        title.innerHTML = '<i class="bi bi-check-circle"></i> Ativar Usuário';
+        message.textContent = `Deseja reativar o usuário "${username}"? Ele poderá fazer login novamente.`;
+        btn.className = 'btn btn-success';
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> Ativar';
+    }
+});
+
+// Modal Deletar
+const deleteUserModal = document.getElementById('deleteUserModal');
+deleteUserModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    const username = button.getAttribute('data-username');
+    
+    document.getElementById('deleteUserUsername').value = username;
+    document.getElementById('deleteUserDisplayName').textContent = username;
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,46 @@
+# Banco de dados
+# *.mdb
+*.laccdb
+*.db
+# wms_data.json
+
+# Credenciais e configurações locais
+VFTVCAInterpreter.ini
+.env
+*.env
+WMS_SITEMA/.env
+
+# Build e distribuição
+# WMS_Server/
+WMS_SITEMA/build_v4/
+WMS_SITEMA/dist_v4/
+WMS_SITEMA/_internal/
+WMS_SITEMA/backup/
+*.spec
+build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Instaladores e binários
+*.exe
+*.ico
+*.png
+
+# Logs e temporários
+*.log
+*.tmp
+warn-*.txt
+xref-*.html
+*.toc
+*.pyz
+localpycs/

@@ -1,0 +1,77 @@
+@echo off
+setlocal
+pushd "%~dp0" >nul 2>&1
+if errorlevel 1 (
+    echo [ERRO] Nao foi possivel acessar a pasta do sistema.
+    exit /b 1
+)
+
+echo ==============================================
+echo Build do executavel WMS (PyInstaller)
+echo ==============================================
+echo.
+
+set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
+set "SYS_PY=C:\Users\User\AppData\Local\Programs\Python\Python312\python.exe"
+set "PY_CMD="
+
+if not exist "run_production.py" (
+    echo [ERRO] Arquivo run_production.py nao encontrado em %CD%.
+    popd
+    exit /b 1
+)
+
+if exist "%VENV_PY%" (
+    "%VENV_PY%" --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=%VENV_PY%"
+)
+
+if not defined PY_CMD if exist "%SYS_PY%" (
+    "%SYS_PY%" --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=%SYS_PY%"
+)
+
+if not defined PY_CMD (
+    python --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=python"
+)
+
+if not defined PY_CMD (
+    echo [ERRO] Nenhum Python funcional foi encontrado para gerar o EXE.
+    popd
+    exit /b 1
+)
+
+echo [INFO] Python selecionado: %PY_CMD%
+
+"%PY_CMD%" -m PyInstaller --noconfirm --clean --onedir --console --name WMS_Server --hidden-import pyodbc --hidden-import waitress run_production.py
+if errorlevel 1 (
+    echo [ERRO] Falha ao gerar executavel.
+    popd
+    exit /b 1
+)
+
+if not exist "dist\WMS_Server\templates" mkdir "dist\WMS_Server\templates"
+xcopy "templates" "dist\WMS_Server\templates" /E /I /Y >nul
+
+if not exist "dist\WMS_Server\static" mkdir "dist\WMS_Server\static"
+xcopy "static" "dist\WMS_Server\static" /E /I /Y >nul
+
+copy /Y "wms_database.mdb" "dist\WMS_Server\wms_database.mdb" >nul 2>nul
+
+rem Copiar arquivos de dados JSON (criados automaticamente se nao existirem)
+for %%f in (zone_metadata.json zone_tag_catalog.json zone_tags_map.json sectors.json) do (
+    if exist "%%f" copy /Y "%%f" "dist\WMS_Server\%%f" >nul
+)
+
+rem Copiar .env se existir
+if exist ".env" copy /Y ".env" "dist\WMS_Server\.env" >nul
+
+echo.
+echo [OK] Build concluido.
+echo Pasta final: dist\WMS_Server
+echo Compartilhe essa pasta para os outros PCs.
+echo.
+
+popd
+endlocal
