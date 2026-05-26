@@ -151,14 +151,35 @@ def _column_exists(cursor, table_name, column_name):
         return False
 
 
+def _table_exists(cursor, table_name):
+    """Verifica se uma tabela existe no MDB."""
+    try:
+        cursor.tables(table=table_name, tableType='TABLE')
+        row = cursor.fetchone()
+        cursor.fetchall()
+        return row is not None
+    except Exception:
+        return False
+
+
 def _run_ddl_on_conn(conn, sql):
     """Executa DDL no Access via autocommit na conexão existente."""
-    old_autocommit = conn.autocommit
-    conn.autocommit = True
     try:
-        conn.execute(sql)
-    finally:
-        conn.autocommit = old_autocommit
+        old_autocommit = conn.autocommit
+        conn.autocommit = True
+        try:
+            conn.execute(sql)
+        finally:
+            conn.autocommit = old_autocommit
+        return
+    except Exception:
+        # Alguns drivers Access podem rejeitar SQLSetConnectAttr(HY011).
+        # Fallback seguro: executa DDL e commit explicito na transacao atual.
+        pass
+
+    cursor = conn.cursor()
+    cursor.execute(sql)
+    conn.commit()
 
 
 def _ensure_unit_schema(conn):
@@ -221,8 +242,129 @@ def _ensure_unit_schema(conn):
             except Exception:
                 pass
 
+        # Adiciona coluna de atividade para relatorios e normaliza legado.
+        if not _column_exists(cursor, 'orders', 'ativo_inativo'):
+            try:
+                _run_ddl_on_conn(conn, "ALTER TABLE orders ADD COLUMN ativo_inativo TEXT(20)")
+            except Exception as _e:
+                if not _column_exists(cursor, 'orders', 'ativo_inativo'):
+                    import logging
+                    logging.warning(f"Nao foi possivel adicionar [ativo_inativo] em orders: {_e}")
+
+        try:
+            cursor.execute(
+                "UPDATE orders SET ativo_inativo = ? WHERE [status] = 'add' AND (ativo_inativo IS NULL OR ativo_inativo = '')",
+                ('ativo',)
+            )
+            cursor.execute(
+                "UPDATE orders SET ativo_inativo = ? WHERE [status] <> 'add' AND (ativo_inativo IS NULL OR ativo_inativo = '')",
+                ('inativo',)
+            )
+        except Exception:
+            pass
+
         conn.commit()
-        _schema_checked = True
+
+        # So marca schema como validado quando todas as colunas criticas existem.
+        required_columns = [
+            ('users', 'unit'),
+            ('shelves', 'unit'),
+            ('orders', 'unit'),
+            ('movements', 'unit'),
+            ('shelves', 'sector'),
+            ('orders', 'sector'),
+            ('movements', 'sector'),
+            ('orders', 'ativo_inativo'),
+        ]
+        all_ready = all(_column_exists(cursor, table_name, column_name) for table_name, column_name in required_columns)
+        _schema_checked = all_ready
+        if not all_ready:
+            import logging
+            logging.warning('Schema parcial detectado; migracao sera tentada novamente na proxima conexao.')
+
+
+def _ensure_triage_schema(conn):
+    """Garante estrutura de recebimento de triagem no MDB."""
+    cursor = conn.cursor()
+
+    if not _table_exists(cursor, 'triage_receipts'):
+        # Access SQL: evita IF NOT EXISTS e cria tabela apenas quando ausente.
+        _run_ddl_on_conn(
+            conn,
+            """
+            CREATE TABLE triage_receipts (
+                id COUNTER PRIMARY KEY,
+                order_id TEXT(100),
+                customer_code TEXT(100),
+                customer_name TEXT(255),
+                service_name TEXT(255),
+                quantity INTEGER,
+                received_at TEXT(50),
+                received_by TEXT(100),
+                notes LONGTEXT,
+                [status] TEXT(30),
+                created_at TEXT(50),
+                updated_at TEXT(50),
+                [unit] TEXT(100),
+                [sector] TEXT(50)
+            )
+            """
+        )
+
+    expected_columns = {
+        'order_id': "ALTER TABLE triage_receipts ADD COLUMN order_id TEXT(100)",
+        'customer_code': "ALTER TABLE triage_receipts ADD COLUMN customer_code TEXT(100)",
+        'customer_name': "ALTER TABLE triage_receipts ADD COLUMN customer_name TEXT(255)",
+        'service_name': "ALTER TABLE triage_receipts ADD COLUMN service_name TEXT(255)",
+        'quantity': "ALTER TABLE triage_receipts ADD COLUMN quantity INTEGER",
+        'received_at': "ALTER TABLE triage_receipts ADD COLUMN received_at TEXT(50)",
+        'received_by': "ALTER TABLE triage_receipts ADD COLUMN received_by TEXT(100)",
+        'notes': "ALTER TABLE triage_receipts ADD COLUMN notes LONGTEXT",
+        'status': "ALTER TABLE triage_receipts ADD COLUMN [status] TEXT(30)",
+        'created_at': "ALTER TABLE triage_receipts ADD COLUMN created_at TEXT(50)",
+        'updated_at': "ALTER TABLE triage_receipts ADD COLUMN updated_at TEXT(50)",
+        'unit': "ALTER TABLE triage_receipts ADD COLUMN [unit] TEXT(100)",
+        'sector': "ALTER TABLE triage_receipts ADD COLUMN [sector] TEXT(50)",
+    }
+
+    for col_name, ddl in expected_columns.items():
+        if not _column_exists(cursor, 'triage_receipts', col_name):
+            try:
+                _run_ddl_on_conn(conn, ddl)
+            except Exception:
+                pass
+
+    try:
+        cursor.execute(
+            "UPDATE triage_receipts SET [status] = 'received' WHERE [status] IS NULL OR [status] = ''"
+        )
+    except Exception:
+        pass
+
+    try:
+        cursor.execute(
+            "UPDATE triage_receipts SET quantity = 1 WHERE quantity IS NULL OR quantity <= 0"
+        )
+    except Exception:
+        pass
+
+    try:
+        cursor.execute(
+            "UPDATE triage_receipts SET [unit] = ? WHERE [unit] IS NULL OR [unit] = ''",
+            (DEFAULT_UNIT,)
+        )
+    except Exception:
+        pass
+
+    try:
+        cursor.execute(
+            "UPDATE triage_receipts SET [sector] = ? WHERE [sector] IS NULL OR [sector] = ''",
+            (DEFAULT_SECTOR,)
+        )
+    except Exception:
+        pass
+
+    conn.commit()
 
 
 @lru_cache(maxsize=1)
@@ -299,6 +441,7 @@ def get_connection():
             f'Detalhe: {exc}'
         ) from exc
     _ensure_unit_schema(_thread_local.connection)
+    _ensure_triage_schema(_thread_local.connection)
     return _thread_local.connection
 
 def dict_from_row(cursor, row):
@@ -480,11 +623,12 @@ def add_order(position, order_id, box, date, timestamp, created_by, status='add'
     """Adiciona um novo pedido"""
     unit = normalize_unit(unit)
     sector = sector or DEFAULT_SECTOR
+    activity_flag = 'ativo' if str(status).strip().lower() == 'add' else 'inativo'
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (position, order_id, box, date, timestamp, created_by, status, unit, sector)
+        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], ativo_inativo, [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (position, order_id, box, date, timestamp, created_by, status, activity_flag, unit, sector)
     )
     conn.commit()
 
@@ -492,25 +636,26 @@ def update_order_status(order_id, status, removed_at=None, removed_by=None, unit
     """Atualiza o status de um pedido"""
     conn = get_connection()
     cursor = conn.cursor()
+    activity_flag = 'ativo' if str(status).strip().lower() == 'add' else 'inativo'
 
     if removed_at and removed_by:
         if unit is not None:
             unit = normalize_unit(unit)
             cursor.execute(
-                "UPDATE orders SET [status] = ?, removed_at = ?, removed_by = ? WHERE order_id = ? AND [unit] = ?",
-                (status, removed_at, removed_by, order_id, unit)
+                "UPDATE orders SET [status] = ?, ativo_inativo = ?, removed_at = ?, removed_by = ? WHERE order_id = ? AND [unit] = ?",
+                (status, activity_flag, removed_at, removed_by, order_id, unit)
             )
         else:
             cursor.execute(
-                "UPDATE orders SET [status] = ?, removed_at = ?, removed_by = ? WHERE order_id = ?",
-                (status, removed_at, removed_by, order_id)
+                "UPDATE orders SET [status] = ?, ativo_inativo = ?, removed_at = ?, removed_by = ? WHERE order_id = ?",
+                (status, activity_flag, removed_at, removed_by, order_id)
             )
     else:
         if unit is not None:
             unit = normalize_unit(unit)
-            cursor.execute("UPDATE orders SET [status] = ? WHERE order_id = ? AND [unit] = ?", (status, order_id, unit))
+            cursor.execute("UPDATE orders SET [status] = ?, ativo_inativo = ? WHERE order_id = ? AND [unit] = ?", (status, activity_flag, order_id, unit))
         else:
-            cursor.execute("UPDATE orders SET [status] = ? WHERE order_id = ?", (status, order_id))
+            cursor.execute("UPDATE orders SET [status] = ?, ativo_inativo = ? WHERE order_id = ?", (status, activity_flag, order_id))
     
     conn.commit()
 
@@ -521,12 +666,12 @@ def reactivate_order(order_id, position, box, timestamp, unit=None):
     if unit is not None:
         unit = normalize_unit(unit)
         cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ? AND [unit] = ?",
+            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ? AND [unit] = ?",
             (position, box, timestamp, order_id, unit)
         )
     else:
         cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ?",
+            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ?",
             (position, box, timestamp, order_id)
         )
     conn.commit()
@@ -676,6 +821,51 @@ def get_orders_by_position(position, unit=None, sector=None):
     orders = dicts_from_rows(cursor, rows)
     return orders
 
+
+def get_active_orders_by_client_number(client_number, unit=None, sector=None, limit=20):
+    """Retorna servicos ativos enderecados para um numero de cliente."""
+    raw_value = str(client_number or '').strip().upper()
+    if not raw_value:
+        return []
+
+    def normalize_client_number(value):
+        text = str(value or '').strip().upper()
+        text = re.sub(r'[^A-Z0-9]+', '', text)
+        if text.isdigit():
+            text = text.lstrip('0') or '0'
+        return text
+
+    normalized_value = normalize_client_number(raw_value)
+    if not normalized_value:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["[status] = 'add'", "box IS NOT NULL", "box <> ''"]
+    params = []
+
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
+    rows = cursor.fetchall()
+    orders = dicts_from_rows(cursor, rows)
+
+    matched = []
+    for order in orders:
+        order_client = normalize_client_number(order.get('box', ''))
+        if order_client == normalized_value:
+            matched.append(order)
+            if len(matched) >= int(limit):
+                break
+
+    return matched
+
 def get_database_stats(unit=None):
     """Retorna estatísticas do banco de dados"""
     conn = get_connection()
@@ -714,4 +904,287 @@ def get_database_stats(unit=None):
         cursor.execute("SELECT COUNT(*) FROM movements")
     stats['movements'] = cursor.fetchone()[0]
 
+    try:
+        if unit is not None:
+            cursor.execute("SELECT COUNT(*) FROM triage_receipts WHERE [unit] = ?", (unit,))
+        else:
+            cursor.execute("SELECT COUNT(*) FROM triage_receipts")
+        stats['triage_receipts'] = cursor.fetchone()[0]
+    except Exception:
+        stats['triage_receipts'] = 0
+
     return stats
+
+
+# ============================================================================
+# TRIAGE RECEIPTS
+# ============================================================================
+
+def get_triage_receipt_by_order_id(order_id, unit=None, sector=None):
+    """Retorna recebimento de triagem por order_id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["order_id = ?"]
+    params = [order_id]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT TOP 1 * FROM triage_receipts {where} ORDER BY id DESC", params)
+    row = cursor.fetchone()
+    return dict_from_row(cursor, row)
+
+
+def upsert_triage_receipt(
+    order_id,
+    customer_code,
+    customer_name,
+    service_name,
+    quantity,
+    received_at,
+    received_by,
+    notes='',
+    status='received',
+    unit=DEFAULT_UNIT,
+    sector='TRIAGEM'
+):
+    """Cria/atualiza recebimento de triagem.
+
+    Se order_id vier vazio, cria novo registro (sem upsert por pedido).
+    """
+    unit = normalize_unit(unit)
+    sector = sector or 'TRIAGEM'
+    order_id = str(order_id or '').strip().upper()
+    service_name = str(service_name or '').strip()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    row = None
+    if order_id:
+        cursor.execute(
+            "SELECT TOP 1 id FROM triage_receipts WHERE order_id = ? AND [unit] = ? AND [sector] = ? ORDER BY id DESC",
+            (order_id, unit, sector)
+        )
+        row = cursor.fetchone()
+    now_str = datetime_now_str()
+
+    if row:
+        triage_id = int(row[0])
+        cursor.execute(
+            """
+            UPDATE triage_receipts
+            SET customer_code = ?, customer_name = ?, service_name = ?, quantity = ?,
+                received_at = ?, received_by = ?, notes = ?, [status] = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                customer_code,
+                customer_name,
+                service_name,
+                int(quantity or 1),
+                received_at,
+                received_by,
+                notes,
+                status,
+                now_str,
+                triage_id,
+            )
+        )
+        conn.commit()
+        return {'id': triage_id, 'is_new': False}
+
+    created_at = now_str
+    cursor.execute(
+        """
+        INSERT INTO triage_receipts (
+            order_id, customer_code, customer_name, service_name, quantity,
+            received_at, received_by, notes, [status], created_at, updated_at, [unit], [sector]
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            order_id,
+            customer_code,
+            customer_name,
+            service_name,
+            int(quantity or 1),
+            received_at,
+            received_by,
+            notes,
+            status,
+            created_at,
+            created_at,
+            unit,
+            sector,
+        )
+    )
+    conn.commit()
+
+    cursor.execute("SELECT @@IDENTITY")
+    row = cursor.fetchone()
+    triage_id = int(row[0]) if row else None
+    return {'id': triage_id, 'is_new': True}
+
+
+def get_recent_triage_receipts(limit=100, unit=None, sector=None):
+    """Retorna recebimentos recentes de triagem."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["[status] = 'received'"]
+    params = []
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(
+        f"SELECT TOP {int(limit)} * FROM triage_receipts {where} ORDER BY id DESC",
+        params
+    )
+    rows = cursor.fetchall()
+    return dicts_from_rows(cursor, rows)
+
+
+def search_triage_receipts(query, unit=None, sector=None):
+    """Busca triagem por pedido, cliente, nome, servico, usuario e observacao."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    pattern = f"%{str(query or '').strip()}%"
+    conditions = [
+        "(order_id LIKE ? OR customer_code LIKE ? OR customer_name LIKE ? OR service_name LIKE ? OR received_by LIKE ? OR notes LIKE ?)",
+        "[status] = 'received'"
+    ]
+    params = [pattern, pattern, pattern, pattern, pattern, pattern]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM triage_receipts {where} ORDER BY id DESC", params)
+    rows = cursor.fetchall()
+    return dicts_from_rows(cursor, rows)
+
+
+def get_triage_receipts_by_order_ids(order_ids, unit=None, sector=None):
+    """Retorna recebimentos de triagem para um conjunto de order_ids."""
+    if not order_ids:
+        return []
+
+    clean_ids = [str(x).strip() for x in order_ids if str(x).strip()]
+    if not clean_ids:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    placeholders = ','.join(['?'] * len(clean_ids))
+    conditions = [f"order_id IN ({placeholders})", "[status] = 'received'"]
+    params = list(clean_ids)
+
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM triage_receipts {where}", params)
+    rows = cursor.fetchall()
+    return dicts_from_rows(cursor, rows)
+
+
+def get_next_triage_order_id(unit=None, sector=None, start_at=1):
+    """Retorna proximo numero de pedido sequencial da triagem."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = []
+    params = []
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(f"SELECT order_id FROM triage_receipts {where}", params)
+    rows = cursor.fetchall()
+
+    max_number = int(start_at or 1) - 1
+    for row in rows:
+        value = str(row[0] or '').strip()
+        if value.isdigit():
+            num = int(value)
+            if num > max_number:
+                max_number = num
+
+    return max_number + 1
+
+
+def get_triage_customer_name_by_code(customer_code, unit=None, sector=None):
+    """Busca o nome mais recente do cliente por codigo na base de triagem."""
+    code = str(customer_code or '').strip().upper()
+    if not code:
+        return ''
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    def _run_lookup(use_unit, prefer_imported):
+        conditions = [
+            "customer_code = ?",
+            "customer_name IS NOT NULL",
+            "customer_name <> ''",
+        ]
+        params = [code]
+
+        if sector is not None:
+            conditions.append("[sector] = ?")
+            params.append(sector)
+        if use_unit and unit is not None:
+            conditions.append("[unit] = ?")
+            params.append(normalize_unit(unit))
+
+        where = f"WHERE {' AND '.join(conditions)}"
+        if prefer_imported:
+            cursor.execute(
+                f"SELECT TOP 1 customer_name FROM triage_receipts {where} AND notes LIKE ? ORDER BY id DESC",
+                params + ['Importado de CONTROLE CLIENTES COM ESTOJOS.xlsx%'],
+            )
+        else:
+            cursor.execute(
+                f"SELECT TOP 1 customer_name FROM triage_receipts {where} ORDER BY id DESC",
+                params,
+            )
+
+        row = cursor.fetchone()
+        return str(row[0]).strip() if row and row[0] is not None else ''
+
+    # 1) Unidade atual + catalogo importado
+    name = _run_lookup(use_unit=True, prefer_imported=True)
+    if name:
+        return name
+
+    # 2) Unidade atual + qualquer registro
+    name = _run_lookup(use_unit=True, prefer_imported=False)
+    if name:
+        return name
+
+    # 3) Qualquer unidade + catalogo importado
+    name = _run_lookup(use_unit=False, prefer_imported=True)
+    if name:
+        return name
+
+    # 4) Qualquer unidade + qualquer registro
+    return _run_lookup(use_unit=False, prefer_imported=False)
+
+
+def datetime_now_str():
+    """Timestamp padrao do sistema."""
+    from datetime import datetime
+    return datetime.now().strftime("%d/%m/%Y %H:%M:%S")

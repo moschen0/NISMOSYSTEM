@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 import db_mdb
 
 # Carrega variáveis do arquivo .env (se existir) sem sobrescrever vars de ambiente já definidas
@@ -67,6 +68,8 @@ TAG_RULES = {
     'priority': 'Prioridade (primeira da fila)',
     'none': 'Sem regra automatica'
 }
+
+TRIAGE_SECTOR = 'TRIAGEM'
 # 𓃶𓃶
 # ============================================================================
 # GERENCIAMENTO DE CÉLULAS/SETORES
@@ -82,6 +85,12 @@ def load_sectors():
                 'status': 'active',
                 'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             },
+            TRIAGE_SECTOR: {
+                'name': TRIAGE_SECTOR,
+                'description': 'Setor de recebimento e triagem',
+                'status': 'active',
+                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            },
             'VTA': {
                 'name': 'VTA',
                 'description': 'Setor VTA',
@@ -93,7 +102,16 @@ def load_sectors():
         return default
     try:
         with open(SECTORS_PATH, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            sectors = json.load(f)
+            if TRIAGE_SECTOR not in sectors:
+                sectors[TRIAGE_SECTOR] = {
+                    'name': TRIAGE_SECTOR,
+                    'description': 'Setor de recebimento e triagem',
+                    'status': 'active',
+                    'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                }
+                save_sectors(sectors)
+            return sectors
     except Exception as e:
         print(f"Erro ao ler sectors.json: {e}")
         return {}
@@ -135,6 +153,7 @@ def inject_admin_context():
         'all_sectors': sectors,
         'current_sector': current_sec,
         'sector_is_all': current_sec == 'ALL',
+        'can_access_triage': can_access_triage(),
     }
 
 
@@ -173,6 +192,21 @@ def get_current_sector():
 def is_admin_user():
     """Retorna True se o usuário logado é admin."""
     return session.get('user', '').lower() == 'admin'
+
+
+def can_access_triage():
+    """Permite triagem para admin ou usuario do setor TRIAGEM."""
+    if session.get('user', '').lower() == 'admin':
+        return True
+    return (session.get('sector', '') or '').strip().upper() == TRIAGE_SECTOR
+
+
+def require_triage_access():
+    """Retorna redirect quando nao ha permissao de triagem."""
+    if can_access_triage():
+        return None
+    flash('Acesso permitido apenas ao setor TRIAGEM ou admin.', 'danger')
+    return redirect(url_for('dashboard'))
 
 
 def is_valid_unit(unit):
@@ -229,6 +263,100 @@ def shelf_sort_key(shelf):
 def count_orders_at_position(position, unit=None, sector=None):
     """Conta quantos pedidos ativos (status add) estão em uma posição"""
     return db_mdb.count_orders_in_position(position, unit=unit, sector=sector)
+
+
+def normalize_header(text):
+    """Normaliza cabecalho para comparacao de planilha."""
+    raw = str(text or '').strip().lower()
+    raw = unicodedata.normalize('NFKD', raw)
+    raw = ''.join(c for c in raw if not unicodedata.combining(c))
+    raw = re.sub(r'[^a-z0-9]+', '_', raw)
+    return raw.strip('_')
+
+
+def parse_int(value, default=1):
+    """Converte valor para inteiro positivo."""
+    text = str(value or '').strip().replace(',', '.')
+    if not text:
+        return default
+    try:
+        num = int(float(text))
+        return num if num > 0 else default
+    except Exception:
+        return default
+
+
+def parse_triage_excel_rows(file_storage):
+    """Le e mapeia linhas da planilha de recebimento de triagem."""
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return [], ['Biblioteca openpyxl nao instalada. Execute: pip install openpyxl']
+
+    wb = load_workbook(filename=file_storage, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return [], ['Planilha vazia.']
+
+    header_values = rows[0]
+    normalized = [normalize_header(x) for x in header_values]
+
+    aliases = {
+        'customer_code': {'codigo_cliente', 'cod_cliente', 'cliente_codigo', 'codigo', 'cliente_id'},
+        'customer_name': {'nome_cliente', 'cliente', 'razao_social', 'nome'},
+        'quantity': {'quantidade', 'qtd', 'qtde'},
+        'received_at': {'data_recebimento', 'data', 'recebido_em', 'data_recebido'},
+        'notes': {'observacao', 'observacoes', 'obs', 'comentario'},
+        # Mantidos como opcionais por compatibilidade com planilhas antigas.
+        'order_id': {'order_id', 'pedido', 'id_pedido', 'numero_pedido', 'n_pedido'},
+        'service_name': {'servico', 'servico_nome', 'tipo_servico', 'tipo_de_servico'},
+    }
+
+    mapped = {}
+    for idx, name in enumerate(normalized):
+        for field, options in aliases.items():
+            if name in options and field not in mapped:
+                mapped[field] = idx
+
+    required = ['customer_code', 'customer_name', 'quantity', 'received_at']
+    missing = [x for x in required if x not in mapped]
+    if missing:
+        return [], [f'Cabecalhos obrigatorios ausentes: {", ".join(missing)}']
+
+    parsed = []
+    errors = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        order_id = ''
+        if 'order_id' in mapped:
+            order_id = str(row[mapped['order_id']] or '').strip().upper()
+
+        customer_code = str(row[mapped['customer_code']] or '').strip().upper()
+        customer_name = str(row[mapped['customer_name']] or '').strip()
+        service_name = ''
+        if 'service_name' in mapped:
+            service_name = str(row[mapped['service_name']] or '').strip()
+        quantity = parse_int(row[mapped['quantity']], default=1)
+        received_at = str(row[mapped['received_at']] or '').strip()
+        notes = ''
+        if 'notes' in mapped:
+            notes = str(row[mapped['notes']] or '').strip()
+
+        if not customer_code or not customer_name or not received_at:
+            errors.append(f'Linha {row_idx}: campos obrigatorios incompletos.')
+            continue
+
+        parsed.append({
+            'order_id': order_id,
+            'customer_code': customer_code,
+            'customer_name': customer_name,
+            'service_name': service_name,
+            'quantity': quantity,
+            'received_at': received_at,
+            'notes': notes,
+        })
+
+    return parsed, errors
 
 def load_zone_metadata():
     """Carrega descrições de zona salvas localmente."""
@@ -1725,6 +1853,7 @@ def add_order():
     """Adiciona novo pedido"""
     unit = get_current_unit()
     sector = get_current_sector()
+    is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
@@ -1752,7 +1881,14 @@ def add_order():
             return redirect_add_order(bipador=bipador_mode, quick=quick_mode)
         
         if not order_id:
-            flash('ID do Pedido é obrigatório', 'danger')
+            if is_triage_sector:
+                flash('Ordem de Servico da empresa e obrigatoria', 'danger')
+            else:
+                flash('ID do Pedido é obrigatório', 'danger')
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+
+        if is_triage_sector and not box:
+            flash('Numero do cliente e obrigatorio para enderecamento na TRIAGEM', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
         # Regra de negocio: o backend sempre define o endereco automaticamente.
@@ -1858,7 +1994,8 @@ def add_order():
                          zones=sort_zones_by_priority(list(zones), tag_catalog, zone_tags_map),
                          suggested_position=suggested_position,
                          requested_zone=requested_zone,
-                         quick_mode=quick_mode_from_query)
+                         quick_mode=quick_mode_from_query,
+                         is_triage_sector=is_triage_sector)
 
 @app.route('/position/<code>')
 @login_required
@@ -1883,6 +2020,231 @@ def position_detail(code):
                          orders=orders,
                          all_positions=all_positions,
                          current_user=session.get('user'))
+
+
+@app.route('/triagem/recebimento', methods=['GET', 'POST'])
+@login_required
+def triage_receiving():
+    """Cadastro e importacao de recebimento da triagem."""
+    access_denied = require_triage_access()
+    if access_denied:
+        return access_denied
+
+    unit = get_current_unit()
+    current_user = session.get('user', 'Sistema')
+
+    if request.method == 'POST':
+        form_action = request.form.get('form_action', 'add').strip().lower()
+
+        if form_action == 'import':
+            file_obj = request.files.get('import_file')
+            if not file_obj or not file_obj.filename:
+                flash('Selecione uma planilha para importar.', 'warning')
+                return redirect(url_for('triage_receiving'))
+
+            if not file_obj.filename.lower().endswith('.xlsx'):
+                flash('Formato invalido. Envie arquivo .xlsx.', 'danger')
+                return redirect(url_for('triage_receiving'))
+
+            rows, parse_errors = parse_triage_excel_rows(file_obj)
+            if parse_errors and not rows:
+                flash(parse_errors[0], 'danger')
+                return redirect(url_for('triage_receiving'))
+
+            inserted = 0
+            updated = 0
+            for item in rows:
+                result = db_mdb.upsert_triage_receipt(
+                    order_id=item['order_id'],
+                    customer_code=item['customer_code'],
+                    customer_name=item['customer_name'],
+                    service_name=item['service_name'],
+                    quantity=item['quantity'],
+                    received_at=item['received_at'],
+                    received_by=current_user,
+                    notes=item.get('notes', ''),
+                    status='received',
+                    unit=unit,
+                    sector=TRIAGE_SECTOR,
+                )
+                if result.get('is_new'):
+                    inserted += 1
+                else:
+                    updated += 1
+
+            details = f'Importacao triagem: {inserted} inseridos, {updated} atualizados'
+            if parse_errors:
+                details += f', {len(parse_errors)} com erro'
+            db_mdb.add_movement(
+                username=current_user,
+                action='triage_receipt_import',
+                details=details,
+                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                unit=unit,
+                sector=TRIAGE_SECTOR
+            )
+
+            flash(f'Importacao concluida. Inseridos: {inserted}. Atualizados: {updated}.', 'success')
+            if parse_errors:
+                flash(f'Linhas ignoradas por erro: {len(parse_errors)}.', 'warning')
+            return redirect(url_for('triage_receiving'))
+
+        order_id = request.form.get('order_id', '').strip().upper()
+        customer_code = request.form.get('customer_code', '').strip().upper()
+        customer_name = request.form.get('customer_name', '').strip()
+        quantity = parse_int(request.form.get('quantity', '').strip(), default=1)
+        received_at = request.form.get('received_at', '').strip()
+        notes = request.form.get('notes', '').strip()
+
+        if not customer_code or not received_at:
+            flash('Preencha todos os campos obrigatorios da triagem.', 'danger')
+            return redirect(url_for('triage_receiving'))
+
+        # Pedido sempre automatico e sequencial (nao depende do front-end).
+        order_id_num = db_mdb.get_next_triage_order_id(unit=unit, sector=TRIAGE_SECTOR)
+        order_id = str(order_id_num).zfill(2)
+
+        # Nome do cliente sempre vem do banco com base no codigo informado.
+        customer_name_db = db_mdb.get_triage_customer_name_by_code(
+            customer_code=customer_code,
+            unit=unit,
+            sector=TRIAGE_SECTOR,
+        )
+        customer_name = customer_name_db or customer_name
+
+        if not customer_name:
+            flash('Codigo do cliente nao encontrado na base. Cadastre/importe o cliente primeiro.', 'danger')
+            return redirect(url_for('triage_receiving'))
+
+        active_client_orders = db_mdb.get_active_orders_by_client_number(
+            client_number=customer_code,
+            unit=unit,
+            sector=TRIAGE_SECTOR,
+            limit=8,
+        )
+
+        result = db_mdb.upsert_triage_receipt(
+            order_id=order_id,
+            customer_code=customer_code,
+            customer_name=customer_name,
+            service_name='',
+            quantity=quantity,
+            received_at=received_at,
+            received_by=current_user,
+            notes=notes,
+            status='received',
+            unit=unit,
+            sector=TRIAGE_SECTOR,
+        )
+
+        action_name = 'triage_receipt_add' if result.get('is_new') else 'triage_receipt_update'
+        db_mdb.add_movement(
+            username=current_user,
+            action=action_name,
+            order_id=order_id,
+            details=f'Recebimento triagem | Cliente {customer_code}',
+            timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            unit=unit,
+            sector=TRIAGE_SECTOR
+        )
+
+        if active_client_orders:
+            preview = []
+            for row in active_client_orders[:4]:
+                order_ref = str(row.get('order_id', '')).strip() or 'SEM_OS'
+                position_ref = str(row.get('position', '')).strip() or 'SEM_POSICAO'
+                preview.append(f'{order_ref} em {position_ref}')
+            resumo = '; '.join(preview)
+            extra = ''
+            if len(active_client_orders) > 4:
+                extra = f' e mais {len(active_client_orders) - 4}'
+            flash(
+                f'Aviso: cliente {customer_code} ja possui servico(s) enderecado(s) na triagem: {resumo}{extra}.',
+                'warning'
+            )
+
+        flash(f'Recebimento de triagem salvo com sucesso. Pedido: {order_id}.', 'success')
+        return redirect(url_for('triage_receiving'))
+
+    query = request.args.get('q', '').strip()
+    if query:
+        receipts = db_mdb.search_triage_receipts(query, unit=unit, sector=TRIAGE_SECTOR)
+    else:
+        receipts = db_mdb.get_recent_triage_receipts(limit=150, unit=unit, sector=TRIAGE_SECTOR)
+
+    now_iso = datetime.now().strftime('%Y-%m-%dT%H:%M')
+    next_order_id = str(db_mdb.get_next_triage_order_id(unit=unit, sector=TRIAGE_SECTOR)).zfill(2)
+    return render_template(
+        'triage_receiving.html',
+        receipts=receipts,
+        query=query,
+        now_iso=now_iso,
+        next_order_id=next_order_id,
+    )
+
+
+@app.route('/api/triagem/customer-name', methods=['GET'])
+@login_required
+def triage_customer_name_lookup():
+    """Resolve nome do cliente a partir do codigo para a tela de triagem."""
+    access_denied = require_triage_access()
+    if access_denied:
+        return jsonify({'ok': False, 'message': 'Acesso negado.'}), 403
+
+    code = request.args.get('code', '').strip().upper()
+    if not code:
+        return jsonify({'ok': False, 'customer_name': ''}), 400
+
+    name = db_mdb.get_triage_customer_name_by_code(
+        customer_code=code,
+        unit=get_current_unit(),
+        sector=TRIAGE_SECTOR,
+    )
+    return jsonify({'ok': bool(name), 'customer_name': name})
+
+
+@app.route('/api/triagem/client-active-services', methods=['GET'])
+@login_required
+def triage_client_active_services_lookup():
+    """Retorna servicos ativos da TRIAGEM para o codigo do cliente."""
+    access_denied = require_triage_access()
+    if access_denied:
+        return jsonify({'ok': False, 'message': 'Acesso negado.'}), 403
+
+    code = request.args.get('code', '').strip().upper()
+    if not code:
+        return jsonify({'ok': False, 'count': 0, 'items': []}), 400
+
+    rows = db_mdb.get_active_orders_by_client_number(
+        client_number=code,
+        unit=get_current_unit(),
+        sector=TRIAGE_SECTOR,
+        limit=8,
+    )
+
+    items = []
+    for row in rows:
+        items.append({
+            'order_id': str(row.get('order_id', '')).strip(),
+            'position': str(row.get('position', '')).strip(),
+        })
+
+    return jsonify({'ok': True, 'count': len(items), 'items': items})
+
+
+@app.route('/api/triagem/next-order-id', methods=['GET'])
+@login_required
+def triage_next_order_id_lookup():
+    """Retorna o proximo pedido sequencial para a tela de triagem."""
+    access_denied = require_triage_access()
+    if access_denied:
+        return jsonify({'ok': False, 'message': 'Acesso negado.'}), 403
+
+    next_order_id = db_mdb.get_next_triage_order_id(
+        unit=get_current_unit(),
+        sector=TRIAGE_SECTOR,
+    )
+    return jsonify({'ok': True, 'next_order_id': str(next_order_id).zfill(2)})
 
 @app.route('/order/checkout', methods=['GET', 'POST'])
 @login_required
@@ -2099,11 +2461,34 @@ def search_orders():
     if query:
         filtered_orders = db_mdb.search_orders(query, unit=unit, sector=sector)
         all_orders = filtered_orders
+
+    order_ids = [o.get('order_id') for o in all_orders if o.get('order_id')]
+    triage_map = {}
+    triage_for_orders = db_mdb.get_triage_receipts_by_order_ids(order_ids, unit=unit, sector=TRIAGE_SECTOR)
+    for item in triage_for_orders:
+        key = item.get('order_id')
+        if key and key not in triage_map:
+            triage_map[key] = item
+
+    for order in all_orders:
+        triage_info = triage_map.get(order.get('order_id'))
+        if triage_info:
+            order['triage_received'] = True
+            order['triage_customer_code'] = triage_info.get('customer_code', '')
+            order['triage_received_at'] = triage_info.get('received_at', '')
+        else:
+            order['triage_received'] = False
+
+    triage_matches = []
+    if query:
+        triage_matches = db_mdb.search_triage_receipts(query, unit=unit, sector=TRIAGE_SECTOR)
     
     return render_template('search.html', 
                          orders=all_orders, 
                          total=len(all_orders),
-                         query=query)
+                         query=query,
+                         triage_matches=triage_matches,
+                         triage_total=len(triage_matches))
 
 @app.route('/api/search/autocomplete')
 @login_required

@@ -201,6 +201,13 @@
                         <i class="bi bi-search"></i> Buscar
                     </a>
                 </li>
+                {% if can_access_triage %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('triage_receiving') }}">
+                        <i class="bi bi-clipboard-check"></i> Triagem
+                    </a>
+                </li>
+                {% endif %}
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('checkout_order') }}">
                         <i class="bi bi-box-arrow-up"></i> Saída

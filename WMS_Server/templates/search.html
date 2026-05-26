@@ -78,6 +78,7 @@
                                 <th><i class="bi bi-circle-fill"></i> Status</th>
                                 <th><i class="bi bi-geo-alt"></i> Posição</th>
                                 <th><i class="bi bi-box2"></i> Caixa</th>
+                                <th><i class="bi bi-clipboard-check"></i> Triagem</th>
                                 <th><i class="bi bi-person"></i> Cadastrado por</th>
                                 <th><i class="bi bi-calendar"></i> Entrada</th>
                                 <th><i class="bi bi-arrow-right"></i> Saída</th>
@@ -109,6 +110,16 @@
                                         <span class="badge bg-info">{{ order.box }}</span>
                                     {% else %}
                                         <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if order.get('triage_received') %}
+                                        <span class="badge bg-success" title="Cliente {{ order.get('triage_customer_code') }}">
+                                            <i class="bi bi-check-circle"></i> Recebido
+                                        </span>
+                                        <div><small class="text-muted">{{ order.get('triage_received_at') }}</small></div>
+                                    {% else %}
+                                        <span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> Sem triagem</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -170,6 +181,49 @@
         </div>
     </div>
 </div>
+
+{% if query %}
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-clipboard-check"></i> Rastreabilidade de Triagem</h5>
+                <span class="badge bg-light text-dark">{{ triage_total }} registro{% if triage_total != 1 %}s{% endif %}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if triage_matches %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Codigo Cliente</th>
+                                <th>Nome Cliente</th>
+                                <th>Quantidade</th>
+                                <th>Recebido em</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tri in triage_matches %}
+                            <tr>
+                                <td><span class="badge bg-primary">{{ tri.customer_code }}</span></td>
+                                <td>{{ tri.customer_name }}</td>
+                                <td>{{ tri.quantity }}</td>
+                                <td><small class="text-muted">{{ tri.received_at }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    Nenhum registro de triagem encontrado para a busca atual.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="mt-4">
     <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">

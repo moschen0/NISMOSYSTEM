@@ -44,6 +44,17 @@ if not defined PY_CMD (
 
 echo [INFO] Python selecionado: %PY_CMD%
 
+echo [INFO] Atualizando compiladores (pip/setuptools/wheel/pyinstaller)...
+"%PY_CMD%" -m pip install --upgrade pip setuptools wheel pyinstaller pyinstaller-hooks-contrib
+if errorlevel 1 (
+    echo [ERRO] Falha ao atualizar compiladores do build.
+    popd
+    exit /b 1
+)
+
+echo [INFO] Versoes do compilador:
+"%PY_CMD%" -m pip show pyinstaller | findstr /I "Name Version"
+
 "%PY_CMD%" -m PyInstaller --noconfirm --clean --onedir --console --name WMS_Server --hidden-import pyodbc --hidden-import waitress run_production.py
 if errorlevel 1 (
     echo [ERRO] Falha ao gerar executavel.
@@ -52,10 +63,20 @@ if errorlevel 1 (
 )
 
 if not exist "dist\WMS_Server\templates" mkdir "dist\WMS_Server\templates"
-xcopy "templates" "dist\WMS_Server\templates" /E /I /Y >nul
+if exist "templates" (
+    xcopy "templates" "dist\WMS_Server\templates" /E /I /Y >nul
+) else (
+    echo [AVISO] Pasta "templates" nao encontrada. Copia ignorada.
+)
 
 if not exist "dist\WMS_Server\static" mkdir "dist\WMS_Server\static"
-xcopy "static" "dist\WMS_Server\static" /E /I /Y >nul
+if exist "static" (
+    xcopy "static" "dist\WMS_Server\static" /E /I /Y >nul
+) else if exist "..\WMS_Server\static" (
+    xcopy "..\WMS_Server\static" "dist\WMS_Server\static" /E /I /Y >nul
+) else (
+    echo [AVISO] Pasta "static" nao encontrada em WMS_SISTEMA nem em WMS_Server. Copia ignorada.
+)
 
 copy /Y "wms_database.mdb" "dist\WMS_Server\wms_database.mdb" >nul 2>nul
 

@@ -85,14 +85,14 @@
                     {% endif %}
 
                     <div class="mb-3">
-                        <label for="order_id" class="form-label"><i class="bi bi-box"></i> ID do Pedido *</label>
-                        <input type="text" class="form-control" id="order_id" name="order_id" placeholder="Ex: PED-2024-001" required autofocus autocomplete="off">
-                        <small class="form-text text-muted">Código único do pedido</small>
+                        <label for="order_id" class="form-label"><i class="bi bi-box"></i> {% if is_triage_sector %}Ordem de Servico da Empresa *{% else %}ID do Pedido *{% endif %}</label>
+                        <input type="text" class="form-control" id="order_id" name="order_id" placeholder="{% if is_triage_sector %}Ex: OS-123456{% else %}Ex: PED-2024-001{% endif %}" required autofocus autocomplete="off">
+                        <small class="form-text text-muted">{% if is_triage_sector %}Informe a ordem de servico informada pela empresa{% else %}Código único do pedido{% endif %}</small>
                     </div>
 
                     <div class="mb-4">
-                        <label for="box" class="form-label"><i class="bi bi-box2"></i> Número da Caixa (Opcional)</label>
-                        <input type="text" class="form-control" id="box" name="box" placeholder="Ex: CAIXA-001" autocomplete="off">
+                        <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa (Opcional){% endif %}</label>
+                        <input type="text" class="form-control" id="box" name="box" placeholder="{% if is_triage_sector %}Ex: 123456{% else %}Ex: CAIXA-001{% endif %}" {% if is_triage_sector %}required{% endif %} autocomplete="off">
                     </div>
 
                     <button type="submit" class="btn btn-success w-100 mb-2">
