@@ -68,7 +68,6 @@ TAG_RULES = {
     'priority': 'Prioridade (primeira da fila)',
     'none': 'Sem regra automatica'
 }
-
 TRIAGE_SECTOR = 'TRIAGEM'
 # 𓃶𓃶
 # ============================================================================
