@@ -230,6 +230,27 @@ def validate_password(password):
         return False, "Senha deve ter pelo menos 4 caracteres"
     return True, ""
 
+def is_valid_triage_os(order_id):
+    """OS da triagem deve ter exatamente 8 digitos numericos."""
+    return bool(re.fullmatch(r'\d{8}', str(order_id or '').strip()))
+
+def is_valid_box_number(box):
+    """Numero da caixa/cliente aceita somente 1 a 5 digitos."""
+    return bool(re.fullmatch(r'\d{1,5}', str(box or '').strip()))
+
+def is_triage_zone(zone, unit):
+    """Retorna True quando a zona pertence ao setor TRIAGEM."""
+    normalized_zone = str(zone or '').strip().upper()
+    if not normalized_zone:
+        return False
+
+    triage_shelves = db_mdb.get_all_shelves(unit=unit, sector=TRIAGE_SECTOR)
+    for shelf in triage_shelves:
+        shelf_zone = str(shelf.get('zone', '')).strip().upper()
+        if shelf_zone == normalized_zone:
+            return True
+    return False
+
 def find_user(username, unit=None):
     """Encontra usuário no banco de dados"""
     return db_mdb.get_user_by_username(username, unit=unit)
@@ -1880,14 +1901,24 @@ def add_order():
             return redirect_add_order(bipador=bipador_mode, quick=quick_mode)
         
         if not order_id:
-            if is_triage_sector:
+            if is_triage_sector or is_triage_zone(zone, unit):
                 flash('Ordem de Servico da empresa e obrigatoria', 'danger')
             else:
                 flash('ID do Pedido é obrigatório', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
 
-        if is_triage_sector and not box:
+        is_triage_request = is_triage_sector or is_triage_zone(zone, unit)
+
+        if is_triage_request and not box:
             flash('Numero do cliente e obrigatorio para enderecamento na TRIAGEM', 'danger')
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+
+        if not is_valid_triage_os(order_id):
+            flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+
+        if box and not is_valid_box_number(box):
+            flash('Numero da caixa deve conter apenas digitos, com no maximo 5 digitos', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
         # Regra de negocio: o backend sempre define o endereco automaticamente.
@@ -2250,11 +2281,17 @@ def triage_next_order_id_lookup():
 def checkout_order():
     """Dar saída em pedido pelo ID"""
     unit = get_current_unit()
+    sector = get_current_sector()
+    is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
     if request.method == 'POST':
         order_id = request.form.get('order_id', '').strip()
         
         if not order_id:
             flash('Digite o ID do pedido', 'danger')
+            return redirect(url_for('checkout_order'))
+
+        if not is_valid_triage_os(order_id):
+            flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
             return redirect(url_for('checkout_order'))
         
         order = db_mdb.get_order_by_id(order_id, unit=unit)
@@ -2291,7 +2328,7 @@ def checkout_order():
         flash(f'✅ Pedido {order_id} retirado com sucesso da posição {position}!', 'success')
         return redirect(url_for('checkout_order'))
     
-    return render_template('checkout.html')
+    return render_template('checkout.html', is_triage_sector=is_triage_sector)
 
 @app.route('/order/remove', methods=['POST'])
 @login_required

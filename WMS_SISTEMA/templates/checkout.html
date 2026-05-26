@@ -26,19 +26,20 @@
                 <form method="POST" action="{{ url_for('checkout_order') }}" id="checkoutForm">
                     <div class="mb-4">
                         <label for="order_id" class="form-label">
-                            <i class="bi bi-box"></i> ID do Pedido *
+                            <i class="bi bi-box"></i> OS/ID do Pedido *
                         </label>
                         <input 
                             type="text" 
                             class="form-control form-control-lg" 
                             id="order_id" 
                             name="order_id" 
-                            placeholder="Ex: PED-2024-001" 
+                            placeholder="Ex: 12345678" 
                             required 
                             autofocus
-                            autocomplete="off">
+                            autocomplete="off"
+                            inputmode="numeric" pattern="\d{8}" minlength="8" maxlength="8" title="A OS/ID do pedido deve conter exatamente 8 dígitos numéricos">
                         <div id="order-suggestions" class="list-group mt-2" style="display: none; position: absolute; z-index: 1000; max-width: 500px;"></div>
-                        <small class="form-text text-muted">Digite o código do pedido que será retirado</small>
+                        <small class="form-text text-muted">Digite a OS/ID com 8 dígitos numéricos</small>
                     </div>
 
                     <div class="d-grid gap-2">
@@ -111,6 +112,13 @@
 let debounceTimer;
 const orderInput = document.getElementById('order_id');
 const suggestionsContainer = document.getElementById('order-suggestions');
+function sanitizeNumericValue(rawValue, maxLength) {
+    return rawValue.replace(/\D/g, '').slice(0, maxLength);
+}
+
+orderInput.addEventListener('input', function() {
+    this.value = sanitizeNumericValue(this.value, 8);
+});
 
 // Autocomplete para ID do pedido
 orderInput.addEventListener('input', function() {
@@ -177,6 +185,13 @@ document.getElementById('checkoutForm').addEventListener('submit', function(e) {
     if (!orderId) {
         e.preventDefault();
         alert('Digite o ID do pedido');
+        return;
+    }
+
+    if (!/^\d{8}$/.test(orderId)) {
+        e.preventDefault();
+        alert('A OS/ID do pedido deve conter exatamente 8 dígitos numéricos.');
+        orderInput.focus();
         return;
     }
 });

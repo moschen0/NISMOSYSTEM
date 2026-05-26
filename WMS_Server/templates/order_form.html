@@ -86,13 +86,13 @@
 
                     <div class="mb-3">
                         <label for="order_id" class="form-label"><i class="bi bi-box"></i> {% if is_triage_sector %}Ordem de Servico da Empresa *{% else %}ID do Pedido *{% endif %}</label>
-                        <input type="text" class="form-control" id="order_id" name="order_id" placeholder="{% if is_triage_sector %}Ex: OS-123456{% else %}Ex: PED-2024-001{% endif %}" required autofocus autocomplete="off">
-                        <small class="form-text text-muted">{% if is_triage_sector %}Informe a ordem de servico informada pela empresa{% else %}Código único do pedido{% endif %}</small>
+                        <input type="text" class="form-control" id="order_id" name="order_id" placeholder="Ex: 12345678" required autofocus autocomplete="off" inputmode="numeric" pattern="\d{8}" minlength="8" maxlength="8" title="A OS/ID do pedido deve conter exatamente 8 dígitos numéricos">
+                        <small class="form-text text-muted">Informe a OS/ID com exatamente 8 dígitos numéricos</small>
                     </div>
 
                     <div class="mb-4">
                         <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa (Opcional){% endif %}</label>
-                        <input type="text" class="form-control" id="box" name="box" placeholder="{% if is_triage_sector %}Ex: 123456{% else %}Ex: CAIXA-001{% endif %}" {% if is_triage_sector %}required{% endif %} autocomplete="off">
+                        <input type="text" class="form-control" id="box" name="box" placeholder="Ex: 12345" {% if is_triage_sector %}required{% endif %} autocomplete="off" inputmode="numeric" pattern="\d{1,5}" maxlength="5" title="Número da caixa deve ter até 5 dígitos numéricos">
                     </div>
 
                     <button type="submit" class="btn btn-success w-100 mb-2">
@@ -125,6 +125,7 @@ const bipadorModeInput = document.getElementById('bipadorModeInput');
 const changeZoneBtn = document.getElementById('changeZoneBtn');
 const quickModeInput = document.getElementById('quickModeInput');
 const bipadorFromUrlInput = document.getElementById('bipadorFromUrlInput');
+const isTriageSector = {{ 'true' if is_triage_sector else 'false' }};
 
 let lockedZone = '';
 let allowZoneChange = false;
@@ -175,6 +176,10 @@ function askAndFocusNext() {
         orderInput.focus();
         orderInput.select();
     }, 80);
+}
+
+function sanitizeNumericValue(rawValue, maxLength) {
+    return rawValue.replace(/\D/g, '').slice(0, maxLength);
 }
 
 function loadBestPosition(zone) {
@@ -263,10 +268,20 @@ boxInput.addEventListener('keydown', function(e) {
     orderForm.requestSubmit();
 });
 
+orderInput.addEventListener('input', function() {
+    this.value = sanitizeNumericValue(this.value, 8);
+});
+
+boxInput.addEventListener('input', function() {
+    this.value = sanitizeNumericValue(this.value, 5);
+});
+
 // Validar que zona foi selecionada antes de submeter
 orderForm.addEventListener('submit', function(e) {
     const zone = zoneSelect.value;
     const position = allocationPosition.textContent;
+    const orderValue = orderInput.value.trim();
+    const boxValue = boxInput.value.trim();
     
     if (!zone) {
         e.preventDefault();
@@ -277,6 +292,20 @@ orderForm.addEventListener('submit', function(e) {
     if (!position || position === '') {
         e.preventDefault();
         alert('Nenhuma posição disponível na zona. Selecione outra zona.');
+        return false;
+    }
+
+    if (!/^\d{8}$/.test(orderValue)) {
+        e.preventDefault();
+        alert('A OS/ID do pedido deve conter exatamente 8 dígitos numéricos.');
+        orderInput.focus();
+        return false;
+    }
+
+    if (boxValue && !/^\d{1,5}$/.test(boxValue)) {
+        e.preventDefault();
+        alert('Número da caixa deve conter apenas números e no máximo 5 dígitos.');
+        boxInput.focus();
         return false;
     }
 
