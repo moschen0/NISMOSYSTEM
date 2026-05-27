@@ -7,7 +7,6 @@ Este script força o uso do banco LOCAL em:
 """
 import os
 import sys
-
 # ---------------------------------------------------------------------------
 # 1. Garante que o diretório do script está no sys.path
 # ---------------------------------------------------------------------------

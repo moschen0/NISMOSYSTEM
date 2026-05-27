@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Configurações - WMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-7 mx-auto">
+
+        <h2 class="mb-4"><i class="bi bi-gear"></i> Configurações</h2>
+
+        <!-- ── Controle de tempo de permanência ──────────────────────── -->
+        <div class="card mb-4" style="border-left: 5px solid #667eea;">
+            <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Controle de Tempo de Permanência</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Define os limiares (em dias) que determinam a cor exibida em cada caixa nas visualizações
+                    de prateleiras. Os valores devem ser crescentes.
+                </p>
+
+                <!-- Prévia das cores -->
+                <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+                    <strong style="font-size:13px;">Prévia:</strong>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#166534;font-size:12px;">
+                        Verde &mdash; &lt; {{ thresholds.green_days }}d (Normal)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold" style="background:#FFDE21;color:#1a1a1a;font-size:12px;">
+                        Amarelo &mdash; {{ thresholds.green_days }}&ndash;{{ thresholds.yellow_days }}d (Atenção)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#991b1b;font-size:12px;">
+                        Vermelho &mdash; {{ thresholds.yellow_days }}&ndash;{{ thresholds.red_days }}d (Urgente)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#0a0a0a;border:1px solid #555;font-size:12px;">
+                        Preto &mdash; &ge; {{ thresholds.red_days }}d (Crítico)
+                    </span>
+                </div>
+
+                <form method="POST" action="{{ url_for('settings') }}">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#166534;">Verde</span>
+                                Limite Normal (dias)
+                            </label>
+                            <input type="number" class="form-control" name="green_days"
+                                   value="{{ thresholds.green_days }}" min="1" max="30" required>
+                            <div class="form-text">0 a &lt; N dias → <strong>Normal</strong></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#FFDE21;color:#1a1a1a;">Amarelo</span>
+                                Limite Atenção (dias)
+                            </label>
+                            <input type="number" class="form-control" name="yellow_days"
+                                   value="{{ thresholds.yellow_days }}" min="1" max="60" required>
+                            <div class="form-text">N a &lt; M dias → <strong>Atenção</strong></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#991b1b;">Vermelho</span>
+                                Limite Urgente (dias)
+                            </label>
+                            <input type="number" class="form-control" name="red_days"
+                                   value="{{ thresholds.red_days }}" min="1" max="90" required>
+                            <div class="form-text">M a &lt; R dias → <strong>Urgente</strong> / ≥ R → <strong>Crítico</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:13px;">
+                        <i class="bi bi-info-circle"></i>
+                        Os limiares devem ser crescentes: <code>Verde &lt; Amarelo &lt; Vermelho</code>.
+                        Exemplo padrão: <strong>3 / 4 / 6</strong>.
+                    </div>
+
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-floppy"></i> Salvar Configurações
+                        </button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Voltar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

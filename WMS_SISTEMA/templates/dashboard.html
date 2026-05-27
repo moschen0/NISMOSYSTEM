@@ -59,7 +59,7 @@
     }
     .box-block {
         height: 19px;
-        background: #0a0a0a;
+        background: #166534;
         color: #fff;
         display: flex;
         align-items: center;
@@ -73,6 +73,10 @@
         padding: 0 4px;
         border-radius: 2px;
     }
+    .box-tier-normal   { background: #166534; color: #fff; }
+    .box-tier-attention{ background: #FFDE21; color: #1a1a1a; }
+    .box-tier-urgent   { background: #991b1b; color: #fff; }
+    .box-tier-critical { background: #0a0a0a; color: #fff; }
     .slot-lbl {
         font-size: 9px;
         font-weight: 600;
@@ -377,6 +381,16 @@
 </div><!-- /view-lista -->
 
 <div id="view-prateleiras" style="display:none;">
+    {% if time_thresholds %}
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center" style="font-size:11px;">
+        <strong><i class="bi bi-clock"></i> Tempo de permanência:</strong>
+        <span style="background:#166534;color:#fff;padding:2px 8px;border-radius:3px;">Verde &mdash; &lt; {{ time_thresholds.green_days }}d (Normal)</span>
+        <span style="background:#FFDE21;color:#1a1a1a;padding:2px 8px;border-radius:3px;">Amarelo &mdash; {{ time_thresholds.green_days }}&ndash;{{ time_thresholds.yellow_days }}d (Atenção)</span>
+        <span style="background:#991b1b;color:#fff;padding:2px 8px;border-radius:3px;">Vermelho &mdash; {{ time_thresholds.yellow_days }}&ndash;{{ time_thresholds.red_days }}d (Urgente)</span>
+        <span style="background:#0a0a0a;color:#fff;padding:2px 8px;border-radius:3px;border:1px solid #555;">Preto &mdash; &ge; {{ time_thresholds.red_days }}d (Crítico)</span>
+        <a href="{{ url_for('settings') }}" class="ms-1" style="font-size:10px;"><i class="bi bi-gear"></i> Configurar</a>
+    </div>
+    {% endif %}
     <div class="racks-wrap">
         {% if preview_zones %}
             {% for zone_group in preview_zones %}
@@ -400,7 +414,7 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in cell.boxes %}
-                                                            <div class="box-block">{{ box }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                     <div class="slot-lbl" title="{{ cell.position }}">{{ cell.position }}</div>
@@ -416,7 +430,7 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in chunk %}
-                                                            <div class="box-block">{{ box }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                 </div>

@@ -91,8 +91,9 @@
                     </div>
 
                     <div class="mb-4">
-                        <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa (Opcional){% endif %}</label>
-                        <input type="text" class="form-control" id="box" name="box" placeholder="Ex: 12345" {% if is_triage_sector %}required{% endif %} autocomplete="off" inputmode="numeric" pattern="\d{1,5}" maxlength="5" title="Número da caixa deve ter até 5 dígitos numéricos">
+                        <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa *{% endif %}</label>
+                        <input type="text" class="form-control" id="box" name="box" placeholder="Ex: 12345" required autocomplete="off" inputmode="numeric" pattern="\d{1,5}" maxlength="5" title="Número da caixa é obrigatório e deve ter até 5 dígitos numéricos">
+                        <small class="form-text text-muted">Obrigatório. Somente dígitos numéricos, máx. 5 dígitos</small>
                     </div>
 
                     <button type="submit" class="btn btn-success w-100 mb-2">
@@ -302,9 +303,9 @@ orderForm.addEventListener('submit', function(e) {
         return false;
     }
 
-    if (boxValue && !/^\d{1,5}$/.test(boxValue)) {
+    if (!boxValue || !/^\d{1,5}$/.test(boxValue)) {
         e.preventDefault();
-        alert('Número da caixa deve conter apenas números e no máximo 5 dígitos.');
+        alert('Número da Caixa é obrigatório e deve conter apenas números (máx. 5 dígitos).');
         boxInput.focus();
         return false;
     }

@@ -62,6 +62,7 @@ ZONE_METADATA_PATH = os.path.join(DATA_BASE_DIR, 'zone_metadata.json')
 TAG_CATALOG_PATH = os.path.join(DATA_BASE_DIR, 'zone_tag_catalog.json')
 ZONE_TAGS_PATH = os.path.join(DATA_BASE_DIR, 'zone_tags_map.json')
 SECTORS_PATH = os.path.join(DATA_BASE_DIR, 'sectors.json')
+TIME_THRESHOLDS_PATH = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
@@ -69,6 +70,68 @@ TAG_RULES = {
     'none': 'Sem regra automatica'
 }
 TRIAGE_SECTOR = 'TRIAGEM'
+
+# Defaults para thresholds de tempo de permanência (dias)
+_DEFAULT_THRESHOLDS = {'green_days': 3, 'yellow_days': 4, 'red_days': 6}
+
+
+def load_time_thresholds():
+    """Carrega thresholds de colorização por tempo de permanência."""
+    if os.path.exists(TIME_THRESHOLDS_PATH):
+        try:
+            with open(TIME_THRESHOLDS_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # garante que todas as chaves existam
+            return {k: int(data.get(k, v)) for k, v in _DEFAULT_THRESHOLDS.items()}
+        except Exception:
+            pass
+    return dict(_DEFAULT_THRESHOLDS)
+
+
+def save_time_thresholds(green_days, yellow_days, red_days):
+    """Persiste os thresholds de tempo no arquivo JSON."""
+    with open(TIME_THRESHOLDS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(
+            {'green_days': int(green_days), 'yellow_days': int(yellow_days), 'red_days': int(red_days)},
+            f, indent=2
+        )
+
+
+def get_order_age_days(timestamp_str):
+    """Retorna a idade do pedido em dias inteiros a partir do campo timestamp."""
+    if not timestamp_str:
+        return None
+    for fmt in ('%d/%m/%Y %H:%M:%S', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            dt = datetime.strptime(str(timestamp_str).strip(), fmt)
+            return max(0, (datetime.now() - dt).days)
+        except ValueError:
+            continue
+    return None
+
+
+def get_age_tier(age_days, thresholds):
+    """Retorna o tier de cor: 'normal'|'attention'|'urgent'|'critical'."""
+    if age_days is None:
+        return 'normal'
+    gd = thresholds.get('green_days', 3)
+    yd = thresholds.get('yellow_days', 4)
+    rd = thresholds.get('red_days', 6)
+    if age_days < gd:
+        return 'normal'
+    if age_days < yd:
+        return 'attention'
+    if age_days < rd:
+        return 'urgent'
+    return 'critical'
+
+
+def make_box_entry(order, thresholds):
+    """Constrói o dict {label, tier, age_days} de um pedido para a visualização."""
+    label = str(order.get('box') or order.get('order_id', '')).strip()
+    age_days = get_order_age_days(order.get('timestamp'))
+    tier = get_age_tier(age_days, thresholds)
+    return {'label': label, 'tier': tier, 'age_days': age_days}
 # 𓃶𓃶
 # ============================================================================
 # GERENCIAMENTO DE CÉLULAS/SETORES
@@ -858,7 +921,7 @@ def login():
             session['sector'] = user.get('sector', '')
             # Admin usa a unidade selecionada no login; outros usam a unidade do cadastro
             if username.lower() == 'admin':
-                session['unit'] = unittruncado 
+                session['unit'] = unit
                 session['sector'] = 'ALL'  # Admin vê todos os setores por padrão
             else:
                 session['unit'] = db_mdb.normalize_unit(user.get('unit', unit))
@@ -1186,6 +1249,7 @@ def dashboard():
         all_zone_codes = ordered_zones
         
         # ── Visualização de prateleiras (tema Prateleiras) ───────────────────────
+        _thresholds_dash = load_time_thresholds()
         preview_zones_dash = {}
         for shelf in shelf_data:
             z = shelf['zone']
@@ -1201,7 +1265,7 @@ def dashboard():
                         position = f"{z}-{m}-{level:02d}"
                     else:
                         position = f"{z}-{m}-{level:02d}-{col:02d}"
-                    raw_boxes = [o.get('box') or o.get('order_id', '') for o in order_map.get(position, [])]
+                    raw_boxes = [make_box_entry(o, _thresholds_dash) for o in order_map.get(position, [])]
                     raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
                     cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
                 rows_vis.append({'level': level, 'cells': cells})
@@ -1232,7 +1296,8 @@ def dashboard():
                              tag_options=tag_options,
                              order_map=order_map,
                              total_orders=len(orders),
-                             preview_zones=ordered_preview_zones_dash)
+                             preview_zones=ordered_preview_zones_dash,
+                             time_thresholds=_thresholds_dash)
     except Exception as e:
         flash(f'Erro ao carregar dashboard: {str(e)}', 'danger')
         print(f"ERRO NO DASHBOARD: {e}")
@@ -1257,14 +1322,12 @@ def shelf_preview():
     ]
 
     orders_by_position = {}
+    _thresholds_sp = load_time_thresholds()
     for order in active_orders:
         position = order.get('position', '').strip().upper()
         if not position:
             continue
-        box_label = str(order.get('box', '') or order.get('order_id', '')).strip()
-        if not box_label:
-            box_label = order.get('order_id', '')
-        orders_by_position.setdefault(position, []).append(box_label)
+        orders_by_position.setdefault(position, []).append(make_box_entry(order, _thresholds_sp))
 
     demo_mode = not bool(active_orders)
     demo_positions = {}
@@ -1311,7 +1374,8 @@ def shelf_preview():
 
                 raw_boxes = orders_by_position.get(position, [])
                 if demo_mode and not raw_boxes:
-                    raw_boxes = demo_positions.get(position, [])
+                    raw_boxes = [{'label': b, 'tier': 'normal', 'age_days': None}
+                                 for b in demo_positions.get(position, [])]
                 else:
                     raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
 
@@ -1358,6 +1422,7 @@ def shelf_preview():
         demo_mode=demo_mode,
         unit=unit,
         sector=sector or DEFAULT_SECTOR,
+        time_thresholds=_thresholds_sp,
     )
 
 @app.route('/zone/add', methods=['POST'])
@@ -1909,15 +1974,15 @@ def add_order():
 
         is_triage_request = is_triage_sector or is_triage_zone(zone, unit)
 
-        if is_triage_request and not box:
-            flash('Numero do cliente e obrigatorio para enderecamento na TRIAGEM', 'danger')
+        if not box:
+            flash('Número da Caixa é obrigatório (1 a 5 dígitos numéricos)', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
 
         if not is_valid_triage_os(order_id):
             flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
 
-        if box and not is_valid_box_number(box):
+        if not is_valid_box_number(box):
             flash('Numero da caixa deve conter apenas digitos, com no maximo 5 digitos', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
@@ -2760,6 +2825,27 @@ def edit_user_sector():
 def about():
     """Página de informações"""
     return render_template('about.html')
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    """Página de configurações gerais do sistema."""
+    thresholds = load_time_thresholds()
+    if request.method == 'POST':
+        try:
+            green_days  = int(request.form.get('green_days',  thresholds['green_days']))
+            yellow_days = int(request.form.get('yellow_days', thresholds['yellow_days']))
+            red_days    = int(request.form.get('red_days',    thresholds['red_days']))
+            if not (0 < green_days < yellow_days < red_days):
+                flash('Os limiares devem ser crescentes e maiores que zero.', 'danger')
+            else:
+                save_time_thresholds(green_days, yellow_days, red_days)
+                flash('Configurações salvas com sucesso!', 'success')
+                thresholds = load_time_thresholds()
+        except (ValueError, TypeError):
+            flash('Valores inválidos. Informe números inteiros.', 'danger')
+    return render_template('settings.html', thresholds=thresholds)
 
 # ============================================================================
 # MANIPULAÇÃO DE ERROS

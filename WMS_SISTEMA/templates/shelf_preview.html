@@ -100,10 +100,10 @@
         min-height: 44px;
     }
 
-    /* black box block */
+    /* box block — tier de cor por tempo de permanência */
     .box-block {
         height: 19px;
-        background: #0a0a0a;
+        background: #166534;
         color: #fff;
         display: flex;
         align-items: center;
@@ -117,6 +117,10 @@
         padding: 0 4px;
         border-radius: 2px;
     }
+    .box-tier-normal   { background: #166534; color: #fff; }
+    .box-tier-attention{ background: #FFDE21; color: #1a1a1a; }
+    .box-tier-urgent   { background: #991b1b; color: #fff; }
+    .box-tier-critical { background: #0a0a0a; color: #fff; }
 
     /* address below each sub-slot */
     .slot-lbl {
@@ -140,8 +144,27 @@
 </style>
 
 <div class="proto-page">
-    <div class="proto-info">
-        Protótipo · blocos pretos = caixas alocadas, empilhadas de baixo para cima.
+    <div class="proto-info d-flex flex-wrap gap-2 align-items-center mb-3">
+        <span><i class="bi bi-clock"></i> Tempo de permanência:</span>
+        <span style="background:#166534;color:#fff;padding:1px 7px;border-radius:3px;font-size:10px;">
+            Verde &mdash;
+            {% if time_thresholds %}&lt; {{ time_thresholds.green_days }}d{% endif %} Normal
+        </span>
+        <span style="background:#FFDE21;color:#1a1a1a;padding:1px 7px;border-radius:3px;font-size:10px;">
+            Amarelo &mdash;
+            {% if time_thresholds %}{{ time_thresholds.green_days }}&ndash;{{ time_thresholds.yellow_days }}d{% endif %} Atenção
+        </span>
+        <span style="background:#991b1b;color:#fff;padding:1px 7px;border-radius:3px;font-size:10px;">
+            Vermelho &mdash;
+            {% if time_thresholds %}{{ time_thresholds.yellow_days }}&ndash;{{ time_thresholds.red_days }}d{% endif %} Urgente
+        </span>
+        <span style="background:#0a0a0a;color:#fff;padding:1px 7px;border-radius:3px;font-size:10px;border:1px solid #555;">
+            Preto &mdash;
+            {% if time_thresholds %}&ge; {{ time_thresholds.red_days }}d{% endif %} Crítico
+        </span>
+        {% if not demo_mode %}
+            <a href="{{ url_for('settings') }}" style="font-size:10px;margin-left:4px;"><i class="bi bi-gear"></i> Configurar</a>
+        {% endif %}
     </div>
 
     <div class="racks-wrap">
@@ -172,7 +195,7 @@
                                             <div class="mod-slot">
                                                 <div class="box-stack">
                                                     {% for box in cell.boxes %}
-                                                        <div class="box-block">{{ box }}</div>
+                                                        <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                     {% endfor %}
                                                 </div>
                                                 <div class="slot-lbl" title="{{ cell.position }}">{{ cell.position }}</div>
@@ -190,7 +213,7 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in chunk %}
-                                                            <div class="box-block">{{ box }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                 </div>
