@@ -85,6 +85,49 @@
             </div>
         </div>
 
+        <!-- ── Backup do Banco de Dados ─────────────────────────────── -->
+        <div class="card mb-4" style="border-left: 5px solid #198754;">
+            <div class="card-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-archive"></i> Backup do Banco de Dados</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    <i class="bi bi-hdd-network"></i> Destino:
+                    <code>{{ backup_dir }}</code><br>
+                    <i class="bi bi-clock"></i> Backup automático executado diariamente às <strong>02:00</strong>.
+                </p>
+
+                {% if is_admin %}
+                <form method="POST" action="{{ url_for('admin_backup') }}"
+                      onsubmit="return confirm('Fazer backup do banco agora?');">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-cloud-upload"></i> Fazer Backup Agora
+                    </button>
+                </form>
+                {% else %}
+                <div class="alert alert-secondary py-2 mb-0" style="font-size:0.875rem;">
+                    <i class="bi bi-lock"></i> Backup manual disponível somente para administradores.
+                </div>
+                {% endif %}
+
+                {% if backup_log %}
+                <hr class="my-3">
+                <p class="text-muted mb-1 small">
+                    <i class="bi bi-journal-text"></i> Últimas entradas do log
+                    <code style="font-size:10px;">({{ backup_dir }}\backup.log)</code>:
+                </p>
+                <pre class="rounded p-2 mb-0"
+                     style="background:#1a1a1a; color:#d4edda; font-size:11px; max-height:200px; overflow-y:auto; white-space:pre-wrap;">{% for line in backup_log %}{{ line }}
+{% endfor %}</pre>
+                {% else %}
+                <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:0.875rem;">
+                    <i class="bi bi-info-circle"></i> Nenhum backup realizado ainda.
+                    O log será criado automaticamente após o primeiro backup.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
     </div>
 </div>
 {% endblock %}

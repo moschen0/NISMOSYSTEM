@@ -114,6 +114,12 @@ DB_PATH = resolve_db_path()
 def get_db_path():
     """Retorna o caminho resolvido do banco MDB em uso."""
     return DB_PATH
+
+
+# ============================================================================
+# CONSTANTES E CONFIGURAÇÃO
+# ============================================================================
+
 DEFAULT_UNIT = 'MASTER'
 DEFAULT_SECTOR = 'AR'
 AVAILABLE_UNITS = ('MASTER', 'WR', 'AMX')

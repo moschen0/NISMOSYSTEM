@@ -6,13 +6,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo ==============================================
-echo Build do executavel WMS (PyInstaller)
-echo ==============================================
+echo ============================================================
+echo  WMS - COMPILADOR (PyInstaller)
+echo  Gera dist\WMS_Server\WMS_Server.exe
+echo ============================================================
 echo.
 
 set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
-set "SYS_PY=C:\Users\User\AppData\Local\Programs\Python\Python312\python.exe"
 set "PY_CMD="
 
 if not exist "run_production.py" (
@@ -26,9 +26,9 @@ if exist "%VENV_PY%" (
     if not errorlevel 1 set "PY_CMD=%VENV_PY%"
 )
 
-if not defined PY_CMD if exist "%SYS_PY%" (
-    "%SYS_PY%" --version >nul 2>&1
-    if not errorlevel 1 set "PY_CMD=%SYS_PY%"
+if not defined PY_CMD (
+    py -3 --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=py -3"
 )
 
 if not defined PY_CMD (

@@ -2,7 +2,7 @@
 Script para rodar o WMS em modo produção usando Waitress
 """
 from waitress import serve
-from web_app import app
+from web_app import app, start_daily_backup_scheduler
 import db_mdb
 import socket
 import sys
@@ -47,6 +47,9 @@ if __name__ == '__main__':
     print(f"Ou via rede: http://{local_ip}:5000")
     print("=" * 60)
     print("\nPressione CTRL+C para parar o servidor\n")
-    
+
+    # Inicia agendador de backup automático diário (02:00)
+    start_daily_backup_scheduler()
+
     # Rodar com Waitress (servidor WSGI adequado para produção)
     serve(app, host='0.0.0.0', port=5000, threads=4)

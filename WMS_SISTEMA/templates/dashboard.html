@@ -292,8 +292,14 @@
 
                     {% for shelf in shelf_list %}
                     <div class="card-body border-bottom" style="background-color: #fafafa;">
-                        <h6 class="mb-3">
-                            <i class="bi bi-layers-fill"></i> Módulo <strong>{{ shelf.module }}</strong>
+                        <h6 class="mb-3 d-flex align-items-center gap-2">
+                            <span><i class="bi bi-layers-fill"></i> Módulo <strong>{{ shelf.module }}</strong></span>
+                            <a href="{{ url_for('audit_select', address=shelf.zone ~ '-' ~ shelf.module) }}"
+                               class="btn btn-sm btn-outline-secondary"
+                               title="Conferência deste módulo"
+                               style="opacity:0.5; padding:1px 7px; font-size:11px; line-height:1.8;">
+                                <i class="bi bi-clipboard2-check"></i>
+                            </a>
                         </h6>
                         
                         <!-- Andares -->
@@ -398,7 +404,15 @@
                     <article class="rack">
                         <div class="rack-header">
                             <span>Zona {{ shelf.zone }} · Módulo {{ shelf.module|int if shelf.module.isdigit() else shelf.module }}</span>
-                            <span class="rack-pct">{{ shelf.occupancy_percent }}% ocupação</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="{{ url_for('audit_select', address=shelf.zone ~ '-' ~ shelf.module) }}"
+                                   title="Conferência"
+                                   style="color:rgba(26,26,26,0.4); text-decoration:none; line-height:1;"
+                                   onclick="event.stopPropagation();">
+                                    <i class="bi bi-clipboard2-check" style="font-size:12px;"></i>
+                                </a>
+                                <span class="rack-pct">{{ shelf.occupancy_percent }}% ocupação</span>
+                            </div>
                         </div>
                         <div class="rack-body">
                             {% for row in shelf.rows %}

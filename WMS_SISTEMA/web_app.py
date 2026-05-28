@@ -7,10 +7,15 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from functools import wraps
 from datetime import datetime
 import json
+import logging
 import os
 import re
+import shutil
 import sys
+import threading
+import time
 import unicodedata
+from logging.handlers import RotatingFileHandler
 import db_mdb
 
 # Carrega variáveis do arquivo .env (se existir) sem sobrescrever vars de ambiente já definidas
@@ -70,6 +75,55 @@ TAG_RULES = {
     'none': 'Sem regra automatica'
 }
 TRIAGE_SECTOR = 'TRIAGEM'
+
+# ============================================================================
+# LOGGER WMS
+# ============================================================================
+
+# WMS.log fica na pasta-pai (raiz do projeto), um nível acima de WMS_SISTEMA
+_WMS_LOG_PATH = os.path.normpath(os.path.join(DATA_BASE_DIR, '..', 'WMS.log'))
+
+
+def _setup_wms_logger() -> logging.Logger:
+    """Configura e retorna o logger principal do WMS.
+
+    Formato: [DD/MM/YYYY HH:MM:SS] LEVEL   | mensagem
+    Arquivo rotativo: 2 MB por arquivo, 5 backups (WMS.log, WMS.log.1 … .5).
+    """
+    logger = logging.getLogger('wms')
+    if logger.handlers:          # evita duplicação em reloads
+        return logger
+    logger.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        '[%(asctime)s] %(levelname)-7s | %(message)s',
+        datefmt='%d/%m/%Y %H:%M:%S'
+    )
+    try:
+        fh = RotatingFileHandler(
+            _WMS_LOG_PATH,
+            maxBytes=2 * 1024 * 1024,   # 2 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    except Exception as _log_err:
+        print(f'[LOGGER] Não foi possível criar WMS.log: {_log_err}')
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+    return logger
+
+
+wms_logger = _setup_wms_logger()
+
+# ============================================================================
+# MODEL — TEMPO / COR
+# ============================================================================
 
 # Defaults para thresholds de tempo de permanência (dias)
 _DEFAULT_THRESHOLDS = {'green_days': 3, 'yellow_days': 4, 'red_days': 6}
@@ -132,9 +186,9 @@ def make_box_entry(order, thresholds):
     age_days = get_order_age_days(order.get('timestamp'))
     tier = get_age_tier(age_days, thresholds)
     return {'label': label, 'tier': tier, 'age_days': age_days}
-# 𓃶𓃶
+
 # ============================================================================
-# GERENCIAMENTO DE CÉLULAS/SETORES
+# MODEL — SETORES
 # ============================================================================
 
 def load_sectors():
@@ -190,6 +244,97 @@ def get_active_sector_keys():
     sectors = load_sectors()
     return [k for k, v in sectors.items() if v.get('status') == 'active']
 
+# ============================================================================
+# MODEL — BACKUP
+# ============================================================================
+
+BACKUP_DIR = r'\\192.168.1.210\apps master\BAKCUP BANDO WMS'
+BACKUP_LOG = os.path.join(BACKUP_DIR, 'backup.log')
+
+_backup_last_date = None
+
+
+def _write_backup_log(message):
+    """Escreve uma linha no log de backup, criando o arquivo se necessário."""
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        line = f'[{timestamp}] {message}\n'
+        with open(BACKUP_LOG, 'a', encoding='utf-8') as f:
+            f.write(line)
+    except Exception as e:
+        print(f'[BACKUP] Erro ao escrever log: {e}')
+
+
+def perform_backup(triggered_by='sistema'):
+    """Copia wms_database.mdb para o diretório de backup de rede com timestamp.
+    Retorna (sucesso: bool, mensagem: str).
+    """
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        src = db_mdb.get_db_path()
+        if not os.path.isfile(src):
+            msg = f'ERRO - Arquivo de origem não encontrado: {src}'
+            _write_backup_log(msg)
+            return False, 'Arquivo de banco de dados não encontrado.'
+        ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f'wms_database_{ts}.mdb'
+        dst = os.path.join(BACKUP_DIR, filename)
+        shutil.copy2(src, dst)
+        size_kb = os.path.getsize(dst) // 1024
+        msg = f'SUCESSO - {filename} ({size_kb} KB) por {triggered_by}'
+        _write_backup_log(msg)
+        wms_logger.info(f'BACKUP OK | {filename} ({size_kb} KB) por {triggered_by}')
+        return True, f'Backup realizado: {filename} ({size_kb} KB)'
+    except Exception as e:
+        msg = f'ERRO - {e} (por {triggered_by})'
+        _write_backup_log(msg)
+        wms_logger.error(f'BACKUP ERRO | {e} | por {triggered_by}')
+        return False, str(e)
+
+
+def get_backup_log_tail(n=15):
+    """Retorna as últimas N linhas do log de backup."""
+    try:
+        if not os.path.isfile(BACKUP_LOG):
+            return []
+        with open(BACKUP_LOG, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        return [line.rstrip() for line in lines[-n:]]
+    except Exception:
+        return []
+
+
+def _daily_backup_worker():
+    """Thread de backup automático diário às 02:00."""
+    global _backup_last_date
+    backup_hour = 2
+    while True:
+        try:
+            now = datetime.now()
+            today = now.date()
+            if now.hour >= backup_hour and _backup_last_date != today:
+                _backup_last_date = today
+                print('[BACKUP] Iniciando backup automático diário...')
+                ok, msg = perform_backup(triggered_by='auto-diário')
+                print(f'[BACKUP] {msg}')
+        except Exception as e:
+            print(f'[BACKUP] Erro no worker: {e}')
+        time.sleep(600)  # verifica a cada 10 minutos
+
+
+def start_daily_backup_scheduler():
+    """Inicia o thread de backup automático diário em background."""
+    t = threading.Thread(target=_daily_backup_worker, daemon=True, name='backup-scheduler')
+    t.start()
+    wms_logger.info('BACKUP SCHEDULER | Agendador de backup diário iniciado (02:00)')
+    print('[BACKUP] Agendador de backup diário iniciado (02:00).')
+
+
+# ============================================================================
+# APLICAÇÃO FLASK
+# ============================================================================
+
 app = Flask(
     __name__,
     template_folder=TEMPLATES_DIR,
@@ -220,7 +365,7 @@ def inject_admin_context():
 
 
 # ============================================================================
-# AUTENTICAÇÃO
+# MIDDLEWARE — AUTENTICAÇÃO
 # ============================================================================
 
 def login_required(f):
@@ -276,7 +421,7 @@ def is_valid_unit(unit):
     return db_mdb.normalize_unit(unit) in AVAILABLE_UNITS
 
 # ============================================================================
-# FUNÇÕES UTILITÁRIAS
+# MODEL — UTILITÁRIOS
 # ============================================================================
 
 def validate_username(username):
@@ -346,6 +491,27 @@ def shelf_sort_key(shelf):
 def count_orders_at_position(position, unit=None, sector=None):
     """Conta quantos pedidos ativos (status add) estão em uma posição"""
     return db_mdb.count_orders_in_position(position, unit=unit, sector=sector)
+
+
+def get_positions_for_address(address, unit=None, sector=None):
+    """Retorna posições do DB que correspondem ao endereço de auditoria.
+
+    Regras de correspondência (address em maiúsculas):
+    - 'P-01'       → todas as posições que começam com 'P-01-'
+    - 'P-01-02'    → posição exata 'P-01-02' OU que começam com 'P-01-02-'
+    - 'P-01-02-03' → exatamente 'P-01-02-03'
+    """
+    addr = address.strip().upper()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    all_positions = []
+    for shelf in shelves:
+        zone = shelf.get('zone', '')
+        module = shelf.get('module', '')
+        levels = int(shelf.get('levels', 1) or 1)
+        columns = int(shelf.get('columns', 1) or 1)
+        all_positions.extend(get_shelf_positions(zone, module, levels, columns))
+    return [p for p in all_positions
+            if p.upper() == addr or p.upper().startswith(addr + '-')]
 
 
 def normalize_header(text):
@@ -440,6 +606,10 @@ def parse_triage_excel_rows(file_storage):
         })
 
     return parsed, errors
+
+# ============================================================================
+# MODEL — ZONAS E TAGS
+# ============================================================================
 
 def load_zone_metadata():
     """Carrega descrições de zona salvas localmente."""
@@ -927,8 +1097,10 @@ def login():
                 session['unit'] = db_mdb.normalize_unit(user.get('unit', unit))
                 session['sector'] = user.get('sector', DEFAULT_SECTOR) or DEFAULT_SECTOR
             flash(f'Bem-vindo, {username}!', 'success')
+            wms_logger.info(f'LOGIN OK | user={username} unit={session["unit"]} ip={request.remote_addr}')
             return redirect(url_for('dashboard'))
         
+        wms_logger.warning(f'LOGIN FALHOU | user={username} unit={unit} ip={request.remote_addr}')
         flash('Usuário ou senha incorretos', 'danger')
     
     return render_template(
@@ -981,6 +1153,7 @@ def register():
             unit=unit
         )
         
+        wms_logger.info(f'REGISTER | novo_user={username} unit={unit} setor={sector}')
         flash(f'Usuário {username} registrado com sucesso na unidade {unit}! Faça login.', 'success')
         return redirect(url_for('login'))
     
@@ -991,6 +1164,7 @@ def register():
 def logout():
     """Faz logout do usuário"""
     username = session.get('user', 'Usuário')
+    wms_logger.info(f'LOGOUT | user={username}')
     session.clear()
     flash(f'{username} desconectado com sucesso', 'info')
     return redirect(url_for('login'))
@@ -1972,8 +2146,6 @@ def add_order():
                 flash('ID do Pedido é obrigatório', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
 
-        is_triage_request = is_triage_sector or is_triage_zone(zone, unit)
-
         if not box:
             flash('Número da Caixa é obrigatório (1 a 5 dígitos numéricos)', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
@@ -2060,6 +2232,7 @@ def add_order():
         )
         
         flash(f'Pedido {order_id} adicionado à posição {position}', 'success')
+        wms_logger.info(f'ORDER ADD | pedido={order_id} cx={box} pos={position} user={session.get("user")} unit={unit}')
         if bipador_mode or quick_mode:
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         return redirect(url_for('position_detail', code=position))
@@ -2391,6 +2564,7 @@ def checkout_order():
         )
         
         flash(f'✅ Pedido {order_id} retirado com sucesso da posição {position}!', 'success')
+        wms_logger.info(f'ORDER CHECKOUT | pedido={order_id} pos={position} user={session.get("user")} unit={unit}')
         return redirect(url_for('checkout_order'))
     
     return render_template('checkout.html', is_triage_sector=is_triage_sector)
@@ -2419,6 +2593,7 @@ def remove_order():
             sector=get_current_sector() or DEFAULT_SECTOR
         )
         flash(f'Pedido {order_id} removido', 'success')
+        wms_logger.info(f'ORDER REMOVE | pedido={order_id} pos={position} user={session.get("user")} unit={unit}')
     else:
         flash('Pedido não encontrado', 'warning')
     
@@ -2491,6 +2666,7 @@ def move_order():
         )
         
         flash(f'Pedido {order_id} movido de {position} para {destination}', 'success')
+        wms_logger.info(f'ORDER MOVE | pedido={order_id} {position}->{destination} user={current_user} unit={unit}')
     except Exception as e:
         flash(f'Erro ao mover pedido: {str(e)}', 'danger')
         return redirect(url_for('position_detail', code=position))
@@ -2677,6 +2853,7 @@ def reset_user_password():
     # Atualizar senha
     try:
         db_mdb.update_user(target_username, unit=unit, password=new_password)
+        wms_logger.info(f'USER RESET-SENHA | alvo={target_username} unit={unit} por={session.get("user")}')
         flash(f'Senha de "{target_username}" alterada com sucesso!', 'success')
         
         # Registrar auditoria
@@ -2723,6 +2900,7 @@ def toggle_user_status():
         db_mdb.update_user(target_username, unit=unit, active=new_status)
         
         status_text = 'ativado' if new_status else 'desativado'
+        wms_logger.info(f'USER TOGGLE | alvo={target_username} status={status_text} unit={unit} por={session.get("user")}')
         flash(f'Usuário "{target_username}" {status_text} com sucesso!', 'success')
         
         # Registrar auditoria
@@ -2766,6 +2944,7 @@ def delete_user():
     # Deletar usuário
     try:
         db_mdb.delete_user(target_username, unit=unit)
+        wms_logger.warning(f'USER DELETE | alvo={target_username} unit={unit} por={session.get("user")}')
         flash(f'Usuário "{target_username}" deletado com sucesso!', 'success')
         
         # Registrar auditoria
@@ -2805,6 +2984,7 @@ def edit_user_sector():
     # Atualizar setor
     try:
         db_mdb.update_user(target_username, unit=unit, sector=new_sector)
+        wms_logger.info(f'USER EDIT-SETOR | alvo={target_username} setor_novo="{new_sector or "Geral"}" unit={unit} por={session.get("user")}')
         flash(f'Setor de "{target_username}" atualizado para "{new_sector or "Geral"}"!', 'success')
         
         # Registrar auditoria
@@ -2845,7 +3025,135 @@ def settings():
                 thresholds = load_time_thresholds()
         except (ValueError, TypeError):
             flash('Valores inválidos. Informe números inteiros.', 'danger')
-    return render_template('settings.html', thresholds=thresholds)
+    return render_template('settings.html',
+                           thresholds=thresholds,
+                           backup_log=get_backup_log_tail(),
+                           backup_dir=BACKUP_DIR)
+
+
+@app.route('/admin/backup', methods=['POST'])
+@login_required
+def admin_backup():
+    """Backup manual do banco de dados (somente admin)."""
+    if session.get('user', '').lower() != 'admin':
+        flash('Acesso restrito a administradores.', 'danger')
+        return redirect(url_for('settings'))
+    user = session.get('user', 'admin')
+    ok, msg = perform_backup(triggered_by=f'{user} (manual)')
+    if ok:
+        flash(f'✓ {msg}', 'success')
+    else:
+        flash(f'Erro no backup: {msg}', 'danger')
+    return redirect(url_for('settings'))
+
+
+@app.route('/audit', methods=['GET', 'POST'])
+@login_required
+def audit_select():
+    """Seleção de endereço para entrar no modo de conferência."""
+    if request.method == 'POST':
+        address = request.form.get('address', '').strip().upper()
+        if not address:
+            flash('Informe um endereço para conferir.', 'danger')
+        else:
+            return redirect(url_for('audit_conference', address=address))
+
+    prefill = request.args.get('address', '').strip().upper()
+    unit = get_current_unit()
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+
+    shelf_map = {}
+    for s in sorted(shelves, key=lambda x: (x.get('zone', ''), x.get('module', ''))):
+        zm = f"{s.get('zone', '')}-{s.get('module', '')}"
+        if zm not in shelf_map:
+            shelf_map[zm] = int(s.get('levels', 1) or 1)
+
+    zone_module_data = [
+        {'address': zm, 'levels': list(range(levels, 0, -1))}
+        for zm, levels in shelf_map.items()
+    ]
+
+    return render_template('audit.html',
+                           conference_mode=False,
+                           zone_module_data=zone_module_data,
+                           prefill=prefill)
+
+
+@app.route('/audit/<path:address>', methods=['GET', 'POST'])
+@login_required
+def audit_conference(address):
+    """Modo de conferência double-checking para um endereço."""
+    address = address.strip().upper()
+    unit = get_current_unit()
+    sector = get_current_sector()
+
+    positions = get_positions_for_address(address, unit, sector)
+    if not positions:
+        flash(f'Endereço "{address}" não encontrado no cadastro de prateleiras.', 'warning')
+        return redirect(url_for('audit_select'))
+
+    # Pedidos esperados: ativos nas posições do endereço
+    expected_orders = {}
+    for pos in positions:
+        for o in db_mdb.get_orders_by_position(pos, unit=unit, sector=sector):
+            if o.get('status') == 'add':
+                expected_orders[o['order_id']] = o
+
+    result = None
+    scanned_raw = ''
+
+    if request.method == 'POST':
+        scanned_raw = request.form.get('scanned_ids', '')
+        scanned = [line.strip() for line in scanned_raw.splitlines() if line.strip()]
+        scanned_set = set(scanned)
+        expected_set = set(expected_orders.keys())
+
+        ok = [oid for oid in scanned if oid in expected_set]
+        missing = [expected_orders[oid] for oid in expected_set if oid not in scanned_set]
+
+        wrong_location = []
+        not_found = []
+        for oid in scanned:
+            if oid not in expected_set:
+                order = db_mdb.get_order_by_id(oid, unit=unit)
+                if order and order.get('status') == 'add':
+                    wrong_location.append({'scanned_id': oid, 'order': order})
+                else:
+                    not_found.append(oid)
+
+        result = {
+            'ok': ok,
+            'missing': missing,
+            'wrong_location': wrong_location,
+            'not_found': not_found,
+            'total_scanned': len(scanned),
+            'total_expected': len(expected_orders),
+        }
+
+        status_str = (
+            f'{len(ok)} OK, {len(missing)} faltando, '
+            f'{len(wrong_location)} endereço errado, {len(not_found)} não cadastrado'
+        )
+        db_mdb.add_movement(
+            username=session.get('user'),
+            action='audit',
+            position=address,
+            order_id='',
+            box='',
+            details=f'Conferência {address}: {status_str}',
+            timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            unit=unit,
+            sector=sector or DEFAULT_SECTOR
+        )
+
+    return render_template('audit.html',
+                           conference_mode=True,
+                           address=address,
+                           positions=positions,
+                           expected_orders=list(expected_orders.values()),
+                           scanned_raw=scanned_raw,
+                           result=result)
 
 # ============================================================================
 # MANIPULAÇÃO DE ERROS
@@ -2865,27 +3173,4 @@ def internal_error(error):
                          title='500 - Erro interno',
                          message='Ocorreu um erro interno no servidor.'), 500
 
-# ============================================================================
-# INICIALIZAÇÃO
-# ============================================================================
 
-if __name__ == '__main__':
-    print("=" * 60)
-    print("WMS Web Application (MDB Edition)")
-    print("=" * 60)
-    print(f"[INFO] Banco MDB em uso: {db_mdb.get_db_path()}")
-    try:
-        stats = db_mdb.get_database_stats()
-        print("[OK] Banco de dados MDB conectado com sucesso!")
-        print(f"   - Usuarios: {stats['users']}")
-        print(f"   - Prateleiras: {stats['shelves']}")
-        print(f"   - Pedidos ativos: {stats['active_orders']}")
-        print(f"   - Pedidos removidos: {stats['removed_orders']}")
-    except Exception as e:
-        print(f"[ERRO] Erro ao conectar ao banco: {e}")
-        print("   Verifique se wms_database.mdb existe e está acessível")
-    
-    print(f"Acesse: http://localhost:5000")
-    print("=" * 60)
-    
-    app.run(debug=False, host='0.0.0.0', port=5000)
