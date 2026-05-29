@@ -16,14 +16,22 @@ import threading
 import time
 import unicodedata
 from logging.handlers import RotatingFileHandler
-import db_mdb
 
-# Carrega variáveis do arquivo .env (se existir) sem sobrescrever vars de ambiente já definidas
+# Carrega variáveis do arquivo .env ANTES de importar db_mdb,
+# para que WMS_MDB_PATH já esteja disponível quando DB_PATH for resolvido.
+# Quando rodando como EXE (frozen), __file__ aponta para _internal; usa sys.executable como base.
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), override=False)
+    _env_base = (
+        os.path.dirname(sys.executable)
+        if getattr(sys, 'frozen', False)
+        else os.path.dirname(os.path.abspath(__file__))
+    )
+    load_dotenv(os.path.join(_env_base, '.env'), override=False)
 except ImportError:
     pass  # python-dotenv opcional; use variáveis de ambiente do sistema
+
+import db_mdb
 
 # ============================================================================
 # CONFIGURAÇÃO INICIAL
@@ -70,6 +78,7 @@ SECTORS_PATH = os.path.join(DATA_BASE_DIR, 'sectors.json')
 TIME_THRESHOLDS_PATH    = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
 TELEGRAM_CONFIG_PATH   = os.path.join(DATA_BASE_DIR, 'telegram_config.json')
 TELEGRAM_NOTIFIED_PATH = os.path.join(DATA_BASE_DIR, 'telegram_notified.json')
+DB_MODE_FILE           = os.path.join(DATA_BASE_DIR, 'db_mode.json')
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
@@ -160,6 +169,12 @@ _DEFAULT_TELEGRAM_CONFIG = {
     'notify_tiers': ['urgent', 'critical'],
     'notify_daily_report': False,
     'daily_report_hour': 8,
+    # Relatório de período (fecha mês)
+    'scheduled_report_enabled': False,
+    'scheduled_report_hour': 8,
+    'scheduled_report_mode': 'month_to_date',   # 'month_to_date' | 'full_month' | 'custom_days'
+    'scheduled_report_start_day': 1,
+    'scheduled_report_end_day': 0,              # 0 = último dia do mês
 }
 
 
@@ -184,7 +199,39 @@ def save_telegram_config(cfg):
     os.replace(tmp, TELEGRAM_CONFIG_PATH)
 
 
-def get_order_age_days(timestamp_str):
+# ============================================================================
+# MODO DO BANCO DE DADOS (produção / teste)
+# ============================================================================
+
+def load_db_mode():
+    """Retorna o modo salvo: 'production' ou 'test'. Padrão: 'production'."""
+    try:
+        if os.path.exists(DB_MODE_FILE):
+            with open(DB_MODE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if data.get('mode') in ('production', 'test'):
+                return data['mode']
+    except Exception:
+        pass
+    return 'production'
+
+
+def save_db_mode(mode: str):
+    """Persiste o modo do banco (escrita atômica)."""
+    tmp = DB_MODE_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump({'mode': mode}, f)
+    os.replace(tmp, DB_MODE_FILE)
+
+
+def apply_db_mode(mode: str):
+    """Aplica o modo de banco chamando db_mdb.switch_database com o caminho correto."""
+    path = db_mdb.DB_PATH_PROD if mode == 'production' else db_mdb.DB_PATH_TEST
+    db_mdb.switch_database(path)
+    wms_logger.info(f'DB | Modo de banco alterado para: {mode} ({path})')
+
+
+
     """Retorna a idade do pedido em dias inteiros a partir do campo timestamp."""
     if not timestamp_str:
         return None
@@ -502,14 +549,63 @@ def _telegram_daily_report_worker():
         time.sleep(600)  # verifica a cada 10 minutos
 
 
+_telegram_last_period_report_date = None
+
+
+def _telegram_scheduled_report_worker():
+    """Thread que envia o relatório de período (fecha mês) automaticamente."""
+    global _telegram_last_period_report_date
+    import telegram_notifier as tg
+
+    while True:
+        try:
+            cfg = load_telegram_config()
+            if cfg.get('scheduled_report_enabled') and tg.is_configured():
+                now = datetime.now()
+                today = now.date()
+                report_hour = int(cfg.get('scheduled_report_hour', 8))
+                if now.hour >= report_hour and _telegram_last_period_report_date != today:
+                    _telegram_last_period_report_date = today
+                    try:
+                        try:
+                            all_orders = db_mdb.get_all_orders()
+                        except Exception:
+                            all_orders = []
+                        dt_from, dt_to = tg.resolve_report_period(cfg)
+                        added, removed, active = tg.filter_orders_by_period(all_orders, dt_from, dt_to)
+                        unit = DEFAULT_UNIT
+                        csv_bytes = tg.build_period_report_csv(added, removed, active, dt_from, dt_to, unit=unit)
+                        caption = tg.build_period_report_message(added, removed, active, dt_from, dt_to, unit=unit)
+                        fname = f'relatorio_{dt_from.strftime("%Y%m%d")}_{dt_to.strftime("%Y%m%d")}.csv'
+                        ok, err = tg.send_document(csv_bytes, fname, caption=caption)
+                        if ok:
+                            wms_logger.info(f'TELEGRAM | Relatório de período enviado ({dt_from.strftime("%d/%m/%Y")} → {dt_to.strftime("%d/%m/%Y")})')
+                        else:
+                            wms_logger.warning(f'TELEGRAM | Falha no relatório de período: {err}')
+                    except Exception as exc:
+                        wms_logger.error(f'TELEGRAM | Erro ao gerar relatório de período: {exc}')
+        except Exception as exc:
+            wms_logger.error(f'TELEGRAM | Erro no worker de relatório de período: {exc}')
+        time.sleep(600)  # verifica a cada 10 minutos
+
+
 def start_telegram_schedulers():
-    """Inicia as threads de alerta de status e relatório diário do Telegram."""
+    """Inicia as threads de alerta de status, relatório diário e relatório de período."""
     t1 = threading.Thread(target=_telegram_status_alert_worker, daemon=True, name='telegram-alerts')
     t1.start()
     t2 = threading.Thread(target=_telegram_daily_report_worker, daemon=True, name='telegram-daily')
     t2.start()
-    wms_logger.info('TELEGRAM | Schedulers de alertas e relatório diário iniciados')
+    t3 = threading.Thread(target=_telegram_scheduled_report_worker, daemon=True, name='telegram-period')
+    t3.start()
+    wms_logger.info('TELEGRAM | Schedulers de alertas, relatório diário e relatório de período iniciados')
     print('[TELEGRAM] Schedulers iniciados.')
+
+
+def init_db_mode():
+    """Aplica o modo de banco salvo (produção/teste) no arranque do servidor."""
+    mode = load_db_mode()
+    apply_db_mode(mode)
+    print(f'[DB] Modo de banco: {mode.upper()} → {db_mdb.get_db_path()}')
 
 
 # ============================================================================
@@ -527,6 +623,49 @@ MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT
 DEFAULT_SECTOR = db_mdb.DEFAULT_SECTOR
 AVAILABLE_UNITS = list(db_mdb.AVAILABLE_UNITS)
+
+
+# ============================================================================
+# RASTREAMENTO DE SESSÕES ATIVAS
+# ============================================================================
+
+_active_sessions: dict = {}          # sid → {user, last_seen, ip, unit, sector}
+_active_sessions_lock = threading.Lock()
+_SESSION_TIMEOUT_MIN  = 30
+
+
+def _cleanup_sessions():
+    cutoff = datetime.now() - timedelta(minutes=_SESSION_TIMEOUT_MIN)
+    with _active_sessions_lock:
+        for k in [k for k, v in _active_sessions.items() if v['last_seen'] < cutoff]:
+            del _active_sessions[k]
+
+
+def get_active_users() -> list:
+    """Retorna lista de usuários com sessão ativa (últimos 30 min)."""
+    _cleanup_sessions()
+    with _active_sessions_lock:
+        return sorted(_active_sessions.values(), key=lambda x: x['user'])
+
+
+@app.before_request
+def _track_active_session():
+    """Registra/atualiza sessão ativa a cada request autenticado."""
+    if 'user' not in session:
+        return
+    import secrets as _sec
+    sid = session.get('_sid')
+    if not sid:
+        session['_sid'] = _sec.token_hex(10)
+        sid = session['_sid']
+    with _active_sessions_lock:
+        _active_sessions[sid] = {
+            'user':      session['user'],
+            'last_seen': datetime.now(),
+            'ip':        request.remote_addr or '?',
+            'unit':      session.get('unit', ''),
+            'sector':    session.get('sector', ''),
+        }
 
 
 @app.context_processor
@@ -1350,6 +1489,10 @@ def register():
 def logout():
     """Faz logout do usuário"""
     username = session.get('user', 'Usuário')
+    sid = session.get('_sid')
+    if sid:
+        with _active_sessions_lock:
+            _active_sessions.pop(sid, None)
     wms_logger.info(f'LOGOUT | user={username}')
     session.clear()
     flash(f'{username} desconectado com sucesso', 'info')
@@ -3219,6 +3362,17 @@ def settings():
                 tg_cfg['daily_report_hour'] = max(0, min(23, int(request.form.get('daily_report_hour', 8))))
             except (ValueError, TypeError):
                 tg_cfg['daily_report_hour'] = 8
+            # Relatório de período
+            tg_cfg['scheduled_report_enabled']   = 'scheduled_report_enabled' in request.form
+            tg_cfg['scheduled_report_mode']       = request.form.get('scheduled_report_mode', 'month_to_date')
+            if tg_cfg['scheduled_report_mode'] not in ('month_to_date', 'full_month', 'custom_days'):
+                tg_cfg['scheduled_report_mode'] = 'month_to_date'
+            try:
+                tg_cfg['scheduled_report_hour']      = max(0, min(23, int(request.form.get('scheduled_report_hour', 8))))
+                tg_cfg['scheduled_report_start_day'] = max(1, min(28, int(request.form.get('scheduled_report_start_day', 1))))
+                tg_cfg['scheduled_report_end_day']   = max(0, min(31, int(request.form.get('scheduled_report_end_day', 0))))
+            except (ValueError, TypeError):
+                pass
             save_telegram_config(tg_cfg)
             flash('Configurações do Telegram salvas!', 'success')
         else:
@@ -3236,15 +3390,41 @@ def settings():
                 flash('Valores inválidos. Informe números inteiros.', 'danger')
 
     import telegram_notifier as tg
+    db_mode = load_db_mode()
+    active_users = get_active_users() if is_admin_user() else []
     return render_template('settings.html',
                            thresholds=thresholds,
                            backup_log=get_backup_log_tail(),
                            backup_dir=BACKUP_DIR,
                            tg_cfg=tg_cfg,
-                           tg_configured=tg.is_configured())
+                           tg_configured=tg.is_configured(),
+                           db_mode=db_mode,
+                           db_path_prod=db_mdb.DB_PATH_PROD,
+                           db_path_test=db_mdb.DB_PATH_TEST,
+                           db_path_active=db_mdb.get_db_path(),
+                           active_users=active_users)
 
 
-@app.route('/admin/backup', methods=['POST'])
+@app.route('/admin/set-db-mode', methods=['POST'])
+@login_required
+def admin_set_db_mode():
+    """Troca o banco de dados ativo (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+    mode = request.form.get('mode', 'production')
+    if mode not in ('production', 'test'):
+        return jsonify({'ok': False, 'message': 'Modo inválido.'})
+    try:
+        apply_db_mode(mode)
+        save_db_mode(mode)
+        label = 'Produção' if mode == 'production' else 'Teste'
+        wms_logger.warning(f'DB | Banco alterado para {label} por {session.get("user")}')
+        return jsonify({'ok': True, 'message': f'Banco de {label} ativado.', 'path': db_mdb.get_db_path()})
+    except Exception as exc:
+        return jsonify({'ok': False, 'message': str(exc)})
+
+
+
 @login_required
 def admin_backup():
     """Backup manual do banco de dados (somente admin)."""
@@ -3496,6 +3676,57 @@ def telegram_send_daily_report_manual():
             wms_logger.info(f'TELEGRAM | Relatório diário manual por {session.get("user")}')
             return jsonify({'ok': True, 'message': 'Relatório enviado!'})
         return jsonify({'ok': False, 'message': f'Erro: {err}'})
+    except Exception as exc:
+        return jsonify({'ok': False, 'message': str(exc)})
+
+
+@app.route('/telegram/send-period-report', methods=['POST'])
+@login_required
+def telegram_send_period_report():
+    """Gera e envia o relatório de período (CSV) para o Telegram (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+
+    import telegram_notifier as tg
+    from datetime import datetime as _dt
+
+    if not tg.is_configured():
+        return jsonify({'ok': False, 'message': 'Telegram não configurado.'})
+
+    # Datas vindas do formulário (YYYY-MM-DD) ou fallback para período configurado
+    raw_from = request.form.get('date_from', '').strip()
+    raw_to   = request.form.get('date_to',   '').strip()
+
+    try:
+        if raw_from and raw_to:
+            dt_from = _dt.strptime(raw_from, '%Y-%m-%d')
+            dt_to   = _dt.strptime(raw_to,   '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        else:
+            cfg = load_telegram_config()
+            dt_from, dt_to = tg.resolve_report_period(cfg)
+    except Exception as exc:
+        return jsonify({'ok': False, 'message': f'Data inválida: {exc}'})
+
+    try:
+        try:
+            all_orders = db_mdb.get_all_orders()
+        except Exception:
+            all_orders = []
+
+        added, removed, active = tg.filter_orders_by_period(all_orders, dt_from, dt_to)
+        unit = get_current_unit()
+        csv_bytes = tg.build_period_report_csv(added, removed, active, dt_from, dt_to, unit=unit)
+        caption   = tg.build_period_report_message(added, removed, active, dt_from, dt_to, unit=unit)
+        fname     = f'relatorio_{dt_from.strftime("%Y%m%d")}_{dt_to.strftime("%Y%m%d")}.csv'
+
+        send_ok, err = tg.send_document(csv_bytes, fname, caption=caption)
+        if send_ok:
+            wms_logger.info(
+                f'TELEGRAM | Relatório de período {dt_from.strftime("%d/%m/%Y")}→{dt_to.strftime("%d/%m/%Y")}'
+                f' enviado por {session.get("user")}'
+            )
+            return jsonify({'ok': True, 'message': f'Relatório enviado! ({len(added)} cadastrados, {len(removed)} retirados, {len(active)} ativos)'})
+        return jsonify({'ok': False, 'message': f'Erro ao enviar: {err}'})
     except Exception as exc:
         return jsonify({'ok': False, 'message': str(exc)})
 

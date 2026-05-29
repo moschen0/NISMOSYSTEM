@@ -1,0 +1,14 @@
+{
+  "notify_status_alerts": false,
+  "notify_tiers": [
+    "urgent",
+    "critical"
+  ],
+  "notify_daily_report": false,
+  "daily_report_hour": 12,
+  "scheduled_report_enabled": true,
+  "scheduled_report_hour": 8,
+  "scheduled_report_mode": "custom_days",
+  "scheduled_report_start_day": 1,
+  "scheduled_report_end_day": 15
+}

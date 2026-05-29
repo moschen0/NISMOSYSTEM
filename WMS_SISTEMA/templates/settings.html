@@ -8,6 +8,97 @@
 
         <h2 class="mb-4"><i class="bi bi-gear"></i> Configurações</h2>
 
+        <!-- ── Seleção de Banco de Dados (somente admin) ─────────────── -->
+        {% if session.get('user', '')|lower == 'admin' %}
+        <div class="card mb-4" style="border-left: 5px solid #dc3545;">
+            <div class="card-header" style="background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-database-gear"></i> Banco de Dados</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Selecione qual banco de dados o servidor deve utilizar.
+                    A troca afeta <strong>todos os usuários</strong> imediatamente.
+                </p>
+
+                <div class="d-flex gap-3 flex-wrap align-items-center mb-3">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="db_mode_radio"
+                               id="dbModeProd" value="production"
+                               {% if db_mode == 'production' %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="dbModeProd">
+                            <i class="bi bi-database-fill text-success"></i> Produção
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="db_mode_radio"
+                               id="dbModeTest" value="test"
+                               {% if db_mode == 'test' %}checked{% endif %}>
+                        <label class="form-check-label fw-semibold" for="dbModeTest">
+                            <i class="bi bi-database-fill text-warning"></i> Teste
+                        </label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-2" id="btnApplyDbMode">
+                        <i class="bi bi-arrow-repeat"></i> Aplicar
+                    </button>
+                    <span id="dbModeResult" class="small ms-2"></span>
+                </div>
+
+                <div class="small text-muted">
+                    <div><i class="bi bi-hdd-network text-success"></i>
+                        <strong>Produção:</strong>
+                        <span class="font-monospace" style="font-size:0.8em;">{{ db_path_prod }}</span>
+                    </div>
+                    <div class="mt-1"><i class="bi bi-hdd text-warning"></i>
+                        <strong>Teste:</strong>
+                        <span class="font-monospace" style="font-size:0.8em;">{{ db_path_test }}</span>
+                    </div>
+                    <div class="mt-2 {% if db_mode == 'test' %}text-warning fw-bold{% else %}text-success{% endif %}">
+                        <i class="bi bi-plug-fill"></i>
+                        Banco ativo: <span id="dbActivePath" class="font-monospace" style="font-size:0.8em;">{{ db_path_active }}</span>
+                    </div>
+                </div>
+
+                {% if db_mode == 'test' %}
+                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Atenção:</strong> o sistema está usando o banco de <strong>TESTE</strong>.
+                    Usuários normais não veem esta mensagem mas estão conectados ao banco de teste.
+                </div>
+                {% endif %}
+
+                <hr class="my-3">
+
+                <!-- Sessões ativas -->
+                <p class="small fw-semibold mb-2">
+                    <i class="bi bi-people-fill"></i> Usuários com sessão ativa
+                    <span class="badge bg-secondary ms-1" id="activeUserCount">{{ active_users|length }}</span>
+                </p>
+                {% if active_users %}
+                <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" style="font-size:0.82em;">
+                    <thead class="table-light">
+                        <tr><th>Usuário</th><th>Unidade</th><th>Setor</th><th>IP</th><th>Visto</th></tr>
+                    </thead>
+                    <tbody id="activeUsersBody">
+                    {% for u in active_users %}
+                    <tr class="{% if u.user|lower == 'admin' %}table-danger{% endif %}">
+                        <td class="fw-semibold">{{ u.user }}</td>
+                        <td>{{ u.unit }}</td>
+                        <td>{{ u.sector }}</td>
+                        <td class="font-monospace">{{ u.ip }}</td>
+                        <td>{{ u.last_seen.strftime('%H:%M:%S') }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0" id="noActiveUsers">Nenhuma sessão ativa no momento.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- ── Controle de tempo de permanência ──────────────────────── -->
         <div class="card mb-4" style="border-left: 5px solid #667eea;">
             <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
@@ -162,23 +253,24 @@
 
                     <hr class="my-3">
 
+                    <!-- Relatório diário (texto) -->
                     <div class="mb-3">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="notifyDailyReport"
                                    name="notify_daily_report"
                                    {% if tg_cfg.notify_daily_report %}checked{% endif %}>
                             <label class="form-check-label fw-semibold" for="notifyDailyReport">
-                                Enviar relatório diário de pedidos
+                                Enviar resumo diário (texto) de pedidos
                             </label>
                         </div>
                         <div class="form-text ms-4">
-                            Envia automaticamente um resumo dos pedidos ativos no horário configurado.
+                            Envia automaticamente uma contagem dos pedidos por tier no horário configurado.
                         </div>
                     </div>
 
-                    <div class="mb-3 ms-4">
+                    <div class="mb-4 ms-4">
                         <label class="form-label fw-semibold small text-muted" for="dailyReportHour">
-                            Horário do relatório diário:
+                            Horário do resumo diário:
                         </label>
                         <div style="max-width:140px;">
                             <div class="input-group">
@@ -190,18 +282,138 @@
                         </div>
                     </div>
 
+                    <hr class="my-3">
+
+                    <!-- Relatório de Período (CSV — fecha mês) -->
+                    <p class="fw-semibold mb-2">
+                        <i class="bi bi-file-earmark-spreadsheet"></i>
+                        Relatório de Período — Fecha Mês (CSV)
+                    </p>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scheduledReportEnabled"
+                                   name="scheduled_report_enabled"
+                                   {% if tg_cfg.scheduled_report_enabled %}checked{% endif %}>
+                            <label class="form-check-label fw-semibold" for="scheduledReportEnabled">
+                                Envio automático do relatório de período
+                            </label>
+                        </div>
+                        <div class="form-text ms-4">
+                            Gera e envia um CSV com pedidos cadastrados, retirados e ativos no período.
+                        </div>
+                    </div>
+
+                    <div class="mb-3 ms-4">
+                        <label class="form-label fw-semibold small text-muted">Modo do período:</label>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
+                                       value="month_to_date" id="modeMonthToDate"
+                                       {% if tg_cfg.scheduled_report_mode == 'month_to_date' %}checked{% endif %}
+                                       onchange="updatePeriodPreview()">
+                                <label class="form-check-label" for="modeMonthToDate">
+                                    Do dia <strong>N</strong> do mês até <strong>hoje</strong>
+                                    <small class="text-muted">(útil para acompanhamento contínuo)</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
+                                       value="full_month" id="modeFullMonth"
+                                       {% if tg_cfg.scheduled_report_mode == 'full_month' %}checked{% endif %}
+                                       onchange="updatePeriodPreview()">
+                                <label class="form-check-label" for="modeFullMonth">
+                                    Do dia <strong>N</strong> ao <strong>último dia do mês</strong>
+                                    <small class="text-muted">(mês completo)</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
+                                       value="custom_days" id="modeCustomDays"
+                                       {% if tg_cfg.scheduled_report_mode == 'custom_days' %}checked{% endif %}
+                                       onchange="updatePeriodPreview()">
+                                <label class="form-check-label" for="modeCustomDays">
+                                    Período personalizado (dia inicial → dia final do mês)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 ms-4 mb-3" style="max-width:360px;">
+                        <div class="col-6">
+                            <label class="form-label small text-muted fw-semibold">Dia inicial:</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="scheduledStartDay"
+                                       name="scheduled_report_start_day"
+                                       value="{{ tg_cfg.scheduled_report_start_day }}"
+                                       min="1" max="28" oninput="updatePeriodPreview()">
+                                <span class="input-group-text">dia</span>
+                            </div>
+                        </div>
+                        <div class="col-6" id="endDayCol"
+                             style="{% if tg_cfg.scheduled_report_mode != 'custom_days' %}opacity:.4;pointer-events:none{% endif %}">
+                            <label class="form-label small text-muted fw-semibold">Dia final:</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="scheduledEndDay"
+                                       name="scheduled_report_end_day"
+                                       value="{{ tg_cfg.scheduled_report_end_day }}"
+                                       min="0" max="31" placeholder="0=último" oninput="updatePeriodPreview()">
+                                <span class="input-group-text">dia</span>
+                            </div>
+                            <div class="form-text">0 = último dia do mês</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 ms-4">
+                        <label class="form-label small text-muted fw-semibold" for="scheduledReportHour">
+                            Horário do envio automático:
+                        </label>
+                        <div style="max-width:140px;">
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="scheduledReportHour"
+                                       name="scheduled_report_hour"
+                                       value="{{ tg_cfg.scheduled_report_hour }}" min="0" max="23">
+                                <span class="input-group-text">h</span>
+                            </div>
+                        </div>
+                        <div id="periodPreview" class="form-text mt-1" style="color:#0088cc;font-weight:500;"></div>
+                    </div>
+
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-floppy"></i> Salvar
                         </button>
                         {% if tg_configured %}
                         <button type="button" class="btn btn-outline-info" id="btnSendDailyReport">
-                            <i class="bi bi-bar-chart-line"></i> Enviar relatório agora
+                            <i class="bi bi-bar-chart-line"></i> Enviar resumo agora
                         </button>
                         <span id="dailyReportResult" class="ms-1 small align-self-center"></span>
                         {% endif %}
                     </div>
                 </form>
+
+                {% if tg_configured %}
+                <!-- Envio manual de relatório de período -->
+                <hr class="my-3">
+                <p class="fw-semibold mb-2">
+                    <i class="bi bi-send"></i> Gerar e enviar relatório de período agora
+                </p>
+                <div class="row g-2 align-items-end" style="max-width:520px;">
+                    <div class="col-5">
+                        <label class="form-label small text-muted">Data inicial:</label>
+                        <input type="date" class="form-control" id="manualDateFrom">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label small text-muted">Data final:</label>
+                        <input type="date" class="form-control" id="manualDateTo">
+                    </div>
+                    <div class="col-2">
+                        <button type="button" class="btn btn-primary w-100" id="btnSendPeriodReport">
+                            <i class="bi bi-telegram"></i>
+                        </button>
+                    </div>
+                </div>
+                <span id="periodReportResult" class="mt-2 d-block small"></span>
+                {% endif %}
             </div>
         </div>
         {% endif %}{# end is_admin #}
@@ -255,10 +467,46 @@
 
 {% block scripts %}
 <script>
-function _tgFetch(url, resultEl, loadingText) {
+// ── Troca de banco de dados ───────────────────────────────────────────────
+const btnApplyDbMode = document.getElementById('btnApplyDbMode');
+if (btnApplyDbMode) {
+    btnApplyDbMode.addEventListener('click', function () {
+        const mode = document.querySelector('input[name="db_mode_radio"]:checked')?.value;
+        if (!mode) return;
+        const label = mode === 'production' ? 'Produção' : 'Teste';
+        const activeCount = parseInt(document.getElementById('activeUserCount')?.textContent || '0');
+        const warnUsers = activeCount > 1 ? `\n⚠️ ${activeCount} usuário(s) ativo(s) serão afetados.` : '';
+        if (!confirm(`Trocar para o banco de ${label}?${warnUsers}`)) return;
+        const result = document.getElementById('dbModeResult');
+        result.textContent = 'Aplicando…';
+        result.className = 'small ms-2 text-muted';
+        const fd = new FormData();
+        fd.append('mode', mode);
+        fetch('{{ url_for("admin_set_db_mode") }}', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => r.json())
+        .then(data => {
+            result.textContent = data.message;
+            result.className = 'small ms-2 ' + (data.ok ? 'text-success fw-bold' : 'text-danger');
+            if (data.ok && data.path) {
+                const pathEl = document.getElementById('dbActivePath');
+                if (pathEl) pathEl.textContent = data.path;
+                // Recarrega para atualizar badge e alert de teste
+                setTimeout(() => location.reload(), 1200);
+            }
+        })
+        .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small ms-2 text-danger'; });
+    });
+}
+
+function _tgFetch(url, resultEl, loadingText, extraData) {
     resultEl.textContent = loadingText || 'Aguarde…';
     resultEl.className = 'ms-2 small text-muted';
-    fetch(url, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    const fd = new FormData();
+    if (extraData) Object.entries(extraData).forEach(([k, v]) => fd.append(k, v));
+    fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
         .then(data => {
             resultEl.textContent = data.message;
@@ -287,5 +535,73 @@ if (btnDaily) {
                  'Enviando…');
     });
 }
+
+const btnPeriod = document.getElementById('btnSendPeriodReport');
+if (btnPeriod) {
+    btnPeriod.addEventListener('click', function () {
+        const df = document.getElementById('manualDateFrom').value;
+        const dt = document.getElementById('manualDateTo').value;
+        if (!df || !dt) {
+            const el = document.getElementById('periodReportResult');
+            el.textContent = 'Informe as duas datas.';
+            el.className = 'mt-2 d-block small text-danger';
+            return;
+        }
+        _tgFetch('{{ url_for("telegram_send_period_report") }}',
+                 document.getElementById('periodReportResult'),
+                 'Gerando CSV e enviando…',
+                 { date_from: df, date_to: dt });
+    });
+}
+
+// ── Pré-visualização do período configurado ───────────────────────────────
+function updatePeriodPreview() {
+    const mode      = document.querySelector('input[name="scheduled_report_mode"]:checked')?.value || 'month_to_date';
+    const startDay  = parseInt(document.getElementById('scheduledStartDay')?.value) || 1;
+    const endDay    = parseInt(document.getElementById('scheduledEndDay')?.value) || 0;
+    const endDayCol = document.getElementById('endDayCol');
+    const preview   = document.getElementById('periodPreview');
+    if (!preview) return;
+
+    // Habilita/desabilita campo de dia final
+    if (endDayCol) {
+        endDayCol.style.opacity = mode === 'custom_days' ? '1' : '0.4';
+        endDayCol.style.pointerEvents = mode === 'custom_days' ? '' : 'none';
+    }
+
+    const now    = new Date();
+    const year   = now.getFullYear();
+    const month  = now.getMonth(); // 0-based
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const clampedStart = Math.min(startDay, lastDay);
+    const clampedEnd   = endDay <= 0 || endDay > lastDay ? lastDay : endDay;
+    const monthStr = now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+    let label = '';
+    if (mode === 'month_to_date') {
+        const todayDay = now.getDate();
+        label = `Período: dia ${clampedStart} → dia ${todayDay} (hoje) de ${monthStr}`;
+    } else if (mode === 'full_month') {
+        label = `Período: dia ${clampedStart} → dia ${lastDay} de ${monthStr}`;
+    } else {
+        label = `Período: dia ${clampedStart} → dia ${clampedEnd} de ${monthStr}`;
+    }
+    preview.textContent = '📅 ' + label;
+}
+
+// Inicializa prévia
+updatePeriodPreview();
+
+// Data padrão no seletor manual: início do mês até hoje
+(function setDefaultDates() {
+    const now   = new Date();
+    const y     = now.getFullYear();
+    const m     = String(now.getMonth() + 1).padStart(2, '0');
+    const d     = String(now.getDate()).padStart(2, '0');
+    const from  = document.getElementById('manualDateFrom');
+    const to    = document.getElementById('manualDateTo');
+    if (from && !from.value) from.value = `${y}-${m}-01`;
+    if (to   && !to.value)   to.value   = `${y}-${m}-${d}`;
+})();
 </script>
 {% endblock %}

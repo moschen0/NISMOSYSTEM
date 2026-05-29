@@ -55,7 +55,7 @@ if errorlevel 1 (
 echo [INFO] Versoes do compilador:
 "%PY_CMD%" -m pip show pyinstaller | findstr /I "Name Version"
 
-"%PY_CMD%" -m PyInstaller --noconfirm --clean --onedir --console --name WMS_Server --hidden-import pyodbc --hidden-import waitress run_production.py
+"%PY_CMD%" -m PyInstaller --noconfirm --clean --onedir --console --name WMS_Server --hidden-import pyodbc --hidden-import waitress --hidden-import telegram_notifier --hidden-import dotenv run_production.py
 if errorlevel 1 (
     echo [ERRO] Falha ao gerar executavel.
     popd

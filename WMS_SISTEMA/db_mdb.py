@@ -55,12 +55,21 @@ def get_runtime_base_dir():
 
 
 def resolve_db_path():
-    """Resolve caminho do MDB priorizando a pasta WMS_BD do projeto.
+    """Resolve caminho do MDB de producao.
 
-    No modo EXE (PyInstaller 6.x), os dados bundlados ficam em _MEIPASS
-    (subpasta _internal/ dentro da pasta do exe).  O banco de rede em
-    WMS_BD e o override por variavel de ambiente sempre tem prioridade.
+    Prioridade: WMS_MDB_PATH_PROD (env) → caminhos fixos conhecidos → busca subindo dirs.
     """
+    # Variavel de ambiente tem prioridade maxima (permite override em qualquer maquina).
+    env_override = os.environ.get('WMS_MDB_PATH_PROD', '').strip()
+    if not env_override:
+        # Compatibilidade com versao anterior que usava WMS_MDB_PATH
+        env_override = os.environ.get('WMS_MDB_PATH', '').strip()
+    if env_override:
+        if os.path.isdir(env_override):
+            env_override = os.path.join(env_override, 'wms_database.mdb')
+        if os.path.exists(env_override):
+            return env_override
+
     preferred_paths = [
         r'C:\APPS MASTER\WMS\WMS_BD\wms_database.mdb',
         r'\\192.168.1.210\apps master\WMS\WMS_BD\wms_database.mdb',
@@ -69,11 +78,6 @@ def resolve_db_path():
     for path in preferred_paths:
         if os.path.exists(path):
             return path
-
-    # Override por variavel de ambiente (prioridade apos caminho padrao oficial).
-    env_override = os.environ.get('WMS_MDB_PATH', '').strip()
-    if env_override and os.path.exists(env_override):
-        return env_override
 
     runtime_dir = get_runtime_base_dir()
 
@@ -89,31 +93,67 @@ def resolve_db_path():
 
     runtime_local_db = os.path.join(runtime_dir, 'wms_database.mdb')
 
-    # Quando congelado, PyInstaller 6.x extrai datas em sys._MEIPASS
-    # (tipicamente <exe_dir>/_internal/).
     meipass_dir = getattr(sys, '_MEIPASS', None)
     meipass_bd  = os.path.join(meipass_dir, 'WMS_BD', 'wms_database.mdb') if meipass_dir else None
 
     candidates = [
-        *wms_bd_candidates,   # WMS_BD em diferentes niveis da execucao
-        meipass_bd,           # arquivo bundlado dentro do _internal do EXE
-        runtime_local_db,     # .mdb ao lado do executavel
+        *wms_bd_candidates,
+        meipass_bd,
+        runtime_local_db,
     ]
 
     for path in candidates:
         if path and os.path.exists(path):
             return path
 
-    # Fallback: retorna caminho local ao lado do executavel/script.
     return runtime_local_db
 
 
-DB_PATH = resolve_db_path()
+def resolve_db_path_test():
+    """Resolve caminho do MDB de teste.
+
+    Prioridade: WMS_MDB_PATH_TEST (env) → mesmo diretório do prod com sufixo _test.
+    """
+    env_override = os.environ.get('WMS_MDB_PATH_TEST', '').strip()
+    if env_override:
+        if os.path.isdir(env_override):
+            env_override = os.path.join(env_override, 'wms_database_test.mdb')
+        return env_override  # retorna mesmo que nao exista ainda (admin cria/copia)
+
+    # Fallback: mesmo diretório do banco de produção, com sufixo _test
+    prod = resolve_db_path()
+    base_dir = os.path.dirname(prod)
+    return os.path.join(base_dir, 'wms_database_test.mdb')
+
+
+# ── Caminhos iniciais (podem ser trocados em runtime via switch_database) ──
+DB_PATH_PROD = resolve_db_path()
+DB_PATH_TEST = resolve_db_path_test()
+
+DB_PATH = DB_PATH_PROD          # banco ativo no momento
+_db_generation = 0              # incrementado a cada troca de banco
+_db_gen_lock   = threading.Lock()
+
+
+def switch_database(new_path: str):
+    """Troca o banco ativo em runtime e invalida todas as conexoes cacheadas."""
+    global DB_PATH, _db_generation
+    with _db_gen_lock:
+        DB_PATH = new_path
+        _db_generation += 1
 
 
 def get_db_path():
-    """Retorna o caminho resolvido do banco MDB em uso."""
+    """Retorna o caminho do banco atualmente ativo."""
     return DB_PATH
+
+
+def get_db_path_prod():
+    return DB_PATH_PROD
+
+
+def get_db_path_test():
+    return DB_PATH_TEST
 
 
 # ============================================================================
@@ -407,6 +447,16 @@ def get_connection():
         )
 
     conn = getattr(_thread_local, 'connection', None)
+    conn_gen = getattr(_thread_local, 'db_generation', -1)
+
+    # Invalida conexao cacheada se o banco foi trocado desde a ultima abertura.
+    if conn is not None and conn_gen != _db_generation:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = None
+        _thread_local.connection = None
 
     if not os.path.exists(DB_PATH):
         raise RuntimeError(
@@ -446,6 +496,7 @@ def get_connection():
             f'Falha ao conectar no banco MDB usando driver "{driver_name}" em "{DB_PATH}". '
             f'Detalhe: {exc}'
         ) from exc
+    _thread_local.db_generation = _db_generation
     _ensure_unit_schema(_thread_local.connection)
     _ensure_triage_schema(_thread_local.connection)
     return _thread_local.connection

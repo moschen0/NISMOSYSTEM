@@ -16,7 +16,8 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+import calendar
+from datetime import datetime, date as _date, timedelta
 
 logger = logging.getLogger('wms')
 
@@ -289,3 +290,180 @@ def _calc_age_days(timestamp_str):
         except ValueError:
             continue
     return None
+
+
+# ============================================================================
+# RELATÓRIO DE PERÍODO (FECHA MÊS)
+# ============================================================================
+
+def resolve_report_period(cfg):
+    """Calcula (datetime_from, datetime_to) com base no modo configurado.
+
+    Modos:
+        'month_to_date'  — do dia start_day do mês atual até hoje
+        'full_month'     — do dia start_day até o último dia do mês atual
+        'custom_days'    — do dia start_day até o dia end_day do mês atual
+                           (end_day=0 significa último dia do mês)
+
+    Returns:
+        (datetime, datetime) — início e fim do período (inclusivos).
+    """
+    today = datetime.now().date()
+    mode = cfg.get('scheduled_report_mode', 'month_to_date')
+    start_day = max(1, int(cfg.get('scheduled_report_start_day', 1) or 1))
+    end_day = int(cfg.get('scheduled_report_end_day', 0) or 0)
+
+    _, last = calendar.monthrange(today.year, today.month)
+    start_day = min(start_day, last)
+
+    if mode == 'full_month':
+        date_from = _date(today.year, today.month, start_day)
+        date_to = _date(today.year, today.month, last)
+    elif mode == 'custom_days':
+        date_from = _date(today.year, today.month, start_day)
+        if end_day <= 0 or end_day > last:
+            date_to = _date(today.year, today.month, last)
+        else:
+            date_to = _date(today.year, today.month, min(end_day, last))
+    else:  # month_to_date (default)
+        date_from = _date(today.year, today.month, start_day)
+        date_to = today
+
+    dt_from = datetime(date_from.year, date_from.month, date_from.day, 0, 0, 0)
+    dt_to   = datetime(date_to.year,   date_to.month,   date_to.day,   23, 59, 59)
+    return dt_from, dt_to
+
+
+def _parse_dt(s):
+    """Faz parse de string de data/hora para datetime. Retorna None se falhar."""
+    if not s:
+        return None
+    for fmt in ('%d/%m/%Y %H:%M:%S', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(str(s).strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def filter_orders_by_period(all_orders, dt_from, dt_to):
+    """Separa todos os pedidos em três listas:
+
+    - added:   cadastrados (timestamp) dentro do período
+    - removed: retirados (removed_at) dentro do período
+    - active:  com status='add' (independente do período — snapshot atual)
+    """
+    added, removed, active = [], [], []
+    for o in all_orders:
+        ts = _parse_dt(o.get('timestamp'))
+        if ts and dt_from <= ts <= dt_to:
+            added.append(o)
+
+        ra = _parse_dt(o.get('removed_at'))
+        if ra and dt_from <= ra <= dt_to:
+            removed.append(o)
+
+        if str(o.get('status', '')).strip().lower() == 'add':
+            active.append(o)
+
+    added.sort(key=lambda x: _parse_dt(x.get('timestamp')) or datetime.min)
+    removed.sort(key=lambda x: _parse_dt(x.get('removed_at')) or datetime.min)
+    active.sort(key=lambda x: _parse_dt(x.get('timestamp')) or datetime.min)
+    return added, removed, active
+
+
+def build_period_report_csv(added, removed, active, dt_from, dt_to, unit=''):
+    """Gera bytes UTF-8-BOM de CSV para o relatório de período (fecha mês).
+
+    Args:
+        added:    pedidos cadastrados no período.
+        removed:  pedidos retirados no período.
+        active:   pedidos ativos no momento do fechamento.
+        dt_from:  datetime de início do período.
+        dt_to:    datetime de fim do período.
+        unit:     unidade (exibição).
+
+    Returns:
+        bytes do CSV com BOM para compatibilidade com Excel PT-BR.
+    """
+    output = io.StringIO()
+    w = csv.writer(output)
+    fmt = '%d/%m/%Y'
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    w.writerow(['WMS — Relatório de Período'])
+    w.writerow(['Período', f'{dt_from.strftime(fmt)} até {dt_to.strftime(fmt)}'])
+    w.writerow(['Gerado em', datetime.now().strftime('%d/%m/%Y %H:%M:%S')])
+    if unit:
+        w.writerow(['Unidade', unit])
+    w.writerow([])
+
+    # ── Resumo ──────────────────────────────────────────────────────────────
+    w.writerow(['RESUMO'])
+    w.writerow(['Pedidos cadastrados no período', len(added)])
+    w.writerow(['Pedidos retirados no período',   len(removed)])
+    w.writerow(['Pedidos ativos no fechamento',   len(active)])
+    w.writerow([])
+
+    # ── Seção A: Cadastrados ─────────────────────────────────────────────
+    w.writerow(['=== A. CADASTRADOS NO PERÍODO ==='])
+    w.writerow(['PEDIDO', 'CAIXA', 'POSIÇÃO', 'DATA PEDIDO', 'CADASTRADO EM', 'CADASTRADO POR', 'SETOR'])
+    for o in added:
+        w.writerow([
+            o.get('order_id', ''),
+            o.get('box', ''),
+            o.get('position', ''),
+            o.get('date', ''),
+            o.get('timestamp', ''),
+            o.get('created_by', ''),
+            o.get('sector', ''),
+        ])
+    w.writerow([])
+
+    # ── Seção B: Retirados ───────────────────────────────────────────────
+    w.writerow(['=== B. RETIRADOS NO PERÍODO ==='])
+    w.writerow(['PEDIDO', 'CAIXA', 'POSIÇÃO', 'RETIRADO EM', 'RETIRADO POR', 'SETOR'])
+    for o in removed:
+        w.writerow([
+            o.get('order_id', ''),
+            o.get('box', ''),
+            o.get('position', ''),
+            o.get('removed_at', ''),
+            o.get('removed_by', ''),
+            o.get('sector', ''),
+        ])
+    w.writerow([])
+
+    # ── Seção C: Ativos no fechamento ─────────────────────────────────────
+    w.writerow(['=== C. ATIVOS NO FECHAMENTO ==='])
+    w.writerow(['PEDIDO', 'CAIXA', 'POSIÇÃO', 'CADASTRADO EM', 'DIAS NO ESTOQUE', 'SETOR'])
+    for o in active:
+        age = _calc_age_days(o.get('timestamp'))
+        w.writerow([
+            o.get('order_id', ''),
+            o.get('box', ''),
+            o.get('position', ''),
+            o.get('timestamp', ''),
+            age if age is not None else '',
+            o.get('sector', ''),
+        ])
+
+    return output.getvalue().encode('utf-8-sig')
+
+
+def build_period_report_message(added, removed, active, dt_from, dt_to, unit=''):
+    """Gera mensagem HTML resumida do relatório de período para o Telegram."""
+    fmt = '%d/%m/%Y'
+    lines = [
+        '📊 <b>WMS — Relatório de Período</b>',
+        f'📅 {dt_from.strftime(fmt)} → {dt_to.strftime(fmt)}',
+    ]
+    if unit:
+        lines.append(f'🏢 Unidade: {unit}')
+    lines.append('')
+    lines.append(f'➕ Cadastrados no período: <b>{len(added)}</b>')
+    lines.append(f'➖ Retirados no período: <b>{len(removed)}</b>')
+    lines.append(f'📦 Ativos no fechamento: <b>{len(active)}</b>')
+    lines.append('')
+    lines.append('📎 <i>CSV com detalhes em anexo.</i>')
+    return '\n'.join(lines)
