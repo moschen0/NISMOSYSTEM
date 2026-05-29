@@ -67,7 +67,9 @@ ZONE_METADATA_PATH = os.path.join(DATA_BASE_DIR, 'zone_metadata.json')
 TAG_CATALOG_PATH = os.path.join(DATA_BASE_DIR, 'zone_tag_catalog.json')
 ZONE_TAGS_PATH = os.path.join(DATA_BASE_DIR, 'zone_tags_map.json')
 SECTORS_PATH = os.path.join(DATA_BASE_DIR, 'sectors.json')
-TIME_THRESHOLDS_PATH = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
+TIME_THRESHOLDS_PATH    = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
+TELEGRAM_CONFIG_PATH   = os.path.join(DATA_BASE_DIR, 'telegram_config.json')
+TELEGRAM_NOTIFIED_PATH = os.path.join(DATA_BASE_DIR, 'telegram_notified.json')
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
@@ -149,6 +151,37 @@ def save_time_thresholds(green_days, yellow_days, red_days):
             {'green_days': int(green_days), 'yellow_days': int(yellow_days), 'red_days': int(red_days)},
             f, indent=2
         )
+
+
+# ── Telegram config ──────────────────────────────────────────────────────────
+
+_DEFAULT_TELEGRAM_CONFIG = {
+    'notify_status_alerts': False,
+    'notify_tiers': ['urgent', 'critical'],
+    'notify_daily_report': False,
+    'daily_report_hour': 8,
+}
+
+
+def load_telegram_config():
+    """Carrega configurações de notificação do Telegram."""
+    if os.path.exists(TELEGRAM_CONFIG_PATH):
+        try:
+            with open(TELEGRAM_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return {k: data.get(k, v) for k, v in _DEFAULT_TELEGRAM_CONFIG.items()}
+        except Exception:
+            pass
+    return dict(_DEFAULT_TELEGRAM_CONFIG)
+
+
+def save_telegram_config(cfg):
+    """Persiste as configurações de notificação do Telegram (escrita atômica)."""
+    safe = {k: cfg.get(k, v) for k, v in _DEFAULT_TELEGRAM_CONFIG.items()}
+    tmp = TELEGRAM_CONFIG_PATH + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(safe, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, TELEGRAM_CONFIG_PATH)
 
 
 def get_order_age_days(timestamp_str):
@@ -329,6 +362,142 @@ def start_daily_backup_scheduler():
     t.start()
     wms_logger.info('BACKUP SCHEDULER | Agendador de backup diário iniciado (02:00)')
     print('[BACKUP] Agendador de backup diário iniciado (02:00).')
+
+
+# ============================================================================
+# TELEGRAM — SCHEDULERS
+# ============================================================================
+
+# Rastreia quais pedidos já foram notificados em cada tier (evita re-envio).
+# Formato: { order_id: 'attention'|'urgent'|'critical' }
+_telegram_notified_state: dict = {}
+
+
+def _load_telegram_notified():
+    global _telegram_notified_state
+    if os.path.exists(TELEGRAM_NOTIFIED_PATH):
+        try:
+            with open(TELEGRAM_NOTIFIED_PATH, 'r', encoding='utf-8') as f:
+                _telegram_notified_state = json.load(f)
+        except Exception:
+            _telegram_notified_state = {}
+    return _telegram_notified_state
+
+
+def _save_telegram_notified(data):
+    global _telegram_notified_state
+    _telegram_notified_state = data
+    tmp = TELEGRAM_NOTIFIED_PATH + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, TELEGRAM_NOTIFIED_PATH)
+    except Exception as exc:
+        wms_logger.error(f'TELEGRAM | Erro ao salvar estado de notificados: {exc}')
+
+
+def _telegram_status_alert_worker():
+    """Thread que verifica pedidos com tier alto e envia alertas ao Telegram."""
+    import telegram_notifier as tg
+    _load_telegram_notified()
+    _TIER_RANK = {'normal': 0, 'attention': 1, 'urgent': 2, 'critical': 3}
+
+    while True:
+        try:
+            cfg = load_telegram_config()
+            if cfg.get('notify_status_alerts') and tg.is_configured():
+                notify_tiers = cfg.get('notify_tiers', ['urgent', 'critical'])
+                thresholds = load_time_thresholds()
+                gd = int(thresholds.get('green_days', 3))
+                yd = int(thresholds.get('yellow_days', 4))
+                rd = int(thresholds.get('red_days', 6))
+
+                try:
+                    all_orders = db_mdb.get_all_orders(status_filter='add')
+                except TypeError:
+                    all_orders = db_mdb.get_all_orders()
+
+                notified = dict(_telegram_notified_state)
+                orders_by_tier = {'attention': [], 'urgent': [], 'critical': []}
+
+                for o in all_orders:
+                    age = get_order_age_days(o.get('timestamp'))
+                    if age is None:
+                        continue
+                    if age < gd:
+                        tier = 'normal'
+                    elif age < yd:
+                        tier = 'attention'
+                    elif age < rd:
+                        tier = 'urgent'
+                    else:
+                        tier = 'critical'
+
+                    if tier not in notify_tiers:
+                        continue
+
+                    oid = str(o.get('order_id', ''))
+                    last_tier = notified.get(oid, 'normal')
+                    if _TIER_RANK.get(tier, 0) > _TIER_RANK.get(last_tier, 0):
+                        o['_age_days'] = age
+                        orders_by_tier[tier].append(o)
+                        notified[oid] = tier
+
+                if any(orders_by_tier.values()):
+                    msg = tg.build_status_alert_message(orders_by_tier)
+                    if msg:
+                        ok, err = tg.send_message(msg)
+                        if ok:
+                            _save_telegram_notified(notified)
+                            wms_logger.info('TELEGRAM | Alerta de status enviado')
+                        else:
+                            wms_logger.warning(f'TELEGRAM | Falha no alerta de status: {err}')
+        except Exception as exc:
+            wms_logger.error(f'TELEGRAM | Erro no worker de alertas: {exc}')
+        time.sleep(3600)  # verifica a cada hora
+
+
+_telegram_last_daily_date = None
+
+
+def _telegram_daily_report_worker():
+    """Thread que envia relatório diário de pedidos ao Telegram."""
+    global _telegram_last_daily_date
+    import telegram_notifier as tg
+
+    while True:
+        try:
+            cfg = load_telegram_config()
+            if cfg.get('notify_daily_report') and tg.is_configured():
+                now = datetime.now()
+                today = now.date()
+                report_hour = int(cfg.get('daily_report_hour', 8))
+                if now.hour >= report_hour and _telegram_last_daily_date != today:
+                    _telegram_last_daily_date = today
+                    try:
+                        all_orders = db_mdb.get_all_orders(status_filter='add')
+                    except TypeError:
+                        all_orders = db_mdb.get_all_orders()
+                    thresholds = load_time_thresholds()
+                    msg = tg.build_daily_report_message(all_orders, thresholds)
+                    ok, err = tg.send_message(msg)
+                    if ok:
+                        wms_logger.info('TELEGRAM | Relatório diário enviado')
+                    else:
+                        wms_logger.warning(f'TELEGRAM | Falha no relatório diário: {err}')
+        except Exception as exc:
+            wms_logger.error(f'TELEGRAM | Erro no worker de relatório: {exc}')
+        time.sleep(600)  # verifica a cada 10 minutos
+
+
+def start_telegram_schedulers():
+    """Inicia as threads de alerta de status e relatório diário do Telegram."""
+    t1 = threading.Thread(target=_telegram_status_alert_worker, daemon=True, name='telegram-alerts')
+    t1.start()
+    t2 = threading.Thread(target=_telegram_daily_report_worker, daemon=True, name='telegram-daily')
+    t2.start()
+    wms_logger.info('TELEGRAM | Schedulers de alertas e relatório diário iniciados')
+    print('[TELEGRAM] Schedulers iniciados.')
 
 
 # ============================================================================
@@ -3012,23 +3181,42 @@ def about():
 def settings():
     """Página de configurações gerais do sistema."""
     thresholds = load_time_thresholds()
+    tg_cfg = load_telegram_config()
     if request.method == 'POST':
-        try:
-            green_days  = int(request.form.get('green_days',  thresholds['green_days']))
-            yellow_days = int(request.form.get('yellow_days', thresholds['yellow_days']))
-            red_days    = int(request.form.get('red_days',    thresholds['red_days']))
-            if not (0 < green_days < yellow_days < red_days):
-                flash('Os limiares devem ser crescentes e maiores que zero.', 'danger')
-            else:
-                save_time_thresholds(green_days, yellow_days, red_days)
-                flash('Configurações salvas com sucesso!', 'success')
-                thresholds = load_time_thresholds()
-        except (ValueError, TypeError):
-            flash('Valores inválidos. Informe números inteiros.', 'danger')
+        form_type = request.form.get('form_type', 'thresholds')
+
+        if form_type == 'telegram' and is_admin_user():
+            tg_cfg['notify_status_alerts'] = 'notify_status_alerts' in request.form
+            tg_cfg['notify_daily_report']  = 'notify_daily_report'  in request.form
+            raw_tiers = request.form.getlist('notify_tiers')
+            tg_cfg['notify_tiers'] = [t for t in raw_tiers if t in ('attention', 'urgent', 'critical')]
+            try:
+                tg_cfg['daily_report_hour'] = max(0, min(23, int(request.form.get('daily_report_hour', 8))))
+            except (ValueError, TypeError):
+                tg_cfg['daily_report_hour'] = 8
+            save_telegram_config(tg_cfg)
+            flash('Configurações do Telegram salvas!', 'success')
+        else:
+            try:
+                green_days  = int(request.form.get('green_days',  thresholds['green_days']))
+                yellow_days = int(request.form.get('yellow_days', thresholds['yellow_days']))
+                red_days    = int(request.form.get('red_days',    thresholds['red_days']))
+                if not (0 < green_days < yellow_days < red_days):
+                    flash('Os limiares devem ser crescentes e maiores que zero.', 'danger')
+                else:
+                    save_time_thresholds(green_days, yellow_days, red_days)
+                    flash('Configurações salvas com sucesso!', 'success')
+                    thresholds = load_time_thresholds()
+            except (ValueError, TypeError):
+                flash('Valores inválidos. Informe números inteiros.', 'danger')
+
+    import telegram_notifier as tg
     return render_template('settings.html',
                            thresholds=thresholds,
                            backup_log=get_backup_log_tail(),
-                           backup_dir=BACKUP_DIR)
+                           backup_dir=BACKUP_DIR,
+                           tg_cfg=tg_cfg,
+                           tg_configured=tg.is_configured())
 
 
 @app.route('/admin/backup', methods=['POST'])
@@ -3154,6 +3342,138 @@ def audit_conference(address):
                            expected_orders=list(expected_orders.values()),
                            scanned_raw=scanned_raw,
                            result=result)
+
+
+# ============================================================================
+# TELEGRAM — ROTAS
+# ============================================================================
+
+@app.route('/telegram/send-conference-csv', methods=['POST'])
+@login_required
+def telegram_send_conference_csv():
+    """Envia o CSV de conferência para o Telegram (acessível a todos os usuários)."""
+    import telegram_notifier as tg
+
+    if not tg.is_configured():
+        return jsonify({'ok': False, 'message': 'Telegram não configurado no servidor.'})
+
+    address = request.form.get('address', '').strip().upper()
+    scanned_ids_raw = request.form.get('scanned_ids', '')
+
+    if not address:
+        return jsonify({'ok': False, 'message': 'Endereço não informado.'})
+
+    unit = get_current_unit()
+    sector = get_current_sector()
+
+    scanned = [line.strip() for line in scanned_ids_raw.splitlines() if line.strip()]
+    scanned_set = set(scanned)
+
+    positions = get_positions_for_address(address, unit, sector)
+    expected_orders = {}
+    for pos in positions:
+        for o in db_mdb.get_orders_by_position(pos, unit=unit, sector=sector):
+            if o.get('status') == 'add':
+                expected_orders[o['order_id']] = o
+
+    expected_set = set(expected_orders.keys())
+    ok_list = [oid for oid in scanned if oid in expected_set]
+    missing = [expected_orders[oid] for oid in expected_set if oid not in scanned_set]
+
+    wrong_location = []
+    not_found = []
+    for oid in scanned:
+        if oid not in expected_set:
+            order = db_mdb.get_order_by_id(oid, unit=unit)
+            if order and order.get('status') == 'add':
+                wrong_location.append({'scanned_id': oid, 'order': order})
+            else:
+                not_found.append(oid)
+
+    result = {
+        'ok': ok_list,
+        'missing': missing,
+        'wrong_location': wrong_location,
+        'not_found': not_found,
+    }
+
+    csv_bytes = tg.build_conference_csv(address, result, scanned_by=session.get('user', ''))
+    filename = f'conferencia_{address}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+
+    caption = (
+        f'📋 Conferência <b>{address}</b>\n'
+        f'✅ OK: {len(ok_list)} | ❌ Faltando: {len(missing)} | '
+        f'⚠️ End. errado: {len(wrong_location)} | ❓ Não cadastrado: {len(not_found)}\n'
+        f'👤 Por: {session.get("user", "")} | {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    )
+
+    send_ok, msg = tg.send_document(csv_bytes, filename, caption=caption)
+    if send_ok:
+        wms_logger.info(
+            f'TELEGRAM | CSV conferência {address} enviado por {session.get("user")}'
+        )
+        return jsonify({'ok': True, 'message': 'Relatório enviado para o Telegram!'})
+    return jsonify({'ok': False, 'message': f'Erro ao enviar: {msg}'})
+
+
+@app.route('/telegram/test', methods=['POST'])
+@login_required
+def telegram_test():
+    """Testa a conexão com o Telegram (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+
+    import telegram_notifier as tg
+
+    if not tg.is_configured():
+        return jsonify({
+            'ok': False,
+            'message': 'Credenciais ausentes no .env (TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID).'
+        })
+
+    test_msg = (
+        f'✅ <b>WMS — Teste de Conexão</b>\n'
+        f'Integração com o Telegram funcionando!\n'
+        f'🕒 {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}'
+    )
+    send_ok, err = tg.send_message(test_msg)
+    if send_ok:
+        wms_logger.info(f'TELEGRAM | Teste de conexão bem-sucedido por {session.get("user")}')
+        return jsonify({'ok': True, 'message': 'Mensagem de teste enviada com sucesso!'})
+    return jsonify({'ok': False, 'message': f'Erro: {err}'})
+
+
+@app.route('/telegram/send-daily-report', methods=['POST'])
+@login_required
+def telegram_send_daily_report_manual():
+    """Envia o relatório diário manualmente (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+
+    import telegram_notifier as tg
+
+    if not tg.is_configured():
+        return jsonify({'ok': False, 'message': 'Telegram não configurado.'})
+
+    try:
+        try:
+            all_orders = db_mdb.get_all_orders(status_filter='add')
+        except TypeError:
+            all_orders = db_mdb.get_all_orders()
+        thresholds = load_time_thresholds()
+        msg = tg.build_daily_report_message(
+            all_orders, thresholds,
+            unit=get_current_unit(),
+            sector=session.get('sector', ''),
+        )
+        send_ok, err = tg.send_message(msg)
+        if send_ok:
+            wms_logger.info(f'TELEGRAM | Relatório diário manual por {session.get("user")}')
+            return jsonify({'ok': True, 'message': 'Relatório enviado!'})
+        return jsonify({'ok': False, 'message': f'Erro: {err}'})
+    except Exception as exc:
+        return jsonify({'ok': False, 'message': str(exc)})
+
 
 # ============================================================================
 # MANIPULAÇÃO DE ERROS

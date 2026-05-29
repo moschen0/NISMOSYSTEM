@@ -2,7 +2,7 @@
 Script para rodar o WMS em modo produção usando Waitress
 """
 from waitress import serve
-from web_app import app, start_daily_backup_scheduler
+from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers
 import db_mdb
 import socket
 import sys
@@ -50,6 +50,9 @@ if __name__ == '__main__':
 
     # Inicia agendador de backup automático diário (02:00)
     start_daily_backup_scheduler()
+
+    # Inicia schedulers do Telegram (alertas de status e relatório diário)
+    start_telegram_schedulers()
 
     # Rodar com Waitress (servidor WSGI adequado para produção)
     serve(app, host='0.0.0.0', port=5000, threads=4)

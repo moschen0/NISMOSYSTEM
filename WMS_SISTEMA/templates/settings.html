@@ -37,6 +37,7 @@
                 </div>
 
                 <form method="POST" action="{{ url_for('settings') }}">
+                    <input type="hidden" name="form_type" value="thresholds">
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">
@@ -85,6 +86,126 @@
             </div>
         </div>
 
+        <!-- ── Notificações Telegram ────────────────────────────────── -->
+        {% if is_admin %}
+        <div class="card mb-4" style="border-left: 5px solid #0088cc;">
+            <div class="card-header" style="background: linear-gradient(135deg, #0088cc 0%, #005f8e 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-telegram"></i> Notificações Telegram</h5>
+            </div>
+            <div class="card-body">
+
+                {% if tg_configured %}
+                <div class="alert alert-success py-2 mb-3" style="font-size:13px;">
+                    <i class="bi bi-check-circle-fill"></i>
+                    Bot configurado e pronto para uso.
+                    <button type="button" class="btn btn-outline-success btn-sm ms-2" id="btnTestTelegram">
+                        <i class="bi bi-send"></i> Testar conexão
+                    </button>
+                    <span id="testTgResult" class="ms-2 small"></span>
+                </div>
+                {% else %}
+                <div class="alert alert-warning py-2 mb-3" style="font-size:13px;">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    Bot <strong>não configurado</strong>.
+                    Defina <code>TELEGRAM_BOT_TOKEN</code> e <code>TELEGRAM_CHAT_ID</code>
+                    no arquivo <code>.env</code> e reinicie o servidor.
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('settings') }}">
+                    <input type="hidden" name="form_type" value="telegram">
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="notifyStatusAlerts"
+                                   name="notify_status_alerts"
+                                   {% if tg_cfg.notify_status_alerts %}checked{% endif %}>
+                            <label class="form-check-label fw-semibold" for="notifyStatusAlerts">
+                                Alertar quando pedidos mudarem de estado
+                            </label>
+                        </div>
+                        <div class="form-text ms-4">
+                            Envia mensagem ao Telegram quando um pedido passar para Atenção, Urgente ou Crítico
+                            (verificado a cada hora).
+                        </div>
+                    </div>
+
+                    <div class="mb-3 ms-4">
+                        <label class="form-label fw-semibold small text-muted">Notificar nos tiers:</label>
+                        <div class="d-flex gap-3 flex-wrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="notify_tiers"
+                                       value="attention" id="tierAttention"
+                                       {% if 'attention' in tg_cfg.notify_tiers %}checked{% endif %}>
+                                <label class="form-check-label" for="tierAttention">
+                                    <span class="badge" style="background:#FFDE21;color:#1a1a1a;">Atenção</span>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="notify_tiers"
+                                       value="urgent" id="tierUrgent"
+                                       {% if 'urgent' in tg_cfg.notify_tiers %}checked{% endif %}>
+                                <label class="form-check-label" for="tierUrgent">
+                                    <span class="badge" style="background:#991b1b;">Urgente</span>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="notify_tiers"
+                                       value="critical" id="tierCritical"
+                                       {% if 'critical' in tg_cfg.notify_tiers %}checked{% endif %}>
+                                <label class="form-check-label" for="tierCritical">
+                                    <span class="badge" style="background:#0a0a0a;">Crítico</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="notifyDailyReport"
+                                   name="notify_daily_report"
+                                   {% if tg_cfg.notify_daily_report %}checked{% endif %}>
+                            <label class="form-check-label fw-semibold" for="notifyDailyReport">
+                                Enviar relatório diário de pedidos
+                            </label>
+                        </div>
+                        <div class="form-text ms-4">
+                            Envia automaticamente um resumo dos pedidos ativos no horário configurado.
+                        </div>
+                    </div>
+
+                    <div class="mb-3 ms-4">
+                        <label class="form-label fw-semibold small text-muted" for="dailyReportHour">
+                            Horário do relatório diário:
+                        </label>
+                        <div style="max-width:140px;">
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="dailyReportHour"
+                                       name="daily_report_hour"
+                                       value="{{ tg_cfg.daily_report_hour }}" min="0" max="23">
+                                <span class="input-group-text">h</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-floppy"></i> Salvar
+                        </button>
+                        {% if tg_configured %}
+                        <button type="button" class="btn btn-outline-info" id="btnSendDailyReport">
+                            <i class="bi bi-bar-chart-line"></i> Enviar relatório agora
+                        </button>
+                        <span id="dailyReportResult" class="ms-1 small align-self-center"></span>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}{# end is_admin #}
+
         <!-- ── Backup do Banco de Dados ─────────────────────────────── -->
         <div class="card mb-4" style="border-left: 5px solid #198754;">
             <div class="card-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white;">
@@ -130,4 +251,41 @@
 
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function _tgFetch(url, resultEl, loadingText) {
+    resultEl.textContent = loadingText || 'Aguarde…';
+    resultEl.className = 'ms-2 small text-muted';
+    fetch(url, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(data => {
+            resultEl.textContent = data.message;
+            resultEl.className = 'ms-2 small ' + (data.ok ? 'text-success' : 'text-danger');
+        })
+        .catch(e => {
+            resultEl.textContent = 'Erro de rede: ' + e;
+            resultEl.className = 'ms-2 small text-danger';
+        });
+}
+
+const btnTest = document.getElementById('btnTestTelegram');
+if (btnTest) {
+    btnTest.addEventListener('click', function () {
+        _tgFetch('{{ url_for("telegram_test") }}',
+                 document.getElementById('testTgResult'),
+                 'Enviando…');
+    });
+}
+
+const btnDaily = document.getElementById('btnSendDailyReport');
+if (btnDaily) {
+    btnDaily.addEventListener('click', function () {
+        _tgFetch('{{ url_for("telegram_send_daily_report_manual") }}',
+                 document.getElementById('dailyReportResult'),
+                 'Enviando…');
+    });
+}
+</script>
 {% endblock %}

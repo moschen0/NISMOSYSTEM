@@ -318,14 +318,25 @@
       {% endif %}{# end is_admin #}
 
       {# Ação: repetir conferência #}
-      <div class="d-flex gap-2 mt-3">
+      <div class="d-flex gap-2 mt-3 flex-wrap">
         <a href="{{ url_for('audit_conference', address=address) }}" class="btn btn-outline-primary">
           <i class="bi bi-arrow-counterclockwise"></i> Refazer conferência
         </a>
         <a href="{{ url_for('audit_select') }}" class="btn btn-outline-secondary">
           <i class="bi bi-grid"></i> Outro endereço
         </a>
+        <button type="button" class="btn btn-primary" id="btnSendTelegram"
+                style="background:#0088cc; border-color:#0088cc;">
+          <i class="bi bi-telegram"></i> Enviar para Telegram
+        </button>
+        <span id="tgSendResult" class="align-self-center small"></span>
       </div>
+
+      {# Formulário oculto com os dados da conferência para envio ao Telegram #}
+      <form id="tgConferenceForm" style="display:none;">
+        <input type="hidden" name="address" value="{{ address }}">
+        <textarea name="scanned_ids">{{ scanned_raw }}</textarea>
+      </form>
 
       {% endif %}{# end result #}
     </div>{# end col-lg-8 #}
@@ -401,6 +412,41 @@ document.addEventListener('DOMContentLoaded', function () {
   updateCount();
   scanInput.focus();
 })();
+</script>
+{% endif %}
+{% if conference_mode and result %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const btn = document.getElementById('btnSendTelegram');
+  const resultEl = document.getElementById('tgSendResult');
+  if (!btn) return;
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    resultEl.textContent = 'Enviando…';
+    resultEl.className = 'align-self-center small text-muted';
+
+    const form = document.getElementById('tgConferenceForm');
+    const data = new FormData(form);
+
+    fetch('{{ url_for("telegram_send_conference_csv") }}', {
+      method: 'POST',
+      body: data,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(d => {
+      resultEl.textContent = d.message;
+      resultEl.className = 'align-self-center small ' + (d.ok ? 'text-success' : 'text-danger');
+      if (!d.ok) btn.disabled = false;
+    })
+    .catch(e => {
+      resultEl.textContent = 'Erro de rede: ' + e;
+      resultEl.className = 'align-self-center small text-danger';
+      btn.disabled = false;
+    });
+  });
+});
 </script>
 {% endif %}
 {% endblock %}

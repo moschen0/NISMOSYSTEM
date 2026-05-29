@@ -42,7 +42,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # 4. Importa a aplicação Flask (reutiliza o módulo db_mdb já patchado)
 # ---------------------------------------------------------------------------
-from web_app import app
+from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers
 
 # ---------------------------------------------------------------------------
 # 5. Inicializa e verifica conexão com o banco LOCAL
@@ -70,6 +70,12 @@ print("Pressione CTRL+C para parar\n")
 print("=" * 60)
 
 # ---------------------------------------------------------------------------
-# 6. Inicia o servidor Flask em modo debug (apenas local, porta 5001)
+# 6. Inicia schedulers em background (backup + Telegram)
+# ---------------------------------------------------------------------------
+start_daily_backup_scheduler()
+start_telegram_schedulers()
+
+# ---------------------------------------------------------------------------
+# 7. Inicia o servidor Flask em modo debug (apenas local, porta 5001)
 # ---------------------------------------------------------------------------
 app.run(debug=True, host='127.0.0.1', port=5001, use_reloader=False)
