@@ -72,6 +72,18 @@
         text-overflow: ellipsis;
         padding: 0 4px;
         border-radius: 2px;
+        cursor: help;
+        border: 1px solid transparent;
+        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, filter 120ms ease;
+    }
+    .box-block:hover,
+    .box-block:focus-visible {
+        border-color: #ffd54f;
+        box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.45), 0 3px 8px rgba(0, 0, 0, 0.28);
+        filter: brightness(1.15) saturate(1.2);
+        transform: scale(1.04);
+        position: relative;
+        z-index: 2;
     }
     .box-tier-normal   { background: #166534; color: #fff; }
     .box-tier-attention{ background: #FFDE21; color: #1a1a1a; }
@@ -87,6 +99,45 @@
         overflow: hidden;
         text-overflow: ellipsis;
         width: 100%;
+    }
+    .box-info-tooltip {
+        position: fixed;
+        z-index: 1100;
+        min-width: 240px;
+        max-width: 340px;
+        background: #ffffff;
+        border: 1px solid #cfd4da;
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+        padding: 10px;
+        display: none;
+        user-select: text;
+    }
+    .box-info-tooltip .tip-title {
+        font-size: 11px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: #1f2937;
+    }
+    .box-info-tooltip .tip-line {
+        font-size: 12px;
+        line-height: 1.35;
+        margin-bottom: 3px;
+        color: #111827;
+    }
+    .box-info-tooltip .tip-line strong {
+        color: #374151;
+    }
+    .box-info-tooltip .tip-actions {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .box-info-tooltip .tip-copy-msg {
+        font-size: 11px;
+        color: #198754;
+        display: none;
     }
 </style>
 <div class="row mb-4">
@@ -428,7 +479,12 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in cell.boxes %}
-                                                            <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}"
+                                                                 data-order-id="{{ box.order_id|default('', true)|e }}"
+                                                                 data-box-number="{{ box.box|default('', true)|e }}"
+                                                                 data-added-by="{{ box.created_by|default('', true)|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                     <div class="slot-lbl" title="{{ cell.position }}">{{ cell.position }}</div>
@@ -444,7 +500,12 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in chunk %}
-                                                            <div class="box-block box-tier-{{ box.tier }}" title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}"
+                                                                 data-order-id="{{ box.order_id|default('', true)|e }}"
+                                                                 data-box-number="{{ box.box|default('', true)|e }}"
+                                                                 data-added-by="{{ box.created_by|default('', true)|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                 </div>
@@ -505,7 +566,123 @@ function setView(view) {
 document.addEventListener('DOMContentLoaded', () => {
     const saved = localStorage.getItem('wms_tema') || 'lista';
     if (saved === 'prateleiras') setView('prateleiras');
+    initBoxInfoTooltip();
 });
+
+function initBoxInfoTooltip() {
+    const boxBlocks = document.querySelectorAll('.box-block');
+    if (!boxBlocks.length) return;
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'box-info-tooltip';
+    tooltip.innerHTML = `
+        <div class="tip-title">Detalhes da Caixa</div>
+        <div class="tip-line"><strong>OS:</strong> <span data-tip="order"></span></div>
+        <div class="tip-line"><strong>Caixa:</strong> <span data-tip="box"></span></div>
+        <div class="tip-line"><strong>Adicionado por:</strong> <span data-tip="user"></span></div>
+        <div class="tip-line"><strong>Data de add:</strong> <span data-tip="date"></span></div>
+        <div class="tip-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-tip-copy>
+                <i class="bi bi-clipboard"></i> Copiar
+            </button>
+            <span class="tip-copy-msg" data-tip-msg>Copiado!</span>
+        </div>
+    `;
+    document.body.appendChild(tooltip);
+
+    const orderEl = tooltip.querySelector('[data-tip="order"]');
+    const boxEl = tooltip.querySelector('[data-tip="box"]');
+    const userEl = tooltip.querySelector('[data-tip="user"]');
+    const dateEl = tooltip.querySelector('[data-tip="date"]');
+    const copyBtn = tooltip.querySelector('[data-tip-copy]');
+    const copyMsg = tooltip.querySelector('[data-tip-msg]');
+
+    let activePayload = null;
+    let hideTimer = null;
+
+    function fallback(value) {
+        return (value && String(value).trim()) ? String(value).trim() : '-';
+    }
+
+    function setTooltipPosition(clientX, clientY) {
+        const margin = 12;
+        let left = clientX + 14;
+        let top = clientY + 14;
+        const rect = tooltip.getBoundingClientRect();
+
+        if (left + rect.width > window.innerWidth - margin) {
+            left = window.innerWidth - rect.width - margin;
+        }
+        if (top + rect.height > window.innerHeight - margin) {
+            top = clientY - rect.height - 14;
+        }
+        if (top < margin) top = margin;
+        if (left < margin) left = margin;
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    function renderPayload(payload) {
+        orderEl.textContent = payload.order;
+        boxEl.textContent = payload.box;
+        userEl.textContent = payload.user;
+        dateEl.textContent = payload.date;
+    }
+
+    function scheduleHide() {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+            tooltip.style.display = 'none';
+        }, 180);
+    }
+
+    function showForBlock(block, event) {
+        clearTimeout(hideTimer);
+        activePayload = {
+            order: fallback(block.dataset.orderId),
+            box: fallback(block.dataset.boxNumber || block.textContent),
+            user: fallback(block.dataset.addedBy),
+            date: fallback(block.dataset.addedAt)
+        };
+        renderPayload(activePayload);
+        copyMsg.style.display = 'none';
+        tooltip.style.display = 'block';
+        setTooltipPosition(event.clientX, event.clientY);
+    }
+
+    boxBlocks.forEach((block) => {
+        block.addEventListener('mouseenter', (event) => showForBlock(block, event));
+        block.addEventListener('mousemove', (event) => {
+            if (tooltip.style.display === 'block') {
+                setTooltipPosition(event.clientX, event.clientY);
+            }
+        });
+        block.addEventListener('mouseleave', scheduleHide);
+    });
+
+    tooltip.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+    tooltip.addEventListener('mouseleave', scheduleHide);
+
+    copyBtn.addEventListener('click', async () => {
+        if (!activePayload) return;
+        const text = [
+            `OS: ${activePayload.order}`,
+            `Caixa: ${activePayload.box}`,
+            `Adicionado por: ${activePayload.user}`,
+            `Data de add: ${activePayload.date}`,
+        ].join('\n');
+
+        try {
+            await navigator.clipboard.writeText(text);
+            copyMsg.style.display = 'inline';
+        } catch (_) {
+            copyMsg.textContent = 'Falha ao copiar';
+            copyMsg.style.color = '#dc3545';
+            copyMsg.style.display = 'inline';
+        }
+    });
+}
 
 // Função para expandir/colapsar formulário de nova prateleira
 function toggleShelfForm(element) {

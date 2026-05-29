@@ -181,11 +181,23 @@ def get_age_tier(age_days, thresholds):
 
 
 def make_box_entry(order, thresholds):
-    """Constrói o dict {label, tier, age_days} de um pedido para a visualização."""
+    """Constrói os dados da caixa para visualização e tooltip de detalhes."""
     label = str(order.get('box') or order.get('order_id', '')).strip()
+    order_id = str(order.get('order_id', '') or '').strip()
+    box_number = str(order.get('box', '') or '').strip()
+    created_by = str(order.get('created_by', '') or '').strip()
+    created_at = str(order.get('timestamp') or order.get('date') or '').strip()
     age_days = get_order_age_days(order.get('timestamp'))
     tier = get_age_tier(age_days, thresholds)
-    return {'label': label, 'tier': tier, 'age_days': age_days}
+    return {
+        'label': label,
+        'tier': tier,
+        'age_days': age_days,
+        'order_id': order_id,
+        'box': box_number,
+        'created_by': created_by,
+        'created_at': created_at,
+    }
 
 # ============================================================================
 # MODEL — SETORES
@@ -1111,8 +1123,13 @@ def login():
     )
 
 @app.route('/register', methods=['GET', 'POST'])
+@login_required
 def register():
-    """Página de registro de novo usuário"""
+    """Página de registro de novo usuário (apenas admin)."""
+    if not is_admin_user():
+        flash('Apenas o admin pode criar novos usuários.', 'danger')
+        return redirect(url_for('list_users'))
+
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
@@ -1154,8 +1171,8 @@ def register():
         )
         
         wms_logger.info(f'REGISTER | novo_user={username} unit={unit} setor={sector}')
-        flash(f'Usuário {username} registrado com sucesso na unidade {unit}! Faça login.', 'success')
-        return redirect(url_for('login'))
+        flash(f'Usuário {username} registrado com sucesso na unidade {unit}!', 'success')
+        return redirect(url_for('list_users'))
     
     return render_template('register.html', available_units=AVAILABLE_UNITS, default_unit=DEFAULT_UNIT,
                            available_sectors=get_active_sector_keys())
@@ -1548,7 +1565,15 @@ def shelf_preview():
 
                 raw_boxes = orders_by_position.get(position, [])
                 if demo_mode and not raw_boxes:
-                    raw_boxes = [{'label': b, 'tier': 'normal', 'age_days': None}
+                    raw_boxes = [{
+                        'label': b,
+                        'tier': 'normal',
+                        'age_days': None,
+                        'order_id': '',
+                        'box': b,
+                        'created_by': 'Demo',
+                        'created_at': ''
+                    }
                                  for b in demo_positions.get(position, [])]
                 else:
                     raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
