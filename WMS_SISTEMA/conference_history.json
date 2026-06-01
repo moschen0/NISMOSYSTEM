@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "drafts": [
+    {
+      "draft_id": "206ef6414846440a9ab71ea26fea5f87",
+      "created_at": "2026-06-01T17:21:44",
+      "address": "P-01-01",
+      "username": "admin",
+      "unit": "MASTER",
+      "sector": "AR",
+      "status": "draft",
+      "updated_at": "2026-06-01T17:39:11",
+      "scanned_ids": [
+        "13245678",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "67"
+      ],
+      "scan_count": 7,
+      "result_summary": {
+        "ok": 0,
+        "missing": 28,
+        "wrong_location": 0,
+        "not_found": 10,
+        "total_scanned": 10,
+        "total_expected": 28
+      }
+    }
+  ]
+}

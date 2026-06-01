@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import unicodedata
+import uuid
 from logging.handlers import RotatingFileHandler
 
 # Carrega variáveis do arquivo .env ANTES de importar db_mdb,
@@ -80,6 +81,10 @@ TELEGRAM_CONFIG_PATH   = os.path.join(DATA_BASE_DIR, 'telegram_config.json')
 TELEGRAM_NOTIFIED_PATH = os.path.join(DATA_BASE_DIR, 'telegram_notified.json')
 DB_MODE_FILE           = os.path.join(DATA_BASE_DIR, 'db_mode.json')
 IP_ACL_PATH            = os.path.join(DATA_BASE_DIR, 'ip_acl.json')
+AUDIT_HISTORY_PATH     = os.path.join(DATA_BASE_DIR, 'conference_history.json')
+
+AUDIT_HISTORY_LOCK = threading.Lock()
+AUDIT_HISTORY_LIMIT = 5
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
@@ -1441,6 +1446,146 @@ def get_best_position_for_zone(zone):
             return position
 
     return None
+
+
+def _audit_now_iso():
+    return datetime.now().isoformat(timespec='seconds')
+
+
+def _audit_sector_key(sector):
+    return sector or DEFAULT_SECTOR
+
+
+def _coerce_scanned_ids(scanned_ids):
+    if isinstance(scanned_ids, list):
+        raw_lines = [str(item).strip() for item in scanned_ids]
+    else:
+        raw_lines = str(scanned_ids or '').splitlines()
+
+    # Deduplica preservando ordem para não perder a sequência de bipagem.
+    deduped = []
+    seen = set()
+    for line in raw_lines:
+        value = str(line).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _load_audit_history_file():
+    if not os.path.exists(AUDIT_HISTORY_PATH):
+        return {'version': 1, 'drafts': []}
+
+    try:
+        with open(AUDIT_HISTORY_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {'version': 1, 'drafts': []}
+        drafts = data.get('drafts', [])
+        if not isinstance(drafts, list):
+            drafts = []
+        return {'version': 1, 'drafts': drafts}
+    except Exception:
+        return {'version': 1, 'drafts': []}
+
+
+def _save_audit_history_file(data):
+    tmp = AUDIT_HISTORY_PATH + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, AUDIT_HISTORY_PATH)
+
+
+def _trim_audit_history_for_context(drafts, unit, sector, limit=AUDIT_HISTORY_LIMIT):
+    sector_key = _audit_sector_key(sector)
+    context_items = [
+        d for d in drafts
+        if str(d.get('unit', '')) == str(unit) and str(d.get('sector', '')) == str(sector_key)
+    ]
+    other_items = [d for d in drafts if d not in context_items]
+    context_items.sort(key=lambda x: str(x.get('updated_at', '')), reverse=True)
+    return other_items + context_items[:limit]
+
+
+def _audit_history_list(unit, sector, limit=AUDIT_HISTORY_LIMIT):
+    with AUDIT_HISTORY_LOCK:
+        data = _load_audit_history_file()
+
+    sector_key = _audit_sector_key(sector)
+    items = [
+        d for d in data.get('drafts', [])
+        if str(d.get('unit', '')) == str(unit) and str(d.get('sector', '')) == str(sector_key)
+    ]
+    items.sort(key=lambda x: str(x.get('updated_at', '')), reverse=True)
+    return items[:limit]
+
+
+def _audit_history_get(draft_id, unit, sector):
+    with AUDIT_HISTORY_LOCK:
+        data = _load_audit_history_file()
+
+    sector_key = _audit_sector_key(sector)
+    for item in data.get('drafts', []):
+        if str(item.get('draft_id', '')) != str(draft_id):
+            continue
+        if str(item.get('unit', '')) != str(unit):
+            continue
+        if str(item.get('sector', '')) != str(sector_key):
+            continue
+        return item
+    return None
+
+
+def _audit_history_upsert(*, draft_id, address, scanned_ids, username, unit, sector, status='draft', result_summary=None):
+    now_iso = _audit_now_iso()
+    sector_key = _audit_sector_key(sector)
+    clean_address = str(address or '').strip().upper()
+    scan_list = _coerce_scanned_ids(scanned_ids)
+
+    with AUDIT_HISTORY_LOCK:
+        data = _load_audit_history_file()
+        drafts = data.get('drafts', [])
+
+        existing = None
+        for item in drafts:
+            if str(item.get('draft_id', '')) == str(draft_id or ''):
+                existing = item
+                break
+
+        if existing is None:
+            existing = {
+                'draft_id': draft_id or uuid.uuid4().hex,
+                'created_at': now_iso,
+            }
+            drafts.append(existing)
+
+        existing['address'] = clean_address
+        existing['username'] = str(username or '')
+        existing['unit'] = str(unit or '')
+        existing['sector'] = str(sector_key or '')
+        existing['status'] = str(status or 'draft')
+        existing['updated_at'] = now_iso
+        existing['scanned_ids'] = scan_list
+        existing['scan_count'] = len(scan_list)
+        if result_summary is not None:
+            existing['result_summary'] = result_summary
+
+        data['drafts'] = _trim_audit_history_for_context(drafts, unit, sector_key, AUDIT_HISTORY_LIMIT)
+        _save_audit_history_file(data)
+
+    return existing
+
+
+def _to_br_datetime(iso_text):
+    text = str(iso_text or '').strip()
+    if not text:
+        return ''
+    try:
+        return datetime.fromisoformat(text).strftime('%d/%m/%Y %H:%M:%S')
+    except ValueError:
+        return text
 
 # ============================================================================
 # ROTAS DE API (JSON)
@@ -3834,6 +3979,133 @@ def audit_select():
                            prefill=prefill)
 
 
+@app.route('/audit/history', methods=['GET'])
+@login_required
+def audit_history_list():
+    """Retorna as ultimas conferencias (escopo global por unidade/setor)."""
+    unit = get_current_unit()
+    sector = get_current_sector()
+    items = _audit_history_list(unit=unit, sector=sector, limit=AUDIT_HISTORY_LIMIT)
+
+    response_items = []
+    for item in items:
+        response_items.append({
+            'draft_id': item.get('draft_id'),
+            'address': item.get('address'),
+            'username': item.get('username'),
+            'status': item.get('status', 'draft'),
+            'scan_count': int(item.get('scan_count', 0) or 0),
+            'updated_at': item.get('updated_at', ''),
+            'updated_at_br': _to_br_datetime(item.get('updated_at', '')),
+            'unit': item.get('unit', ''),
+            'sector': item.get('sector', ''),
+        })
+
+    return jsonify({'ok': True, 'items': response_items})
+
+
+@app.route('/audit/history/<draft_id>', methods=['GET'])
+@login_required
+def audit_history_get(draft_id):
+    """Retorna um rascunho de conferencia para retomada."""
+    unit = get_current_unit()
+    sector = get_current_sector()
+    item = _audit_history_get(draft_id=draft_id, unit=unit, sector=sector)
+    if not item:
+        return jsonify({'ok': False, 'message': 'Rascunho não encontrado.'}), 404
+
+    return jsonify({'ok': True, 'item': item})
+
+
+@app.route('/audit/history/save', methods=['POST'])
+@login_required
+def audit_history_save():
+    """Salva/atualiza rascunho de conferencia durante a bipagem."""
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict(flat=True)
+    payload = payload or {}
+
+    address = str(payload.get('address', '')).strip().upper()
+    if not address:
+        return jsonify({'ok': False, 'message': 'Endereço é obrigatório.'}), 400
+
+    scanned_raw = payload.get('scanned_ids', [])
+    scanned_list = _coerce_scanned_ids(scanned_raw)
+    reason = str(payload.get('reason', 'autosave')).strip().lower()
+    draft_id = str(payload.get('draft_id', '')).strip()
+
+    # Proteção contra perda de bipagens: autosave vazio não pode sobrescrever
+    # um rascunho existente, exceto quando o usuário usa a ação explícita de limpar.
+    if not scanned_list and reason != 'clear':
+        unit = get_current_unit()
+        sector = get_current_sector()
+        existing = _audit_history_get(draft_id=draft_id, unit=unit, sector=sector) if draft_id else None
+        if existing and _coerce_scanned_ids(existing.get('scanned_ids', [])):
+            return jsonify({
+                'ok': True,
+                'draft_id': existing.get('draft_id'),
+                'scan_count': int(existing.get('scan_count', 0) or 0),
+                'updated_at': existing.get('updated_at', ''),
+                'updated_at_br': _to_br_datetime(existing.get('updated_at', '')),
+                'preserved': True,
+            })
+
+        return jsonify({
+            'ok': True,
+            'draft_id': draft_id,
+            'scan_count': 0,
+            'updated_at': '',
+            'updated_at_br': '',
+            'skipped': True,
+        })
+
+    item = _audit_history_upsert(
+        draft_id=draft_id,
+        address=address,
+        scanned_ids=scanned_list,
+        username=session.get('user', ''),
+        unit=get_current_unit(),
+        sector=get_current_sector(),
+        status='draft',
+    )
+
+    return jsonify({
+        'ok': True,
+        'draft_id': item.get('draft_id'),
+        'scan_count': int(item.get('scan_count', 0) or 0),
+        'updated_at': item.get('updated_at', ''),
+        'updated_at_br': _to_br_datetime(item.get('updated_at', '')),
+    })
+
+
+@app.route('/audit/history/complete', methods=['POST'])
+@login_required
+def audit_history_complete():
+    """Marca um rascunho de conferencia como concluido."""
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict(flat=True)
+    payload = payload or {}
+
+    address = str(payload.get('address', '')).strip().upper()
+    if not address:
+        return jsonify({'ok': False, 'message': 'Endereço é obrigatório.'}), 400
+
+    scanned_raw = payload.get('scanned_ids', [])
+    draft_id = str(payload.get('draft_id', '')).strip()
+    result_summary = payload.get('result_summary') if isinstance(payload.get('result_summary'), dict) else None
+
+    item = _audit_history_upsert(
+        draft_id=draft_id,
+        address=address,
+        scanned_ids=scanned_raw,
+        username=session.get('user', ''),
+        unit=get_current_unit(),
+        sector=get_current_sector(),
+        status='completed',
+        result_summary=result_summary,
+    )
+
+    return jsonify({'ok': True, 'draft_id': item.get('draft_id')})
+
+
 @app.route('/audit/<path:address>', methods=['GET', 'POST'])
 @login_required
 def audit_conference(address):
@@ -3857,8 +4129,11 @@ def audit_conference(address):
     result = None
     scanned_raw = ''
 
+    resume_draft_id = request.args.get('resume_draft', '').strip()
+
     if request.method == 'POST':
         scanned_raw = request.form.get('scanned_ids', '')
+        draft_id = request.form.get('draft_id', '').strip()
         scanned = [line.strip() for line in scanned_raw.splitlines() if line.strip()]
         scanned_set = set(scanned)
         expected_set = set(expected_orders.keys())
@@ -3885,6 +4160,24 @@ def audit_conference(address):
             'total_expected': len(expected_orders),
         }
 
+        _audit_history_upsert(
+            draft_id=draft_id,
+            address=address,
+            scanned_ids=scanned,
+            username=session.get('user', ''),
+            unit=unit,
+            sector=sector,
+            status='completed',
+            result_summary={
+                'ok': len(ok),
+                'missing': len(missing),
+                'wrong_location': len(wrong_location),
+                'not_found': len(not_found),
+                'total_scanned': len(scanned),
+                'total_expected': len(expected_orders),
+            },
+        )
+
         status_str = (
             f'{len(ok)} OK, {len(missing)} faltando, '
             f'{len(wrong_location)} endereço errado, {len(not_found)} não cadastrado'
@@ -3907,7 +4200,10 @@ def audit_conference(address):
                            positions=positions,
                            expected_orders=list(expected_orders.values()),
                            scanned_raw=scanned_raw,
-                           result=result)
+                           result=result,
+                           resume_draft_id=resume_draft_id,
+                           history_enabled=True,
+                           history_limit=AUDIT_HISTORY_LIMIT)
 
 
 # ============================================================================
