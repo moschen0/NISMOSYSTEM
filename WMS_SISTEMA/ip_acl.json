@@ -1,0 +1,7 @@
+{
+  "blacklist": [],
+  "whitelist": [
+    "192.168.2.84"
+  ],
+  "whitelist_mode": false
+}

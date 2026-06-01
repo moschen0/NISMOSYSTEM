@@ -81,7 +81,7 @@
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0" style="font-size:0.83em;">
                         <thead class="table-light">
-                            <tr><th>Usuário</th><th>Unidade</th><th>IP</th><th>Visto</th></tr>
+                            <tr><th>Usuário</th><th>Unidade</th><th>IP</th><th>Visto</th><th>Ações IP</th></tr>
                         </thead>
                         <tbody>
                         {% for u in active_users %}
@@ -90,6 +90,24 @@
                             <td>{{ u.unit }}</td>
                             <td class="font-monospace">{{ u.ip }}</td>
                             <td>{{ u.last_seen.strftime('%H:%M:%S') }}</td>
+                            <td>
+                                {% if u.user|lower != 'admin' %}
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-danger btn-ip-action"
+                                            data-ip="{{ u.ip|e }}" data-list="blacklist"
+                                            title="Bloquear IP {{ u.ip }}">
+                                        <i class="bi bi-ban"></i> Block
+                                    </button>
+                                    <button class="btn btn-outline-success btn-ip-action"
+                                            data-ip="{{ u.ip|e }}" data-list="whitelist"
+                                            title="Liberar IP {{ u.ip }}">
+                                        <i class="bi bi-shield-check"></i> Allow
+                                    </button>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                         </tbody>
@@ -98,6 +116,134 @@
                 {% else %}
                 <p class="text-muted small mb-0">Nenhuma sessão ativa no momento.</p>
                 {% endif %}
+
+                <hr>
+
+                {# ── IP ACL ─────────────────────────────────────────── #}
+                <p class="fw-semibold mb-2">
+                    <i class="bi bi-shield-lock-fill"></i> Controle de Acesso por IP
+                </p>
+
+                <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                    <input type="text" id="ipAclInput" class="form-control form-control-sm font-monospace"
+                           style="max-width:180px" placeholder="Ex: 192.168.1.10" maxlength="15">
+                    <button class="btn btn-sm btn-danger" id="btnAddBlacklist">
+                        <i class="bi bi-ban"></i> Blacklist
+                    </button>
+                    <button class="btn btn-sm btn-success" id="btnAddWhitelist">
+                        <i class="bi bi-shield-check"></i> Whitelist
+                    </button>
+                    <span id="ipAclResult" class="small"></span>
+                </div>
+
+                <div class="row g-3 mb-3" id="aclLists">
+                    <div class="col-md-6">
+                        <div class="card border-danger" style="font-size:0.82em;">
+                            <div class="card-header bg-danger text-white py-1 fw-semibold">
+                                <i class="bi bi-ban"></i> Blacklist
+                                <span class="badge bg-light text-danger ms-1" id="blacklistCount">{{ ip_acl.blacklist|length }}</span>
+                            </div>
+                            <ul class="list-group list-group-flush" id="blacklistItems" style="max-height:140px;overflow-y:auto">
+                                {% for ip in ip_acl.blacklist %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
+                                    <code>{{ ip }}</code>
+                                    <button class="btn btn-xs btn-outline-secondary btn-remove-ip"
+                                            data-ip="{{ ip|e }}" data-list="blacklist"
+                                            style="font-size:.7rem;padding:1px 6px" title="Remover">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </li>
+                                {% else %}
+                                <li class="list-group-item text-muted small py-1 px-2" id="blacklistEmpty">Nenhum IP bloqueado</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card border-success" style="font-size:0.82em;">
+                            <div class="card-header bg-success text-white py-1 fw-semibold">
+                                <i class="bi bi-shield-check"></i> Whitelist
+                                <span class="badge bg-light text-success ms-1" id="whitelistCount">{{ ip_acl.whitelist|length }}</span>
+                            </div>
+                            <ul class="list-group list-group-flush" id="whitelistItems" style="max-height:140px;overflow-y:auto">
+                                {% for ip in ip_acl.whitelist %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
+                                    <code>{{ ip }}</code>
+                                    <button class="btn btn-xs btn-outline-secondary btn-remove-ip"
+                                            data-ip="{{ ip|e }}" data-list="whitelist"
+                                            style="font-size:.7rem;padding:1px 6px" title="Remover">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </li>
+                                {% else %}
+                                <li class="list-group-item text-muted small py-1 px-2" id="whitelistEmpty">Nenhum IP autorizado</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="whitelistModeSwitch"
+                           {% if ip_acl.whitelist_mode %}checked{% endif %}>
+                    <label class="form-check-label small" for="whitelistModeSwitch">
+                        <strong>Modo Whitelist exclusivo</strong> — apenas IPs na whitelist podem acessar
+                    </label>
+                </div>
+                <p class="text-muted small mb-3">
+                    <i class="bi bi-info-circle"></i>
+                    O admin nunca é bloqueado por IP. Na blacklist, o usuário vê uma página 403.
+                </p>
+
+                <hr>
+
+                {# ── Modo Manutenção ─────────────────────────────────── #}
+                <p class="fw-semibold mb-2">
+                    <i class="bi bi-tools"></i> Modo Manutenção
+                    {% if maintenance_state.active %}
+                    <span class="badge bg-warning text-dark ms-1" id="maintBadge">ATIVO</span>
+                    {% else %}
+                    <span class="badge bg-secondary ms-1" id="maintBadge">INATIVO</span>
+                    {% endif %}
+                </p>
+
+                <div class="card border-warning mb-3" style="font-size:0.85em;">
+                    <div class="card-body py-2 px-3">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-sm-4">
+                                <label class="form-label mb-1 small">Duração (min)</label>
+                                <input type="number" id="maintMinutes" class="form-control form-control-sm"
+                                       value="30" min="1" max="480">
+                            </div>
+                            <div class="col-sm-8">
+                                <label class="form-label mb-1 small">Mensagem ao usuário</label>
+                                <input type="text" id="maintMessage" class="form-control form-control-sm"
+                                       value="{{ maintenance_state.message|e }}"
+                                       placeholder="Sistema em manutenção. Aguarde.">
+                            </div>
+                        </div>
+                        {% if maintenance_state.active and maintenance_state.until %}
+                        <div class="mt-2 small text-warning">
+                            <i class="bi bi-clock"></i>
+                            Ativo até <strong>{{ maintenance_state.until.strftime('%H:%M:%S') }}</strong>
+                        </div>
+                        {% endif %}
+                        <div class="mt-2 d-flex gap-2 align-items-center">
+                            <button class="btn btn-sm btn-warning" id="btnMaintStart">
+                                <i class="bi bi-play-fill"></i> Ativar Manutenção
+                            </button>
+                            <button class="btn btn-sm btn-success" id="btnMaintStop">
+                                <i class="bi bi-stop-fill"></i> Encerrar Manutenção
+                            </button>
+                            <span id="maintResult" class="small"></span>
+                        </div>
+                        <p class="text-muted small mt-2 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Todos os usuários (exceto admin) serão desconectados e redirecionados para a página de manutenção.
+                        </p>
+                    </div>
+                </div>
+
             </div>
 
             {# ── TAB TELEGRAM ─────────────────────────────────────────── #}
@@ -311,6 +457,142 @@
 
 {% block scripts %}
 <script>
+// ── IP ACL ────────────────────────────────────────────────────────────────
+function _aclFetch(url, formData, resultEl) {
+    resultEl.textContent = 'Aguarde…'; resultEl.className = 'small text-muted';
+    fetch(url, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(d => {
+            resultEl.textContent = d.message;
+            resultEl.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
+            if (d.ok && d.acl) _refreshAclLists(d.acl);
+        })
+        .catch(e => { resultEl.textContent = 'Erro: ' + e; resultEl.className = 'small text-danger'; });
+}
+
+function _ipRow(ip, list) {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2';
+    li.dataset.ip = ip; li.dataset.list = list;
+    li.innerHTML = `<code>${ip}</code>
+        <button class="btn btn-outline-secondary btn-remove-ip"
+                data-ip="${ip}" data-list="${list}"
+                style="font-size:.7rem;padding:1px 6px" title="Remover">
+            <i class="bi bi-x-lg"></i>
+        </button>`;
+    return li;
+}
+
+function _refreshAclLists(acl) {
+    const bList = document.getElementById('blacklistItems');
+    const wList = document.getElementById('whitelistItems');
+    if (bList) {
+        bList.innerHTML = '';
+        if (acl.blacklist.length) {
+            acl.blacklist.forEach(ip => bList.appendChild(_ipRow(ip, 'blacklist')));
+        } else {
+            bList.innerHTML = '<li class="list-group-item text-muted small py-1 px-2">Nenhum IP bloqueado</li>';
+        }
+        document.getElementById('blacklistCount').textContent = acl.blacklist.length;
+    }
+    if (wList) {
+        wList.innerHTML = '';
+        if (acl.whitelist.length) {
+            acl.whitelist.forEach(ip => wList.appendChild(_ipRow(ip, 'whitelist')));
+        } else {
+            wList.innerHTML = '<li class="list-group-item text-muted small py-1 px-2">Nenhum IP autorizado</li>';
+        }
+        document.getElementById('whitelistCount').textContent = acl.whitelist.length;
+    }
+}
+
+function _aclAddIp(list) {
+    const ip = (document.getElementById('ipAclInput').value || '').trim();
+    const result = document.getElementById('ipAclResult');
+    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+        result.textContent = 'IP inválido.'; result.className = 'small text-danger'; return;
+    }
+    const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
+    _aclFetch('{{ url_for("admin_ip_add") }}', fd, result);
+}
+
+document.getElementById('btnAddBlacklist')?.addEventListener('click', () => _aclAddIp('blacklist'));
+document.getElementById('btnAddWhitelist')?.addEventListener('click', () => _aclAddIp('whitelist'));
+
+// Botões de adicionar IP a partir das sessões ativas
+document.addEventListener('click', function (e) {
+    const addBtn = e.target.closest('.btn-ip-action');
+    if (addBtn) {
+        const ip   = addBtn.dataset.ip;
+        const list = addBtn.dataset.list;
+        const label = list === 'blacklist' ? 'bloquear' : 'autorizar';
+        if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} o IP ${ip} (${list})?`)) return;
+        const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
+        _aclFetch('{{ url_for("admin_ip_add") }}', fd, document.getElementById('ipAclResult'));
+    }
+
+    const rmBtn = e.target.closest('.btn-remove-ip');
+    if (rmBtn) {
+        const ip   = rmBtn.dataset.ip;
+        const list = rmBtn.dataset.list;
+        if (!confirm(`Remover ${ip} da ${list}?`)) return;
+        const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
+        _aclFetch('{{ url_for("admin_ip_remove") }}', fd, document.getElementById('ipAclResult'));
+    }
+});
+
+// Modo whitelist exclusivo
+document.getElementById('whitelistModeSwitch')?.addEventListener('change', function () {
+    const fd = new FormData(); fd.append('enabled', this.checked ? 'true' : 'false');
+    fetch('{{ url_for("admin_ip_whitelist_mode") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(d => {
+            const el = document.getElementById('ipAclResult');
+            el.textContent = d.message;
+            el.className = 'small ' + (d.ok ? 'text-success' : 'text-danger');
+        });
+});
+
+// ── Manutenção ───────────────────────────────────────────────────────────
+function _maintFetch(action) {
+    const result = document.getElementById('maintResult');
+    const fd = new FormData();
+    fd.append('action', action);
+    if (action === 'start') {
+        fd.append('minutes', document.getElementById('maintMinutes').value || '30');
+        fd.append('message', document.getElementById('maintMessage').value || '');
+    }
+    result.textContent = 'Aguarde…'; result.className = 'small text-muted';
+    fetch('{{ url_for("admin_maintenance") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(d => {
+            result.textContent = d.message;
+            result.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
+            if (d.ok && d.state) {
+                const badge = document.getElementById('maintBadge');
+                if (badge) {
+                    badge.textContent = d.state.active ? 'ATIVO' : 'INATIVO';
+                    badge.className   = d.state.active
+                        ? 'badge bg-warning text-dark ms-1'
+                        : 'badge bg-secondary ms-1';
+                }
+            }
+        })
+        .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small text-danger'; });
+}
+
+document.getElementById('btnMaintStart')?.addEventListener('click', function () {
+    const min = parseInt(document.getElementById('maintMinutes').value) || 30;
+    const msg = document.getElementById('maintMessage').value || 'Sistema em manutenção. Aguarde.';
+    if (!confirm(`Ativar modo manutenção por ${min} min?\nTodos os usuários serão desconectados.\n\nMensagem: "${msg}"`)) return;
+    _maintFetch('start');
+});
+
+document.getElementById('btnMaintStop')?.addEventListener('click', function () {
+    if (!confirm('Encerrar modo manutenção e liberar acesso?')) return;
+    _maintFetch('stop');
+});
+
 // ── Banco ─────────────────────────────────────────────────────────────────
 const btnApplyDbMode = document.getElementById('btnApplyDbMode');
 if (btnApplyDbMode) {

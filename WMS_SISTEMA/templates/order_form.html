@@ -359,5 +359,29 @@ orderForm.addEventListener('submit', function() {
         quickModeInput.value = '1';
     }
 });
+
+// ── Reload forçado quando andar é preenchido ──────────────────────────────
+(function checkLevelFilled() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('lf') !== '1') return;
+
+    // Remove o flag da URL sem causar nova entrada no histórico
+    params.delete('lf');
+    const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    history.replaceState(null, '', cleanUrl);
+
+    // Mostra aviso visual brevemente antes do reload
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:9999;' +
+        'background:#198754;color:#fff;padding:10px 22px;border-radius:8px;font-weight:600;' +
+        'box-shadow:0 4px 16px rgba(0,0,0,.25);font-size:14px;pointer-events:none;';
+    toast.innerHTML = '<i class="bi bi-check-circle-fill"></i> Andar completo! Avançando para o próximo…';
+    document.body.appendChild(toast);
+
+    // Reload forçado após breve exibição do aviso (sem cache)
+    setTimeout(() => {
+        window.location.replace(cleanUrl + (cleanUrl.includes('?') ? '&' : '?') + '_r=' + Date.now());
+    }, 700);
+})();
 </script>
 {% endblock %}

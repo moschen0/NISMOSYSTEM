@@ -79,6 +79,7 @@ TIME_THRESHOLDS_PATH    = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
 TELEGRAM_CONFIG_PATH   = os.path.join(DATA_BASE_DIR, 'telegram_config.json')
 TELEGRAM_NOTIFIED_PATH = os.path.join(DATA_BASE_DIR, 'telegram_notified.json')
 DB_MODE_FILE           = os.path.join(DATA_BASE_DIR, 'db_mode.json')
+IP_ACL_PATH            = os.path.join(DATA_BASE_DIR, 'ip_acl.json')
 
 TAG_RULES = {
     'maintenance': 'Em manutencao (ignora na alocacao)',
@@ -634,6 +635,96 @@ _active_sessions_lock = threading.Lock()
 _SESSION_TIMEOUT_MIN  = 30
 
 
+# ============================================================================
+# CONTROLE DE ACESSO POR IP (BLACKLIST / WHITELIST)
+# ============================================================================
+
+_ip_acl_lock = threading.Lock()
+
+
+def _load_ip_acl_file() -> dict:
+    try:
+        if os.path.exists(IP_ACL_PATH):
+            with open(IP_ACL_PATH, 'r', encoding='utf-8') as f:
+                d = json.load(f)
+                return {
+                    'blacklist':      list(d.get('blacklist', [])),
+                    'whitelist':      list(d.get('whitelist', [])),
+                    'whitelist_mode': bool(d.get('whitelist_mode', False)),
+                }
+    except Exception:
+        pass
+    return {'blacklist': [], 'whitelist': [], 'whitelist_mode': False}
+
+
+def _save_ip_acl_file(data: dict):
+    try:
+        with open(IP_ACL_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        wms_logger.error(f'IP_ACL | Erro ao salvar: {exc}')
+
+
+def get_ip_acl() -> dict:
+    """Retorna cópia atual do ACL de IPs."""
+    with _ip_acl_lock:
+        return _load_ip_acl_file()
+
+
+def _valid_ipv4(ip: str) -> bool:
+    """Valida formato IPv4 básico."""
+    parts = ip.split('.')
+    if len(parts) != 4:
+        return False
+    try:
+        return all(0 <= int(p) <= 255 for p in parts)
+    except ValueError:
+        return False
+
+
+def check_ip_access(ip: str) -> tuple:
+    """Retorna (allowed: bool, reason: str)."""
+    with _ip_acl_lock:
+        acl = _load_ip_acl_file()
+    if ip in acl['whitelist']:
+        return True, 'whitelist'
+    if ip in acl['blacklist']:
+        return False, 'blacklist'
+    if acl.get('whitelist_mode') and acl['whitelist']:
+        return False, 'whitelist_mode'
+    return True, 'ok'
+
+
+# ============================================================================
+# MODO MANUTENÇÃO
+# ============================================================================
+
+_maintenance: dict = {
+    'active':  False,
+    'until':   None,
+    'message': 'Sistema em manutenção. Aguarde.',
+}
+_maintenance_lock = threading.Lock()
+
+
+def get_maintenance_state() -> dict:
+    """Retorna estado atual do modo manutenção (expira automaticamente)."""
+    with _maintenance_lock:
+        if _maintenance['active'] and _maintenance['until'] and datetime.now() > _maintenance['until']:
+            _maintenance['active'] = False
+        return dict(_maintenance)
+
+
+def set_maintenance_state(active: bool, minutes: int = 30, message: str = ''):
+    with _maintenance_lock:
+        _maintenance['active'] = active
+        _maintenance['until'] = datetime.now() + timedelta(minutes=int(minutes)) if active else None
+        if message:
+            _maintenance['message'] = message
+        elif not active:
+            _maintenance['message'] = 'Sistema em manutenção. Aguarde.'
+
+
 def _cleanup_sessions():
     cutoff = datetime.now() - timedelta(minutes=_SESSION_TIMEOUT_MIN)
     with _active_sessions_lock:
@@ -646,6 +737,45 @@ def get_active_users() -> list:
     _cleanup_sessions()
     with _active_sessions_lock:
         return sorted(_active_sessions.values(), key=lambda x: x['user'])
+
+
+@app.before_request
+def _check_ip_and_maintenance():
+    """Verifica blacklist/whitelist de IP e modo manutenção antes de qualquer request."""
+    ep = request.endpoint
+    # Endpoints sempre isentos
+    if ep in ('static', 'maintenance_page'):
+        return
+
+    ip = request.remote_addr or ''
+    is_admin = session.get('user', '').lower() == 'admin'
+
+    # ── Modo manutenção ──────────────────────────────────────────────────────
+    maint = get_maintenance_state()
+    if maint['active'] and not is_admin:
+        if ep != 'login':  # admin pode fazer login normalmente
+            session.clear()
+        return redirect(url_for('maintenance_page'))
+
+    # ── ACL de IP ────────────────────────────────────────────────────────────
+    if not is_admin:  # admin nunca é bloqueado por IP
+        allowed, reason = check_ip_access(ip)
+        if not allowed:
+            msg = (
+                f'Seu IP (<code>{ip}</code>) está na blacklist e não tem permissão de acesso.'
+                if reason == 'blacklist' else
+                f'Acesso restrito. Seu IP (<code>{ip}</code>) não está na whitelist autorizada.'
+            )
+            return (
+                f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+                f'<title>Acesso Bloqueado - WMS</title>'
+                f'<style>body{{font-family:sans-serif;text-align:center;padding:80px;background:#f8f9fa}}'
+                f'h1{{color:#dc3545;font-size:3rem}}p{{font-size:1.2rem;color:#6c757d}}</style></head>'
+                f'<body><h1>&#128683; 403</h1><h2>Acesso Bloqueado</h2><p>{msg}</p>'
+                f'<p style="margin-top:40px;font-size:.9rem">Entre em contato com o administrador do sistema.</p>'
+                f'</body></html>',
+                403,
+            )
 
 
 @app.before_request
@@ -2454,7 +2584,7 @@ def add_order():
     position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
 
-    def redirect_add_order(zone_value='', bipador=False, quick=False):
+    def redirect_add_order(zone_value='', bipador=False, quick=False, level_filled=False):
         """Redireciona para o formulario preservando contexto do modo bipador."""
         params = {}
         if zone_value:
@@ -2463,6 +2593,8 @@ def add_order():
             params['bipador'] = '1'
         if quick:
             params['quick'] = '1'
+        if level_filled:
+            params['lf'] = '1'
         return redirect(url_for('add_order', **params))
     
     if request.method == 'POST':
@@ -2571,7 +2703,11 @@ def add_order():
         flash(f'Pedido {order_id} adicionado à posição {position}', 'success')
         wms_logger.info(f'ORDER ADD | pedido={order_id} cx={box} pos={position} user={session.get("user")} unit={unit}')
         if bipador_mode or quick_mode:
-            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+            # Detectar se o andar ficou cheio após este pedido
+            slots = shelf_info.get('slots', 7) if shelf_info else 7
+            new_count = position_counts.get(position, 0) + 1
+            level_just_filled = new_count >= slots
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode, level_filled=level_just_filled)
         return redirect(url_for('position_detail', code=position))
     
     # GET - Preparar dados para form
@@ -3010,6 +3146,105 @@ def move_order():
     
     return redirect(url_for('position_detail', code=destination))
 
+
+@app.route('/api/positions/all')
+@login_required
+def api_positions_all():
+    """Retorna todas as posições com ocupação atual (para dropdown de mover)."""
+    unit = get_current_unit()
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
+    result = []
+    for shelf in shelves:
+        zone = shelf.get('zone', '')
+        module = shelf.get('module', '')
+        levels = shelf.get('levels', 1)
+        columns = shelf.get('columns', 1)
+        slots = shelf.get('slots', 7)
+        for pos in get_shelf_positions(zone, module, levels, columns):
+            result.append({'position': pos, 'count': position_counts.get(pos, 0), 'capacity': slots})
+    result.sort(key=lambda x: x['position'])
+    return jsonify({'positions': result})
+
+
+@app.route('/api/order/remove', methods=['POST'])
+@login_required
+def api_remove_order():
+    """Remove um pedido via AJAX (retorna JSON)."""
+    unit = get_current_unit()
+    position = request.form.get('position', '').strip().upper()
+    order_id = request.form.get('order_id', '').strip()
+    if not position or not order_id:
+        return jsonify({'ok': False, 'message': 'Dados insuficientes'}), 400
+    order = db_mdb.get_order_by_id(order_id, unit=unit)
+    if not order or order.get('position') != position:
+        return jsonify({'ok': False, 'message': 'Pedido não encontrado'}), 404
+    db_mdb.update_order_status(order_id, 'removed', unit=unit)
+    db_mdb.add_movement(
+        username=session.get('user'),
+        action='order_remove',
+        position=position,
+        order_id=order_id,
+        box=order.get('box', ''),
+        details='Pedido removido via painel visual',
+        timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        unit=unit,
+        sector=get_current_sector() or DEFAULT_SECTOR
+    )
+    wms_logger.info(f'ORDER REMOVE (api) | pedido={order_id} pos={position} user={session.get("user")} unit={unit}')
+    return jsonify({'ok': True, 'message': f'Pedido {order_id} removido'})
+
+
+@app.route('/api/order/move', methods=['POST'])
+@login_required
+def api_move_order():
+    """Move um pedido via AJAX (retorna JSON). Apenas admin."""
+    current_user = session.get('user', '')
+    if current_user.lower() != 'admin':
+        return jsonify({'ok': False, 'message': 'Apenas admin pode mover pedidos'}), 403
+    unit = get_current_unit()
+    sector = get_current_sector()
+    position = request.form.get('position', '').strip().upper()
+    order_id = request.form.get('order_id', '').strip()
+    destination = request.form.get('destination', '').strip().upper()
+    if not position or not order_id or not destination:
+        return jsonify({'ok': False, 'message': 'Dados insuficientes'}), 400
+    if position == destination:
+        return jsonify({'ok': False, 'message': 'Origem e destino são iguais'})
+    order = db_mdb.get_order_by_id(order_id, unit=unit)
+    if not order or order.get('position') != position:
+        return jsonify({'ok': False, 'message': 'Pedido não encontrado'}), 404
+    dest_count = count_orders_at_position(destination, unit=unit, sector=sector)
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    dest_capacity = 7
+    for shelf in shelves:
+        positions = get_shelf_positions(shelf.get('zone'), shelf.get('module'),
+                                        shelf.get('levels', 1), shelf.get('columns', 1))
+        if destination in positions:
+            dest_capacity = shelf.get('slots', 7)
+            break
+    if dest_count >= dest_capacity:
+        return jsonify({'ok': False, 'message': f'Posição {destination} está cheia ({dest_count}/{dest_capacity})'})
+    try:
+        db_mdb.update_order_position(order_id, destination, unit=unit)
+        db_mdb.add_movement(
+            username=session.get('user'),
+            action='order_move',
+            position=f'{position}→{destination}',
+            order_id=order_id,
+            box=order.get('box', ''),
+            details=f'Pedido movido de {position} para {destination} via painel visual',
+            timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            unit=unit,
+            sector=sector or DEFAULT_SECTOR
+        )
+        wms_logger.info(f'ORDER MOVE (api) | pedido={order_id} {position}->{destination} user={current_user} unit={unit}')
+        return jsonify({'ok': True, 'message': f'Pedido {order_id} movido para {destination}'})
+    except Exception as e:
+        return jsonify({'ok': False, 'message': f'Erro: {str(e)}'}), 500
+
+
 # ============================================================================
 # ROTAS DE VISUALIZAÇÃO
 # ============================================================================
@@ -3405,7 +3640,9 @@ def settings():
                            db_path_prod=db_mdb.DB_PATH_PROD,
                            db_path_test=db_mdb.DB_PATH_TEST,
                            db_path_active=db_mdb.get_db_path(),
-                           active_users=active_users)
+                           active_users=active_users,
+                           ip_acl=get_ip_acl(),
+                           maintenance_state=get_maintenance_state())
 
 
 @app.route('/admin/set-db-mode', methods=['POST'])
@@ -3425,6 +3662,107 @@ def admin_set_db_mode():
         return jsonify({'ok': True, 'message': f'Banco de {label} ativado.', 'path': db_mdb.get_db_path()})
     except Exception as exc:
         return jsonify({'ok': False, 'message': str(exc)})
+
+
+@app.route('/admin/ip/add', methods=['POST'])
+@login_required
+def admin_ip_add():
+    """Adiciona IP à blacklist ou whitelist (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+    ip   = (request.form.get('ip', '') or '').strip()
+    lst  = request.form.get('list', '')  # 'blacklist' | 'whitelist'
+    if not ip or not _valid_ipv4(ip):
+        return jsonify({'ok': False, 'message': 'IP inválido.'})
+    if lst not in ('blacklist', 'whitelist'):
+        return jsonify({'ok': False, 'message': 'Lista inválida.'})
+    with _ip_acl_lock:
+        acl = _load_ip_acl_file()
+        other = 'whitelist' if lst == 'blacklist' else 'blacklist'
+        # Remove da lista oposta para evitar conflito
+        if ip in acl[other]:
+            acl[other].remove(ip)
+        if ip not in acl[lst]:
+            acl[lst].append(ip)
+        _save_ip_acl_file(acl)
+    wms_logger.warning(f'IP_ACL | {ip} adicionado à {lst} por {session.get("user")}')
+    return jsonify({'ok': True, 'message': f'IP {ip} adicionado à {lst}.', 'acl': get_ip_acl()})
+
+
+@app.route('/admin/ip/remove', methods=['POST'])
+@login_required
+def admin_ip_remove():
+    """Remove IP da blacklist ou whitelist (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+    ip  = (request.form.get('ip', '') or '').strip()
+    lst = request.form.get('list', '')
+    if not ip or lst not in ('blacklist', 'whitelist'):
+        return jsonify({'ok': False, 'message': 'Parâmetros inválidos.'})
+    with _ip_acl_lock:
+        acl = _load_ip_acl_file()
+        if ip in acl[lst]:
+            acl[lst].remove(ip)
+            _save_ip_acl_file(acl)
+    wms_logger.info(f'IP_ACL | {ip} removido da {lst} por {session.get("user")}')
+    return jsonify({'ok': True, 'message': f'IP {ip} removido da {lst}.', 'acl': get_ip_acl()})
+
+
+@app.route('/admin/ip/whitelist-mode', methods=['POST'])
+@login_required
+def admin_ip_whitelist_mode():
+    """Ativa/desativa modo whitelist (somente IPs na whitelist têm acesso)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+    enabled = request.form.get('enabled', 'false').lower() == 'true'
+    with _ip_acl_lock:
+        acl = _load_ip_acl_file()
+        acl['whitelist_mode'] = enabled
+        _save_ip_acl_file(acl)
+    label = 'ativado' if enabled else 'desativado'
+    wms_logger.warning(f'IP_ACL | Modo whitelist {label} por {session.get("user")}')
+    return jsonify({'ok': True, 'message': f'Modo whitelist {label}.', 'acl': get_ip_acl()})
+
+
+@app.route('/admin/maintenance', methods=['POST'])
+@login_required
+def admin_maintenance():
+    """Ativa/desativa modo manutenção e kica todos os usuários não-admin."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'})
+    action = request.form.get('action', '')  # 'start' | 'stop'
+    if action == 'start':
+        try:
+            minutes = max(1, min(480, int(request.form.get('minutes', 30))))
+        except (ValueError, TypeError):
+            minutes = 30
+        message = (request.form.get('message', '') or 'Sistema em manutenção. Aguarde.').strip()
+        set_maintenance_state(True, minutes=minutes, message=message)
+        # Invalida sessões ativas de não-admins na próxima requisição
+        with _active_sessions_lock:
+            for k, v in list(_active_sessions.items()):
+                if v.get('user', '').lower() != 'admin':
+                    del _active_sessions[k]
+        state = get_maintenance_state()
+        until_str = state['until'].strftime('%H:%M:%S') if state['until'] else '?'
+        wms_logger.warning(f'MANUT | Modo manutenção ativado por {minutes}min por {session.get("user")}')
+        return jsonify({'ok': True, 'message': f'Manutenção ativa até {until_str}.', 'state': {
+            'active': True, 'until': until_str, 'message': message
+        }})
+    elif action == 'stop':
+        set_maintenance_state(False)
+        wms_logger.warning(f'MANUT | Modo manutenção desativado por {session.get("user")}')
+        return jsonify({'ok': True, 'message': 'Manutenção encerrada.', 'state': {'active': False}})
+    return jsonify({'ok': False, 'message': 'Ação inválida. Use "start" ou "stop".'})
+
+
+@app.route('/maintenance')
+def maintenance_page():
+    """Página pública exibida durante modo manutenção."""
+    state = get_maintenance_state()
+    until_iso = state['until'].isoformat() if state.get('until') else ''
+    message = state.get('message', 'Sistema em manutenção. Aguarde.')
+    return render_template('maintenance.html', message=message, until_iso=until_iso)
 
 
 @app.route('/admin/log-tail')

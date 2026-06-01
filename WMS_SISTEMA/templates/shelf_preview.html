@@ -274,7 +274,7 @@
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
-                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"                                                                 data-position="{{ cell.position|e }}"                                                                 data-position="{{ only_cell.position|e }}"
                                                                  title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
@@ -306,118 +306,213 @@ function initBoxInfoTooltip() {
     const boxBlocks = document.querySelectorAll('.box-block');
     if (!boxBlocks.length) return;
 
+    const isAdmin = {{ 'true' if session.get('user', '')|lower == 'admin' else 'false' }};
+
     const tooltip = document.createElement('div');
     tooltip.className = 'box-info-tooltip';
     tooltip.innerHTML = `
-        <div class="tip-title">Detalhes da Caixa</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong class="tip-title" style="font-size:12px;">Detalhes da Caixa</strong>
+            <button type="button" data-tip-close style="background:none;border:none;padding:0 2px;cursor:pointer;color:#6c757d;font-size:15px;line-height:1;">&#x2715;</button>
+        </div>
         <div class="tip-line"><strong>OS:</strong> <span data-tip="order"></span></div>
         <div class="tip-line"><strong>Caixa:</strong> <span data-tip="box"></span></div>
         <div class="tip-line"><strong>Adicionado por:</strong> <span data-tip="user"></span></div>
         <div class="tip-line"><strong>Data de add:</strong> <span data-tip="date"></span></div>
-        <div class="tip-actions">
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-tip-copy>
+        <div class="tip-line"><strong>Posição:</strong> <span data-tip="pos"></span></div>
+        <hr style="margin:8px 0;">
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-tip-copy style="flex:1;font-size:11px;">
                 <i class="bi bi-clipboard"></i> Copiar
             </button>
-            <span class="tip-copy-msg" data-tip-msg>Copiado!</span>
+            <button type="button" class="btn btn-sm btn-danger" data-tip-remove style="flex:1;font-size:11px;">
+                <i class="bi bi-box-arrow-up"></i> Dar Saída
+            </button>
         </div>
+        <button type="button" class="btn btn-sm btn-warning w-100" data-tip-move-toggle style="font-size:11px;">
+            <i class="bi bi-arrow-left-right"></i> Mover Para &#9658;
+        </button>
+        <div data-tip-move-panel style="display:none;margin-top:6px;">
+            <input type="text" class="form-control form-control-sm" data-tip-dest-input
+                   placeholder="Digitar posição (ex: P-01-03)" autocomplete="off" style="font-size:11px;">
+            <div data-tip-dest-list style="display:none;max-height:130px;overflow-y:auto;
+                 border:1px solid #dee2e6;border-radius:0 0 4px 4px;background:#fff;"></div>
+            <button type="button" class="btn btn-sm btn-warning w-100 mt-1" data-tip-move-confirm disabled style="font-size:11px;">
+                <i class="bi bi-check-lg"></i> Confirmar Mover
+            </button>
+        </div>
+        <div data-tip-msg style="font-size:11px;margin-top:4px;display:none;"></div>
     `;
     document.body.appendChild(tooltip);
 
-    const orderEl = tooltip.querySelector('[data-tip="order"]');
-    const boxEl = tooltip.querySelector('[data-tip="box"]');
-    const userEl = tooltip.querySelector('[data-tip="user"]');
-    const dateEl = tooltip.querySelector('[data-tip="date"]');
-    const copyBtn = tooltip.querySelector('[data-tip-copy]');
-    const copyMsg = tooltip.querySelector('[data-tip-msg]');
+    const elOrder     = tooltip.querySelector('[data-tip="order"]');
+    const elBox       = tooltip.querySelector('[data-tip="box"]');
+    const elUser      = tooltip.querySelector('[data-tip="user"]');
+    const elDate      = tooltip.querySelector('[data-tip="date"]');
+    const elPos       = tooltip.querySelector('[data-tip="pos"]');
+    const copyBtn     = tooltip.querySelector('[data-tip-copy]');
+    const removeBtn   = tooltip.querySelector('[data-tip-remove]');
+    const moveToggle  = tooltip.querySelector('[data-tip-move-toggle]');
+    const movePanel   = tooltip.querySelector('[data-tip-move-panel]');
+    const destInput   = tooltip.querySelector('[data-tip-dest-input]');
+    const destList    = tooltip.querySelector('[data-tip-dest-list]');
+    const moveConfirm = tooltip.querySelector('[data-tip-move-confirm]');
+    const msgEl       = tooltip.querySelector('[data-tip-msg]');
+    const closeBtn    = tooltip.querySelector('[data-tip-close]');
 
-    let activePayload = null;
-    let hideTimer = null;
+    let payload = null, selectedDest = '', cachedPositions = null;
 
-    function fallback(value) {
-        return (value && String(value).trim()) ? String(value).trim() : '-';
+    if (!isAdmin) {
+        moveToggle.disabled = true;
+        moveToggle.title = 'Apenas admin pode mover pedidos';
+        moveToggle.style.opacity = '0.55';
     }
 
-    function setTooltipPosition(clientX, clientY) {
-        const margin = 12;
-        let left = clientX + 14;
-        let top = clientY + 14;
-        const rect = tooltip.getBoundingClientRect();
+    function fb(v) { return (v && String(v).trim()) ? String(v).trim() : '-'; }
 
-        if (left + rect.width > window.innerWidth - margin) {
-            left = window.innerWidth - rect.width - margin;
-        }
-        if (top + rect.height > window.innerHeight - margin) {
-            top = clientY - rect.height - 14;
-        }
-        if (top < margin) top = margin;
-        if (left < margin) left = margin;
-
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
-    }
-
-    function renderPayload(payload) {
-        orderEl.textContent = payload.order;
-        boxEl.textContent = payload.box;
-        userEl.textContent = payload.user;
-        dateEl.textContent = payload.date;
-    }
-
-    function scheduleHide() {
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(() => {
-            tooltip.style.display = 'none';
-        }, 180);
-    }
-
-    function showForBlock(block, event) {
-        clearTimeout(hideTimer);
-        activePayload = {
-            order: fallback(block.dataset.orderId),
-            box: fallback(block.dataset.boxNumber || block.textContent),
-            user: fallback(block.dataset.addedBy),
-            date: fallback(block.dataset.addedAt)
-        };
-        renderPayload(activePayload);
-        copyMsg.style.display = 'none';
-        copyMsg.style.color = '#198754';
-        copyMsg.textContent = 'Copiado!';
+    function reposition(cx, cy) {
+        const m = 12;
+        let l = cx + 14, t = cy + 14;
         tooltip.style.display = 'block';
-        setTooltipPosition(event.clientX, event.clientY);
+        const r = tooltip.getBoundingClientRect();
+        if (l + r.width  > window.innerWidth  - m) l = cx - r.width  - 14;
+        if (t + r.height > window.innerHeight - m) t = cy - r.height - 14;
+        if (l < m) l = m; if (t < m) t = m;
+        tooltip.style.left = l + 'px'; tooltip.style.top = t + 'px';
     }
 
-    boxBlocks.forEach((block) => {
-        block.addEventListener('mouseenter', (event) => showForBlock(block, event));
-        block.addEventListener('mousemove', (event) => {
-            if (tooltip.style.display === 'block') {
-                setTooltipPosition(event.clientX, event.clientY);
-            }
-        });
-        block.addEventListener('mouseleave', scheduleHide);
+    function showMsg(text, ok) {
+        msgEl.textContent = text;
+        msgEl.style.color = ok ? '#198754' : '#dc3545';
+        msgEl.style.display = 'block';
+    }
+
+    function hide() {
+        tooltip.style.display = 'none';
+        movePanel.style.display = 'none';
+        destList.style.display = 'none';
+        destInput.value = ''; selectedDest = '';
+        moveConfirm.disabled = true;
+        msgEl.style.display = 'none';
+        moveToggle.innerHTML = '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;';
+    }
+
+    function openFor(block, cx, cy) {
+        payload = {
+            order: fb(block.dataset.orderId),
+            box:   fb(block.dataset.boxNumber || block.textContent),
+            user:  fb(block.dataset.addedBy),
+            date:  fb(block.dataset.addedAt),
+            pos:   fb(block.dataset.position),
+        };
+        elOrder.textContent = payload.order; elBox.textContent = payload.box;
+        elUser.textContent  = payload.user;  elDate.textContent = payload.date;
+        elPos.textContent   = payload.pos;
+        movePanel.style.display = 'none'; destList.style.display = 'none';
+        destInput.value = ''; selectedDest = ''; moveConfirm.disabled = true;
+        msgEl.style.display = 'none';
+        moveToggle.innerHTML = '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;';
+        removeBtn.disabled = false;
+        removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída';
+        reposition(cx, cy);
+    }
+
+    boxBlocks.forEach(b => {
+        b.style.cursor = 'pointer';
+        b.addEventListener('click', e => { e.stopPropagation(); openFor(b, e.clientX, e.clientY); });
     });
 
-    tooltip.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-    tooltip.addEventListener('mouseleave', scheduleHide);
+    tooltip.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('click', () => hide());
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+    closeBtn.addEventListener('click', hide);
 
+    // Copiar
     copyBtn.addEventListener('click', async () => {
-        if (!activePayload) return;
-        const text = [
-            `OS: ${activePayload.order}`,
-            `Caixa: ${activePayload.box}`,
-            `Adicionado por: ${activePayload.user}`,
-            `Data de add: ${activePayload.date}`,
-        ].join('\n');
+        if (!payload) return;
+        const t = `OS: ${payload.order}\nCaixa: ${payload.box}\nAdicionado por: ${payload.user}\nData de add: ${payload.date}\nPosição: ${payload.pos}`;
+        try { await navigator.clipboard.writeText(t); showMsg('Copiado!', true); }
+        catch { showMsg('Falha ao copiar', false); }
+    });
 
-        try {
-            await navigator.clipboard.writeText(text);
-            copyMsg.textContent = 'Copiado!';
-            copyMsg.style.color = '#198754';
-            copyMsg.style.display = 'inline';
-        } catch (_) {
-            copyMsg.textContent = 'Falha ao copiar';
-            copyMsg.style.color = '#dc3545';
-            copyMsg.style.display = 'inline';
+    // Dar Saída
+    removeBtn.addEventListener('click', () => {
+        if (!payload) return;
+        if (!confirm(`Dar saída no pedido OS ${payload.order} (Caixa ${payload.box}) da posição ${payload.pos}?\n\nEsta ação não pode ser desfeita.`)) return;
+        removeBtn.disabled = true;
+        removeBtn.textContent = 'Aguarde…';
+        const fd = new FormData();
+        fd.append('order_id', payload.order); fd.append('position', payload.pos);
+        fetch('/api/order/remove', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) { hide(); location.reload(); }
+                else { showMsg(d.message || 'Erro', false); removeBtn.disabled = false; removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída'; }
+            })
+            .catch(() => { showMsg('Erro de rede', false); removeBtn.disabled = false; removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída'; });
+    });
+
+    // Mover Para
+    function loadPositions() {
+        if (cachedPositions) return Promise.resolve();
+        return fetch('/api/positions/all', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json()).then(d => { cachedPositions = d.positions || []; });
+    }
+
+    function renderList(filter) {
+        if (!cachedPositions) return;
+        const cur = payload?.pos || '';
+        const filtered = cachedPositions.filter(p => p.position !== cur && p.position.toUpperCase().includes(filter.toUpperCase()));
+        if (!filtered.length) {
+            destList.innerHTML = '<div style="padding:6px 8px;font-size:11px;color:#6c757d;">Nenhuma posição encontrada</div>';
+            destList.style.display = 'block'; return;
         }
+        destList.innerHTML = filtered.slice(0, 40).map(p => {
+            const full = p.count >= p.capacity;
+            return `<div style="padding:5px 8px;cursor:${full?'not-allowed':'pointer'};font-size:11px;background:${full?'#fff3cd':'#fff'};border-bottom:1px solid #f0f0f0;"
+                         data-dest="${p.position}" data-full="${full}">
+                        ${p.position}
+                        <span style="float:right;color:${full?'#dc3545':'#198754'};font-size:10px;">${p.count}/${p.capacity}${full?' CHEIO':''}</span>
+                    </div>`;
+        }).join('');
+        destList.style.display = 'block';
+        destList.querySelectorAll('[data-dest]').forEach(item => {
+            if (item.dataset.full === 'true') return;
+            item.addEventListener('click', () => {
+                selectedDest = item.dataset.dest;
+                destInput.value = selectedDest;
+                destList.style.display = 'none';
+                moveConfirm.disabled = false;
+            });
+        });
+    }
+
+    moveToggle.addEventListener('click', () => {
+        if (moveToggle.disabled) return;
+        const open = movePanel.style.display !== 'none';
+        movePanel.style.display = open ? 'none' : 'block';
+        moveToggle.innerHTML = open
+            ? '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;'
+            : '<i class="bi bi-arrow-left-right"></i> Mover Para &#9660;';
+        if (!open) loadPositions().then(() => { renderList(''); destInput.focus(); });
+    });
+
+    destInput.addEventListener('focus', () => { if (cachedPositions) renderList(destInput.value); });
+    destInput.addEventListener('input', () => { selectedDest = ''; moveConfirm.disabled = true; renderList(destInput.value); });
+    destList.addEventListener('click', e => e.stopPropagation());
+
+    moveConfirm.addEventListener('click', () => {
+        if (!payload || !selectedDest) return;
+        moveConfirm.disabled = true; moveConfirm.textContent = 'Movendo…';
+        const fd = new FormData();
+        fd.append('order_id', payload.order); fd.append('position', payload.pos); fd.append('destination', selectedDest);
+        fetch('/api/order/move', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) { hide(); location.reload(); }
+                else { showMsg(d.message || 'Erro', false); moveConfirm.disabled = false; moveConfirm.innerHTML = '<i class="bi bi-check-lg"></i> Confirmar Mover'; }
+            })
+            .catch(() => { showMsg('Erro de rede', false); moveConfirm.disabled = false; moveConfirm.innerHTML = '<i class="bi bi-check-lg"></i> Confirmar Mover'; });
     });
 }
 </script>
