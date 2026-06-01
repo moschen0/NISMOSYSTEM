@@ -51,7 +51,7 @@ if __name__ == '__main__':
     # Sempre inicia em PRODUÇÃO (ignora db_mode.json salvo pelo admin)
     apply_db_mode('production')
     save_db_mode('production')
-    print(f'[DB] Modo forçado: PRODUCTION → {db_mdb.get_db_path()}')
+    print(f'[DB] Modo forcado: PRODUCTION -> {db_mdb.get_db_path()}')
 
     # Inicia agendador de backup automático diário (02:00)
     start_daily_backup_scheduler()

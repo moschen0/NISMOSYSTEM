@@ -619,6 +619,8 @@ app = Flask(
     static_folder=os.path.join(RESOURCE_BASE_DIR, 'static'),
     static_url_path='/static'
 )
+from etiquetas_bp import etq_bp
+app.register_blueprint(etq_bp)
 app.secret_key = os.environ.get('WMS_SECRET_KEY', 'wms-dev-key-insecure')
 MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT

@@ -1,0 +1,1532 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustar Layout da Etiqueta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='etiq/styles.css') }}">
+  <style>
+    .editor-shell {
+      display: grid;
+      gap: 18px;
+    }
+
+    .editor-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .editor-hero,
+    .editor-side,
+    .control-group,
+    .preview-wrap {
+      background: #fff;
+      border: 1px solid rgba(30, 47, 67, 0.12);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(31, 49, 71, 0.06);
+    }
+
+    .editor-hero {
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(248,238,222,0.95));
+    }
+
+    .editor-side {
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,246,252,0.95));
+    }
+
+    .editor-hero h2,
+    .editor-side h2,
+    .preview-panel h2 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+
+    .editor-hero p,
+    .editor-side p,
+    .preview-panel p {
+      margin: 0;
+      color: #4d6075;
+    }
+
+    .step-list,
+    .editor-meta,
+    .control-panel,
+    .preview-panel,
+    .advanced-body,
+    .advanced-section {
+      display: grid;
+      gap: 12px;
+    }
+
+    .step-item {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(31, 49, 71, 0.05);
+    }
+
+    .step-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #1a73d9, #0e57b4);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .step-copy strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.82);
+    }
+
+    .meta-row span {
+      color: #5b6e80;
+      font-size: 0.9rem;
+    }
+
+    .edit-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .control-group {
+      padding: 14px;
+    }
+
+    .control-title {
+      font-weight: 700;
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .control-copy {
+      font-size: 0.9rem;
+      color: #596b7d;
+      margin: 0;
+    }
+
+    .section-switcher,
+    .quick-row,
+    .xy-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .section-tab {
+      border: 1px solid rgba(30, 47, 67, 0.12);
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 12px;
+      text-align: left;
+      color: #1f3147;
+      display: grid;
+      gap: 4px;
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .section-tab:hover {
+      transform: translateY(-1px);
+      border-color: rgba(26, 115, 217, 0.28);
+    }
+
+    .section-tab.is-active {
+      background: linear-gradient(145deg, rgba(26,115,217,0.12), rgba(14,87,180,0.04));
+      border-color: rgba(26, 115, 217, 0.4);
+      box-shadow: inset 0 0 0 1px rgba(26,115,217,0.14);
+    }
+
+    .section-tab strong {
+      font-size: 0.94rem;
+    }
+
+    .section-tab span {
+      font-size: 0.8rem;
+      color: #607283;
+    }
+
+    .selected-card {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(240,245,252,0.95), rgba(255,255,255,0.98));
+      border: 1px solid rgba(26,115,217,0.14);
+    }
+
+    .selected-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .selected-header h3,
+    .selected-header p,
+    .preview-caption {
+      margin: 0;
+    }
+
+    .selected-tag {
+      min-width: 82px;
+      text-align: center;
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: #fff;
+      border: 1px solid rgba(30, 47, 67, 0.12);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #1a73d9;
+    }
+
+    .nudge-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 48px);
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .nudge-btn {
+      width: 48px;
+      height: 48px;
+      padding: 0;
+      border-radius: 12px;
+      font-size: 1.2rem;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .nudge-placeholder {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .hint-box {
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255, 245, 220, 0.76);
+      color: #6b531e;
+      font-size: 0.85rem;
+      border: 1px solid rgba(212,160,23,0.2);
+    }
+
+    .advanced-panel {
+      display: grid;
+      gap: 10px;
+    }
+
+    .advanced-toggle {
+      cursor: pointer;
+      font-weight: 700;
+      color: #1f3147;
+      list-style: none;
+    }
+
+    .advanced-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .advanced-toggle::before {
+      content: "+";
+      display: inline-block;
+      width: 18px;
+      color: #1a73d9;
+    }
+
+    details[open] > .advanced-toggle::before {
+      content: "-";
+    }
+
+    .advanced-section {
+      padding-top: 10px;
+      border-top: 1px dashed rgba(30, 47, 67, 0.12);
+    }
+
+    .advanced-section:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .advanced-section h4 {
+      margin: 0;
+      font-size: 0.93rem;
+    }
+
+    .preview-panel {
+      position: sticky;
+      top: 24px;
+    }
+
+    .preview-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .preview-wrap {
+      background: linear-gradient(180deg, #e9edf1, #cfd6dc);
+      padding: 24px 20px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    #preview-label {
+      outline: 1.5px dashed rgba(80, 110, 145, 0.55);
+      outline-offset: 1px;
+    }
+
+    .preview-scale {
+      transform: scale(1.7);
+      transform-origin: top center;
+      margin-bottom: 26mm;
+      margin-top: 7mm;
+    }
+
+    .preview-caption {
+      display: grid;
+      gap: 4px;
+      text-align: center;
+      color: #66798a;
+      font-size: 0.8rem;
+    }
+
+    .editable-part {
+      position: relative;
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .editable-part:active {
+      cursor: grabbing;
+    }
+
+    .editable-part.is-dragging {
+      z-index: 3;
+      filter: saturate(1.05);
+    }
+
+    .editable-part .resize-handle {
+      position: absolute;
+      right: -1.8mm;
+      bottom: -1.8mm;
+      width: 3.2mm;
+      height: 3.2mm;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.95);
+      background: #1a73d9;
+      box-shadow: 0 2px 8px rgba(31, 49, 71, 0.24);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+
+    .editable-part .resize-handle::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: inherit;
+      border: 1px solid rgba(255,255,255,0.42);
+    }
+
+    .focus-horario #preview-horario .resize-handle,
+    .focus-cor     #preview-cor .resize-handle,
+    .focus-cli     #preview-cli .resize-handle,
+    .focus-rot     #preview-rot .resize-handle,
+    .focus-ent     #preview-ent .resize-handle,
+    .focus-dt      #preview-dt .resize-handle,
+    .focus-chip    #preview-chip .resize-handle,
+    .focus-barcode #preview-barcode-area .resize-handle,
+    .editable-part:hover .resize-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drag-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(26, 115, 217, 0.08);
+      color: #1a73d9;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .positional {
+      --horario-x: 0mm; --horario-y: 0mm; --horario-scale: 1;
+      --cor-x: 0mm;     --cor-y: 0mm;     --cor-scale: 1;
+      --cli-x: 0mm;     --cli-y: 0mm;     --cli-scale: 1;
+      --rot-x: 0mm;     --rot-y: 0mm;     --rot-scale: 1;
+      --ent-x: 0mm;     --ent-y: 0mm;     --ent-scale: 1;
+      --dt-x: 0mm;      --dt-y: 0mm;      --dt-scale: 1;
+      --chip-x: 0mm;    --chip-y: 0mm;    --chip-scale: 1;
+      --barcode-x: 0mm; --barcode-y: 0mm; --barcode-scale: 1;
+    }
+
+    .positional .strip-item-horario { transform: translate(var(--horario-x), var(--horario-y)) scale(var(--horario-scale)); transform-origin: left top; }
+    .positional .strip-item-cor     { transform: translate(var(--cor-x),     var(--cor-y))     scale(var(--cor-scale));     transform-origin: left top; }
+    .positional .strip-item-cli     { transform: translate(var(--cli-x),     var(--cli-y))     scale(var(--cli-scale));     transform-origin: left top; }
+    .positional .strip-item-rot     { transform: translate(var(--rot-x),     var(--rot-y))     scale(var(--rot-scale));     transform-origin: left top; }
+    .positional .strip-item-ent     { transform: translate(var(--ent-x),     var(--ent-y))     scale(var(--ent-scale));     transform-origin: left top; }
+    .positional .strip-item-dt      { transform: translate(var(--dt-x),      var(--dt-y))      scale(var(--dt-scale));      transform-origin: left top; }
+
+    .positional .strip-color-chip {
+      transform: translate(var(--chip-x), var(--chip-y)) scale(var(--chip-scale));
+      transform-origin: center center;
+    }
+
+    .positional .strip-left {
+      transform: translate(var(--barcode-x), var(--barcode-y)) scale(var(--barcode-scale));
+      transform-origin: center center;
+    }
+
+    .positional.hide-horario .strip-item-horario { display: none; }
+    .positional.hide-cor     .strip-item-cor     { display: none; }
+    .positional.hide-cli     .strip-item-cli     { display: none; }
+    .positional.hide-rot     .strip-item-rot     { display: none; }
+    .positional.hide-ent     .strip-item-ent     { display: none; }
+    .positional.hide-dt      .strip-item-dt      { display: none; }
+    .positional.hide-chip .strip-color-chip      { display: none; }
+    .positional.hide-barcode .strip-left         { display: none; }
+
+    .guide-on .strip-item-horario,
+    .guide-on .strip-item-cor,
+    .guide-on .strip-item-cli,
+    .guide-on .strip-item-rot,
+    .guide-on .strip-item-ent,
+    .guide-on .strip-item-dt,
+    .guide-on .strip-color-chip,
+    .guide-on .strip-left {
+      outline: 0.2mm dashed rgba(10, 10, 10, 0.25);
+      outline-offset: 0.1mm;
+    }
+
+    .focus-horario .strip-item-horario,
+    .focus-cor     .strip-item-cor,
+    .focus-cli     .strip-item-cli,
+    .focus-rot     .strip-item-rot,
+    .focus-ent     .strip-item-ent,
+    .focus-dt      .strip-item-dt,
+    .focus-chip    .strip-color-chip,
+    .focus-barcode .strip-left {
+      outline: 0.35mm solid rgba(26, 115, 217, 0.9);
+      outline-offset: 0.2mm;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.86);
+    }
+
+    .back-link {
+      color: #1a73d9;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    .model-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      background: #f4f6f9;
+      border: 1px solid rgba(30,47,67,0.12);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 0.82rem;
+    }
+
+    .model-item .model-name {
+      font-weight: 600;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-item .model-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .model-input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(30,47,67,0.2);
+      font-size: 0.85rem;
+      font-family: inherit;
+      background: #fff;
+    }
+
+    .model-input:focus {
+      outline: 2px solid #1a73d9;
+      outline-offset: 1px;
+    }
+
+    @media (max-width: 900px) {
+      .editor-intro,
+      .edit-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-panel {
+        position: static;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .section-switcher,
+      .quick-row,
+      .xy-row {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-scale {
+        transform: scale(1.25);
+        margin-bottom: 8mm;
+      }
+    }
+
+    @media print {
+      @page { size: 80mm 20mm; margin: 0; }
+      body { background: white; margin: 0; padding: 0; }
+      .topbar, .shell { display: none !important; }
+      #print-area {
+        display: flex !important;
+        width: 80mm;
+        height: 20mm;
+        padding: 0;
+        margin: 0;
+        align-items: center;
+        justify-content: center;
+      }
+      #print-area .strip-label {
+        width: 80mm;
+        height: 20mm;
+        padding: 0.5mm 0.8mm;
+      }
+    }
+  </style>
+</head>
+<body class="dashboard-page">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div class="brand-text">
+        <strong>MASTER ETIQUETAS</strong>
+        <span>editor guiado de layout</span>
+      </div>
+    </div>
+
+    <nav class="topbar-nav" aria-label="Navegacao principal">
+      <a href="{{ url_for('etiquetas.index') }}" class="topbar-link is-active" title="Ir para criar etiquetas">Criar</a>
+      <a href="{{ url_for('etiquetas.barcode_code128') }}" class="topbar-link" title="Gerador de etiquetas das caixinhas">Caixinhas</a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <div class="dashboard-card">
+      <div class="dashboard-head">
+        <h1>Ajustar Layout da Etiqueta</h1>
+        <p>Organize a etiqueta sem precisar pensar em coordenadas. Selecione uma parte, mova aos poucos e salve o resultado como modelo.</p>
+        <a href="{{ url_for('etiquetas.index') }}" class="back-link"><- Voltar ao Dashboard</a>
+      </div>
+
+      <div class="panel" style="margin-top: 16px;">
+        <div class="editor-shell">
+          <section class="editor-intro">
+            <div class="editor-hero">
+              <h2>Editor guiado</h2>
+              <p>Este modo foi simplificado para quem precisa alinhar a etiqueta rapidamente sem entender medidas técnicas.</p>
+              <div class="step-list" aria-label="Como usar o editor">
+                <div class="step-item">
+                  <div class="step-badge">1</div>
+                  <div class="step-copy">
+                    <strong>Escolha a parte da etiqueta</strong>
+                    <span>Selecione cabeçalho, textos, cor ou código.</span>
+                  </div>
+                </div>
+                <div class="step-item">
+                  <div class="step-badge">2</div>
+                  <div class="step-copy">
+                    <strong>Ajuste com setas</strong>
+                    <span>Use movimentos curtos até o encaixe ficar bom na prévia.</span>
+                  </div>
+                </div>
+                <div class="step-item">
+                  <div class="step-badge">3</div>
+                  <div class="step-copy">
+                    <strong>Salve como modelo</strong>
+                    <span>Guarde o layout no navegador ou no servidor para reutilizar.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <aside class="editor-side">
+              <h2>Resumo rápido</h2>
+              <p>Os ajustes afetam a mesma etiqueta de impressão usada no sistema.</p>
+              <div class="editor-meta">
+                <div class="meta-row">
+                  <div>
+                    <strong>Etiqueta base</strong>
+                    <span>80 x 20 mm</span>
+                  </div>
+                  <span>Ao vivo</span>
+                </div>
+                <div class="meta-row">
+                  <div>
+                    <strong>Código</strong>
+                    <span id="active-barcode-label">Code 128</span>
+                  </div>
+                  <span>Editável</span>
+                </div>
+                <div class="meta-row">
+                  <div>
+                    <strong>Modelo ativo</strong>
+                    <span id="active-model-label">Rascunho atual</span>
+                  </div>
+                  <span>Local</span>
+                </div>
+              </div>
+            </aside>
+          </section>
+
+          <div class="edit-grid">
+            <div class="control-panel">
+              <div class="control-group">
+                <p class="control-title">1. Escolha o que você quer ajustar</p>
+                <p class="control-copy">A parte selecionada fica destacada na prévia ao lado.</p>
+                <div class="section-switcher" role="tablist" aria-label="Partes da etiqueta">
+                  <button type="button" class="section-tab is-active" data-section="horario">
+                    <strong>Horário</strong>
+                    <span>07:00</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="cor">
+                    <strong>Cor</strong>
+                    <span>Nome da rota</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="cli">
+                    <strong>CLI</strong>
+                    <span>Cliente</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="rot">
+                    <strong>ROT</strong>
+                    <span>Rota</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="ent">
+                    <strong>ENT</strong>
+                    <span>Entregador</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="dt">
+                    <strong>DT</strong>
+                    <span>Data</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="chip">
+                    <strong>Cor ■</strong>
+                    <span>Quadrado lateral</span>
+                  </button>
+                  <button type="button" class="section-tab" data-section="barcode">
+                    <strong>Código</strong>
+                    <span>Barras ou QR</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <p class="control-title">2. Ajuste a parte selecionada</p>
+                <div class="selected-card">
+                  <div class="selected-header">
+                    <div>
+                      <h3 id="selected-section-title">Cabeçalho</h3>
+                      <p id="selected-section-copy">Move a área com cor e horário.</p>
+                    </div>
+                    <span class="selected-tag" id="selected-section-tag">Selecionado</span>
+                  </div>
+
+                  <div class="drag-pill">Arraste na prévia e use a bolinha azul para redimensionar</div>
+
+                  <div class="quick-row">
+                    <label>Passo do movimento
+                      <select id="nudge-step">
+                        <option value="0.1">Fino: 0,1 mm</option>
+                        <option value="0.25" selected>Normal: 0,25 mm</option>
+                        <option value="0.5">Rápido: 0,5 mm</option>
+                        <option value="1">Grande: 1 mm</option>
+                      </select>
+                    </label>
+
+                    <label>Tamanho da parte
+                      <input type="range" id="active-size" min="0.5" max="2" step="0.05" value="1">
+                    </label>
+                  </div>
+
+                  <div class="nudge-grid" aria-label="Mover item selecionado">
+                    <button type="button" class="ghost nudge-btn nudge-placeholder">·</button>
+                    <button type="button" class="ghost nudge-btn" onclick="nudgeActive(0, -1)" aria-label="Mover para cima">↑</button>
+                    <button type="button" class="ghost nudge-btn nudge-placeholder">·</button>
+                    <button type="button" class="ghost nudge-btn" onclick="nudgeActive(-1, 0)" aria-label="Mover para a esquerda">←</button>
+                    <button type="button" class="btn-cyan nudge-btn" onclick="centerActiveSection()" aria-label="Voltar parte para a posição original">•</button>
+                    <button type="button" class="ghost nudge-btn" onclick="nudgeActive(1, 0)" aria-label="Mover para a direita">→</button>
+                    <button type="button" class="ghost nudge-btn nudge-placeholder">·</button>
+                    <button type="button" class="ghost nudge-btn" onclick="nudgeActive(0, 1)" aria-label="Mover para baixo">↓</button>
+                    <button type="button" class="ghost nudge-btn nudge-placeholder">·</button>
+                  </div>
+
+                  <div class="quick-row">
+                    <label>Posição horizontal (X)
+                      <input type="number" id="active-x" min="-10" max="10" step="0.1" value="0">
+                    </label>
+                    <label>Posição vertical (Y)
+                      <input type="number" id="active-y" min="-10" max="10" step="0.1" value="0">
+                    </label>
+                  </div>
+
+                  <label style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="active-visible" checked>
+                    Mostrar esta parte na etiqueta
+                  </label>
+
+                  <div class="hint-box">Dica: use primeiro o passo de 0,5 mm para aproximar e depois 0,1 mm para finalizar.</div>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <p class="control-title">3. Tipo de código</p>
+                <p class="control-copy">Troque entre código de barras e QR Code para validar o espaço na etiqueta.</p>
+                <label>
+                  <select id="barcode-type-edit">
+                    <option value="CODE128">Code 128 (padrão)</option>
+                    <option value="CODE39">Code 39</option>
+                    <option value="EAN13">EAN-13</option>
+                    <option value="EAN8">EAN-8</option>
+                    <option value="UPC">UPC-A</option>
+                    <option value="QRCODE">QR Code</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="control-group">
+                <p class="control-title">4. Salvar e reutilizar</p>
+                <p class="control-copy">Você pode salvar no navegador para este computador ou criar modelos no servidor para toda a equipe.</p>
+                <div class="actions-row">
+                  <button type="button" class="btn-cyan" onclick="saveLayoutConfig()">Salvar neste computador</button>
+                  <button type="button" class="ghost" onclick="loadLayoutConfig()">Carregar salvo</button>
+                  <button type="button" class="danger" onclick="clearLayoutConfig()">Limpar salvo local</button>
+                </div>
+                <small id="save-status" style="color:#44596f;">Nenhuma configuracao salva.</small>
+              </div>
+
+              <div class="control-group">
+                <p class="control-title">Modelos da equipe</p>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <input type="text" id="model-name-input" class="model-input" placeholder="Ex: Impressora térmica balcão">
+                  <button type="button" class="btn-cyan" onclick="saveModelToServer()" style="white-space:nowrap;">Salvar modelo</button>
+                </div>
+                <div id="server-models-list"></div>
+                <small id="model-status" style="color:#44596f;">Modelos ficam salvos no servidor para reutilização.</small>
+              </div>
+
+              <details class="control-group advanced-panel">
+                <summary class="advanced-toggle">Opções avançadas</summary>
+                <div class="advanced-body">
+                  <div class="advanced-section">
+                    <h4>Movimento preciso por coordenadas</h4>
+                    <div class="xy-row">
+                      <label>Horário X (mm)<input type="number" id="horario-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>Horário Y (mm)<input type="number" id="horario-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>Cor X (mm)<input type="number" id="cor-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>Cor Y (mm)<input type="number" id="cor-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>CLI X (mm)<input type="number" id="cli-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>CLI Y (mm)<input type="number" id="cli-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>ROT X (mm)<input type="number" id="rot-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>ROT Y (mm)<input type="number" id="rot-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>ENT X (mm)<input type="number" id="ent-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>ENT Y (mm)<input type="number" id="ent-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>DT X (mm)<input type="number" id="dt-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>DT Y (mm)<input type="number" id="dt-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>Cor ■ X (mm)<input type="number" id="chip-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>Cor ■ Y (mm)<input type="number" id="chip-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                    <div class="xy-row">
+                      <label>Código X (mm)<input type="number" id="barcode-x" min="-10" max="10" step="0.1" value="0"></label>
+                      <label>Código Y (mm)<input type="number" id="barcode-y" min="-10" max="10" step="0.1" value="0"></label>
+                    </div>
+                  </div>
+
+                  <div class="advanced-section">
+                    <h4>Tamanho individual</h4>
+                    <label>Horário<input type="range" id="horario-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>Cor<input type="range" id="cor-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>CLI<input type="range" id="cli-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>ROT<input type="range" id="rot-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>ENT<input type="range" id="ent-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>DT<input type="range" id="dt-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>Cor ■<input type="range" id="chip-size" min="0.5" max="2" step="0.05" value="1"></label>
+                    <label>Código<input type="range" id="barcode-size" min="0.5" max="2" step="0.05" value="1"></label>
+                  </div>
+
+                  <div class="advanced-section">
+                    <h4>Visibilidade e prévia</h4>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-horario"> Ocultar horário</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-cor"> Ocultar cor</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-cli"> Ocultar CLI</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-rot"> Ocultar ROT</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-ent"> Ocultar ENT</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-dt"> Ocultar DT</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-chip"> Ocultar cor ■</label>
+                    <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="hide-barcode"> Ocultar código</label>
+                    <label>Escala da prévia
+                      <input type="range" id="preview-scale" min="1" max="2.4" step="0.05" value="1.7">
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;">
+                      <input type="checkbox" id="show-guides">
+                      Mostrar guias de todos os blocos
+                    </label>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="preview-panel">
+              <div class="preview-toolbar">
+                <div>
+                  <h2>Prévia da etiqueta</h2>
+                  <p>O destaque azul mostra a parte que você está editando agora.</p>
+                </div>
+                <div class="actions-row">
+                  <button type="button" class="btn-green" onclick="printLabel()">Imprimir teste</button>
+                  <button type="button" class="ghost" onclick="resetPositions()">Voltar ao padrão</button>
+                </div>
+              </div>
+
+              <div class="preview-wrap">
+                <div class="preview-scale" id="preview-scale-wrap">
+                  <div class="strip-label positional focus-horario" id="preview-label">
+                    <section class="strip-right">
+                      <div class="strip-topline">
+                        <div class="strip-item strip-item-horario editable-part" id="preview-horario" data-section="horario">
+                          <span class="strip-highlight strip-highlight-time">07:00</span>
+                          <button type="button" class="resize-handle" data-resize-section="horario" aria-label="Redimensionar horário"></button>
+                        </div>
+                        <div class="strip-item strip-item-cor editable-part" id="preview-cor" data-section="cor">
+                          <span class="strip-highlight strip-highlight-color">vermelho</span>
+                          <button type="button" class="resize-handle" data-resize-section="cor" aria-label="Redimensionar cor"></button>
+                        </div>
+                      </div>
+
+                      <div class="strip-bottomline">
+                        <div class="strip-meta-block">
+                          <div class="strip-item strip-item-cli editable-part" id="preview-cli" data-section="cli">
+                            <span class="strip-meta"><b>CLI:</b> 580</span>
+                            <button type="button" class="resize-handle" data-resize-section="cli" aria-label="Redimensionar cliente"></button>
+                          </div>
+                          <div class="strip-item strip-item-rot editable-part" id="preview-rot" data-section="rot">
+                            <span class="strip-meta"><b>ROT:</b> Rota Norte</span>
+                            <button type="button" class="resize-handle" data-resize-section="rot" aria-label="Redimensionar rota"></button>
+                          </div>
+                          <div class="strip-item strip-item-ent editable-part" id="preview-ent" data-section="ent">
+                            <span class="strip-meta strip-delivery"><b>ENT:</b> Joao Silva</span>
+                            <button type="button" class="resize-handle" data-resize-section="ent" aria-label="Redimensionar entregador"></button>
+                          </div>
+                          <div class="strip-item strip-item-dt editable-part" id="preview-dt" data-section="dt">
+                            <span class="strip-meta"><b>DT:</b> 12/03/2026 11:40</span>
+                            <button type="button" class="resize-handle" data-resize-section="dt" aria-label="Redimensionar data"></button>
+                          </div>
+                        </div>
+                        <span class="strip-color-chip editable-part" id="preview-chip" data-section="chip" style="background:#b00020;">
+                          <button type="button" class="resize-handle" data-resize-section="chip" aria-label="Redimensionar bloco de cor"></button>
+                        </span>
+                      </div>
+                    </section>
+
+                    <section class="strip-left editable-part" id="preview-barcode-area" data-section="barcode">
+                      <svg id="preview-barcode"></svg>
+                      <img id="preview-barcode-qr" class="qr-img" style="display:none;" alt="">
+                      <strong class="barcode-number">100042</strong>
+                      <button type="button" class="resize-handle" data-resize-section="barcode" aria-label="Redimensionar código"></button>
+                    </section>
+                  </div>
+                </div>
+
+                <div class="preview-caption">
+                  <small>Prévia ampliada para facilitar o alinhamento.</small>
+                  <small>Se precisar, abra as opções avançadas para mexer diretamente nos valores.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="print-area" style="display:none;">
+    <div class="strip-label positional" id="print-label">
+      <section class="strip-right">
+        <div class="strip-topline">
+          <div class="strip-item strip-item-horario" id="print-horario">
+            <span class="strip-highlight strip-highlight-time">07:00</span>
+          </div>
+          <div class="strip-item strip-item-cor" id="print-cor">
+            <span class="strip-highlight strip-highlight-color">vermelho</span>
+          </div>
+        </div>
+
+        <div class="strip-bottomline">
+          <div class="strip-meta-block">
+            <div class="strip-item strip-item-cli" id="print-cli">
+              <span class="strip-meta"><b>CLI:</b> 580</span>
+            </div>
+            <div class="strip-item strip-item-rot" id="print-rot">
+              <span class="strip-meta"><b>ROT:</b> Rota Norte</span>
+            </div>
+            <div class="strip-item strip-item-ent" id="print-ent">
+              <span class="strip-meta strip-delivery"><b>ENT:</b> Joao Silva</span>
+            </div>
+            <div class="strip-item strip-item-dt" id="print-dt">
+              <span class="strip-meta"><b>DT:</b> 12/03/2026 11:40</span>
+            </div>
+          </div>
+          <span class="strip-color-chip" id="print-chip" style="background:#b00020;"></span>
+        </div>
+      </section>
+
+      <section class="strip-left" id="print-barcode-area">
+        <svg id="print-barcode"></svg>
+        <img id="print-barcode-qr" class="qr-img" style="display:none;" alt="">
+        <strong class="barcode-number">100042</strong>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script>
+    const STORAGE_KEY = "etiquetas:label-layout:v2";
+    const $ = id => document.getElementById(id);
+    const SECTION_META = {
+      horario: {
+        title: "Horário",
+        copy: "Move o horário da rota.",
+        xId: "horario-x", yId: "horario-y", sizeId: "horario-size",
+        hideId: "hide-horario", focusClass: "focus-horario",
+      },
+      cor: {
+        title: "Cor / Rota",
+        copy: "Move o nome da cor ou rota.",
+        xId: "cor-x", yId: "cor-y", sizeId: "cor-size",
+        hideId: "hide-cor", focusClass: "focus-cor",
+      },
+      cli: {
+        title: "Cliente (CLI)",
+        copy: "Move o número do cliente.",
+        xId: "cli-x", yId: "cli-y", sizeId: "cli-size",
+        hideId: "hide-cli", focusClass: "focus-cli",
+      },
+      rot: {
+        title: "Rota (ROT)",
+        copy: "Move o nome da rota de entrega.",
+        xId: "rot-x", yId: "rot-y", sizeId: "rot-size",
+        hideId: "hide-rot", focusClass: "focus-rot",
+      },
+      ent: {
+        title: "Entregador (ENT)",
+        copy: "Move o nome do entregador.",
+        xId: "ent-x", yId: "ent-y", sizeId: "ent-size",
+        hideId: "hide-ent", focusClass: "focus-ent",
+      },
+      dt: {
+        title: "Data (DT)",
+        copy: "Move a data de impressão.",
+        xId: "dt-x", yId: "dt-y", sizeId: "dt-size",
+        hideId: "hide-dt", focusClass: "focus-dt",
+      },
+      chip: {
+        title: "Cor ■ (quadrado)",
+        copy: "Move o quadrado colorido da lateral.",
+        xId: "chip-x", yId: "chip-y", sizeId: "chip-size",
+        hideId: "hide-chip", focusClass: "focus-chip",
+      },
+      barcode: {
+        title: "Código",
+        copy: "Move o código de barras ou QR Code.",
+        xId: "barcode-x", yId: "barcode-y", sizeId: "barcode-size",
+        hideId: "hide-barcode", focusClass: "focus-barcode",
+      },
+    };
+    const SECTION_KEYS = Object.keys(SECTION_META);
+    const ALL_FOCUS_CLASSES = SECTION_KEYS.map(k => SECTION_META[k].focusClass);
+    const BARCODE_LABELS = {
+      CODE128: "Code 128",
+      CODE39: "Code 39",
+      EAN13: "EAN-13",
+      EAN8: "EAN-8",
+      UPC: "UPC-A",
+      QRCODE: "QR Code",
+    };
+    let activeSection = "horario";
+    let pointerState = null;
+
+    function renderBarcode(barcodeId, value, format) {
+      const svgEl = document.getElementById(barcodeId);
+      const imgEl = document.getElementById(barcodeId + "-qr");
+      if (!svgEl) return;
+
+      if (format === "QRCODE") {
+        svgEl.style.display = "none";
+        QRCode.toDataURL(String(value), { width: 256, margin: 1 }, function(err, url) {
+          if (!err && imgEl) {
+            imgEl.src = url;
+            imgEl.style.display = "";
+          }
+        });
+        return;
+      }
+
+      if (imgEl) {
+        imgEl.style.display = "none";
+      }
+      svgEl.style.display = "";
+      try {
+        JsBarcode("#" + barcodeId, String(value), {
+          format: format,
+          displayValue: false,
+          margin: 0,
+          height: 36,
+          width: 1,
+        });
+      } catch (_) {
+        // Keeps preview stable if an invalid value is used for a specific barcode type.
+      }
+    }
+
+    function updateBarcodeLabel() {
+      const fmt = $("barcode-type-edit").value || "CODE128";
+      $("active-barcode-label").textContent = BARCODE_LABELS[fmt] || fmt;
+    }
+
+    function renderBarcodes() {
+      const fmt = $("barcode-type-edit").value || "CODE128";
+      renderBarcode("preview-barcode", "100042", fmt);
+      renderBarcode("print-barcode", "100042", fmt);
+      updateBarcodeLabel();
+    }
+
+    function getActiveMeta() {
+      return SECTION_META[activeSection];
+    }
+
+    function updateActiveSectionControls() {
+      const meta = getActiveMeta();
+      $("selected-section-title").textContent = meta.title;
+      $("selected-section-copy").textContent = meta.copy;
+      $("active-x").value = $(meta.xId).value;
+      $("active-y").value = $(meta.yId).value;
+      $("active-size").value = $(meta.sizeId).value;
+      $("active-visible").checked = !$(meta.hideId).checked;
+      document.querySelectorAll(".section-tab").forEach(button => {
+        button.classList.toggle("is-active", button.dataset.section === activeSection);
+      });
+      const preview = $("preview-label");
+      ALL_FOCUS_CLASSES.forEach(cls => preview.classList.remove(cls));
+      preview.classList.add(meta.focusClass);
+    }
+
+    function setActiveSection(sectionKey) {
+      if (!SECTION_META[sectionKey]) {
+        return;
+      }
+      activeSection = sectionKey;
+      updateActiveSectionControls();
+    }
+
+    function getNudgeStep() {
+      return Number($("nudge-step").value || 0.25);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function roundStep(value, precision = 2) {
+      return Number(value.toFixed(precision));
+    }
+
+    function getPreviewPixelsPerMm() {
+      const rect = $("preview-label").getBoundingClientRect();
+      return rect.width / 80;
+    }
+
+    function beginPointerAction(event, sectionKey, mode) {
+      if (!SECTION_META[sectionKey]) {
+        return;
+      }
+
+      const meta = SECTION_META[sectionKey];
+      const pxPerMm = getPreviewPixelsPerMm();
+      if (!pxPerMm) {
+        return;
+      }
+
+      setActiveSection(sectionKey);
+      pointerState = {
+        pointerId: event.pointerId,
+        mode,
+        sectionKey,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: Number($(meta.xId).value || 0),
+        originY: Number($(meta.yId).value || 0),
+        originSize: Number($(meta.sizeId).value || 1),
+        pxPerMm,
+        element: event.currentTarget.closest(".editable-part") || event.currentTarget,
+      };
+
+      if (pointerState.element && pointerState.element.setPointerCapture) {
+        pointerState.element.setPointerCapture(event.pointerId);
+        pointerState.element.classList.add("is-dragging");
+      }
+
+      event.preventDefault();
+    }
+
+    function updatePointerAction(event) {
+      if (!pointerState || pointerState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const meta = SECTION_META[pointerState.sectionKey];
+      const deltaMmX = (event.clientX - pointerState.startX) / pointerState.pxPerMm;
+      const deltaMmY = (event.clientY - pointerState.startY) / pointerState.pxPerMm;
+
+      if (pointerState.mode === "drag") {
+        $(meta.xId).value = roundStep(pointerState.originX + deltaMmX);
+        $(meta.yId).value = roundStep(pointerState.originY + deltaMmY);
+      } else if (pointerState.mode === "resize") {
+        const resizeDelta = (deltaMmX + deltaMmY) / 10;
+        $(meta.sizeId).value = clamp(roundStep(pointerState.originSize + resizeDelta), 0.5, 2);
+      }
+
+      applyPositions();
+    }
+
+    function endPointerAction(event) {
+      if (!pointerState || pointerState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      if (pointerState.element) {
+        pointerState.element.classList.remove("is-dragging");
+        if (pointerState.element.releasePointerCapture) {
+          try {
+            pointerState.element.releasePointerCapture(event.pointerId);
+          } catch (_) {
+            // ignore release errors
+          }
+        }
+      }
+
+      pointerState = null;
+    }
+
+    function initDirectManipulation() {
+      document.querySelectorAll(".editable-part[data-section]").forEach(part => {
+        part.addEventListener("pointerdown", event => {
+          if (event.target.closest(".resize-handle")) {
+            return;
+          }
+          beginPointerAction(event, part.dataset.section, "drag");
+        });
+      });
+
+      document.querySelectorAll(".resize-handle[data-resize-section]").forEach(handle => {
+        handle.addEventListener("pointerdown", event => {
+          beginPointerAction(event, handle.dataset.resizeSection, "resize");
+        });
+      });
+
+      window.addEventListener("pointermove", updatePointerAction);
+      window.addEventListener("pointerup", endPointerAction);
+      window.addEventListener("pointercancel", endPointerAction);
+    }
+
+    function syncFromActiveControls() {
+      const meta = getActiveMeta();
+      $(meta.xId).value = $("active-x").value;
+      $(meta.yId).value = $("active-y").value;
+      $(meta.sizeId).value = $("active-size").value;
+      $(meta.hideId).checked = !$("active-visible").checked;
+      applyPositions();
+    }
+
+    function nudgeActive(deltaX, deltaY) {
+      const step = getNudgeStep();
+      $("active-x").value = (Number($("active-x").value || 0) + (deltaX * step)).toFixed(2);
+      $("active-y").value = (Number($("active-y").value || 0) + (deltaY * step)).toFixed(2);
+      syncFromActiveControls();
+    }
+
+    function centerActiveSection() {
+      $("active-x").value = 0;
+      $("active-y").value = 0;
+      $("active-size").value = 1;
+      $("active-visible").checked = true;
+      syncFromActiveControls();
+    }
+
+    function getMm(id) {
+      return `${Number($(id).value || 0)}mm`;
+    }
+
+    function getScale(id) {
+      return String(Number($(id).value || 1));
+    }
+
+    function getNumberValue(id, fallback = 0) {
+      const value = Number($(id).value);
+      return Number.isFinite(value) ? value : fallback;
+    }
+
+    function collectLayoutConfig() {
+      const cfg = {
+        previewScale: getNumberValue("preview-scale", 1.7),
+        showGuides: $("show-guides").checked,
+        barcodeType: $("barcode-type-edit").value || "CODE128",
+      };
+      SECTION_KEYS.forEach(s => {
+        const m = SECTION_META[s];
+        cfg[`${s}X`]     = getNumberValue(m.xId);
+        cfg[`${s}Y`]     = getNumberValue(m.yId);
+        cfg[`${s}Size`]  = getNumberValue(m.sizeId, 1);
+        cfg[`hide_${s}`] = $(m.hideId).checked;
+      });
+      return cfg;
+    }
+
+    function applyLayoutConfig(config) {
+      SECTION_KEYS.forEach(s => {
+        const m = SECTION_META[s];
+        $(m.xId).value    = config[`${s}X`]    ?? 0;
+        $(m.yId).value    = config[`${s}Y`]    ?? 0;
+        $(m.sizeId).value = config[`${s}Size`] ?? 1;
+        $(m.hideId).checked = Boolean(config[`hide_${s}`]);
+      });
+      $("preview-scale").value = config.previewScale ?? 1.7;
+      $("show-guides").checked = Boolean(config.showGuides);
+      if (config.barcodeType) $("barcode-type-edit").value = config.barcodeType;
+      applyPositions();
+      updateActiveSectionControls();
+      updateBarcodeLabel();
+    }
+
+    function setStatus(message) {
+      $("save-status").textContent = message;
+    }
+
+    function setActiveModelLabel(message) {
+      $("active-model-label").textContent = message || "Rascunho atual";
+    }
+
+    function saveLayoutConfig() {
+      const data = collectLayoutConfig();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      setStatus("Configuracao salva com sucesso.");
+      setActiveModelLabel("Salvo neste computador");
+    }
+
+    function autoSaveLayoutConfig() {
+      const data = collectLayoutConfig();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      setStatus("Configuracao salva automaticamente.");
+    }
+
+    function loadLayoutConfig() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        setStatus("Nenhuma configuracao salva para carregar.");
+        return;
+      }
+      try {
+        const data = JSON.parse(raw);
+        applyLayoutConfig(data);
+        setStatus("Configuracao carregada.");
+        setActiveModelLabel("Salvo neste computador");
+      } catch (_) {
+        setStatus("Configuracao salva esta invalida.");
+      }
+    }
+
+    function clearLayoutConfig() {
+      localStorage.removeItem(STORAGE_KEY);
+      setStatus("Configuracao removida.");
+      setActiveModelLabel("Rascunho atual");
+    }
+
+    function applyPositions() {
+      const targets = [$("preview-label"), $("print-label")];
+      targets.forEach(target => {
+        SECTION_KEYS.forEach(s => {
+          const m = SECTION_META[s];
+          target.style.setProperty(`--${s}-x`, getMm(m.xId));
+          target.style.setProperty(`--${s}-y`, getMm(m.yId));
+          target.style.setProperty(`--${s}-scale`, getScale(m.sizeId));
+          target.classList.toggle(`hide-${s}`, $(m.hideId).checked);
+        });
+      });
+
+      const scale = Number($("preview-scale").value || 1.7);
+      $("preview-scale-wrap").style.transform = `scale(${scale})`;
+      $("preview-label").classList.toggle("guide-on", $("show-guides").checked);
+      updateActiveSectionControls();
+      autoSaveLayoutConfig();
+    }
+
+    function resetPositions() {
+      SECTION_KEYS.forEach(s => {
+        const m = SECTION_META[s];
+        $(m.xId).value    = 0;
+        $(m.yId).value    = 0;
+        $(m.sizeId).value = 1;
+        $(m.hideId).checked = false;
+      });
+      $("preview-scale").value = 1.7;
+      $("show-guides").checked = false;
+      applyPositions();
+      setActiveModelLabel("Padrão restaurado");
+    }
+
+    function printLabel() {
+      applyPositions();
+      window.print();
+    }
+
+    [
+      ...SECTION_KEYS.flatMap(s => { const m = SECTION_META[s]; return [m.xId, m.yId, m.sizeId, m.hideId]; }),
+      "preview-scale", "show-guides"
+    ].forEach(id => {
+      $(id).addEventListener("input", applyPositions);
+      $(id).addEventListener("change", applyPositions);
+    });
+
+    ["active-x", "active-y", "active-size", "active-visible"].forEach(id => {
+      $(id).addEventListener("input", syncFromActiveControls);
+      $(id).addEventListener("change", syncFromActiveControls);
+    });
+
+    document.querySelectorAll(".section-tab").forEach(button => {
+      button.addEventListener("click", () => setActiveSection(button.dataset.section));
+    });
+
+    $("barcode-type-edit").addEventListener("change", function() {
+      renderBarcodes();
+      autoSaveLayoutConfig();
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escJs(str) {
+      return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    }
+
+    function setModelStatus(msg) {
+      $("model-status").textContent = msg;
+    }
+
+    async function loadServerModels() {
+      try {
+        const res = await fetch("/etiq/etiquetas/modelos");
+        const models = await res.json();
+        renderServerModels(models);
+      } catch (_) {
+        setModelStatus("Erro ao carregar modelos.");
+      }
+    }
+
+    function renderServerModels(models) {
+      const list = $("server-models-list");
+      if (!models || models.length === 0) {
+        list.innerHTML = '<small style="color:#888;margin-top:2px;display:block;">Nenhum modelo salvo.</small>';
+        return;
+      }
+      list.innerHTML = models.map(model => `
+        <div class="model-item">
+          <span class="model-name" title="${escHtml(model.name)}">${escHtml(model.name)}</span>
+          <div class="model-actions">
+            <button type="button" class="ghost" style="font-size:0.75rem;padding:2px 7px;" onclick="loadServerModel('${escJs(model.name)}')">Carregar</button>
+            <button type="button" class="ghost" style="font-size:0.75rem;padding:2px 7px;" onclick="renameServerModel('${escJs(model.name)}')">Renomear</button>
+            <button type="button" class="danger" style="font-size:0.75rem;padding:2px 7px;" onclick="deleteServerModel('${escJs(model.name)}')">Excluir</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function saveModelToServer() {
+      const nameEl = $("model-name-input");
+      const name = nameEl.value.trim();
+      if (!name) {
+        setModelStatus("Informe o nome do modelo.");
+        nameEl.focus();
+        return;
+      }
+
+      const config = collectLayoutConfig();
+      try {
+        const res = await fetch("/etiq/etiquetas/modelos/salvar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, config }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setModelStatus(`Modelo "${name}" salvo com sucesso.`);
+          setActiveModelLabel(name);
+          nameEl.value = "";
+          loadServerModels();
+          return;
+        }
+        setModelStatus(data.error || "Erro ao salvar.");
+      } catch (_) {
+        setModelStatus("Erro de conexao.");
+      }
+    }
+
+    async function loadServerModel(name) {
+      try {
+        const res = await fetch("/etiq/etiquetas/modelos");
+        const models = await res.json();
+        const model = models.find(item => item.name === name);
+        if (model && model.config) {
+          applyLayoutConfig(model.config);
+          renderBarcodes();
+          setModelStatus(`Modelo "${name}" carregado.`);
+          setActiveModelLabel(name);
+        }
+      } catch (_) {
+        setModelStatus("Erro ao carregar modelo.");
+      }
+    }
+
+    async function renameServerModel(oldName) {
+      const newName = prompt(`Renomear "${oldName}" para:`, oldName);
+      if (!newName || newName.trim() === oldName) {
+        return;
+      }
+
+      try {
+        const res = await fetch("/etiq/etiquetas/modelos/renomear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ old_name: oldName, new_name: newName.trim() }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setModelStatus(`Renomeado para "${newName.trim()}".`);
+          if ($("active-model-label").textContent === oldName) {
+            setActiveModelLabel(newName.trim());
+          }
+          loadServerModels();
+          return;
+        }
+        setModelStatus(data.error || "Erro ao renomear.");
+      } catch (_) {
+        setModelStatus("Erro de conexao.");
+      }
+    }
+
+    async function deleteServerModel(name) {
+      if (!confirm(`Excluir o modelo "${name}"?`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch("/etiq/etiquetas/modelos/excluir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setModelStatus(`Modelo "${name}" excluido.`);
+          if ($("active-model-label").textContent === name) {
+            setActiveModelLabel("Rascunho atual");
+          }
+          loadServerModels();
+          return;
+        }
+        setModelStatus(data.error || "Erro ao excluir.");
+      } catch (_) {
+        setModelStatus("Erro de conexao.");
+      }
+    }
+
+    renderBarcodes();
+    if (localStorage.getItem(STORAGE_KEY)) {
+      loadLayoutConfig();
+    }
+    applyPositions();
+    updateActiveSectionControls();
+    updateBarcodeLabel();
+    initDirectManipulation();
+    loadServerModels();
+  </script>
+</body>
+</html>
