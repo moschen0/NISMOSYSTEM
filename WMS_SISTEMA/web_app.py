@@ -5,7 +5,7 @@ Sistema de Gerenciamento de Armazém com Flask + Access Database
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, Response
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 import os
@@ -231,7 +231,7 @@ def apply_db_mode(mode: str):
     wms_logger.info(f'DB | Modo de banco alterado para: {mode} ({path})')
 
 
-
+def get_order_age_days(timestamp_str):
     """Retorna a idade do pedido em dias inteiros a partir do campo timestamp."""
     if not timestamp_str:
         return None
@@ -3347,7 +3347,10 @@ def about():
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    """Página de configurações gerais do sistema."""
+    """Página de configurações — acesso restrito a admin."""
+    if not is_admin_user():
+        flash('Acesso restrito a administradores.', 'danger')
+        return redirect(url_for('dashboard'))
     thresholds = load_time_thresholds()
     tg_cfg = load_telegram_config()
     if request.method == 'POST':
@@ -3424,7 +3427,25 @@ def admin_set_db_mode():
         return jsonify({'ok': False, 'message': str(exc)})
 
 
+@app.route('/admin/log-tail')
+@login_required
+def admin_log_tail():
+    """Retorna as últimas N linhas do WMS.log (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'lines': []}), 403
+    n = min(int(request.args.get('n', 80)), 300)
+    lines = []
+    try:
+        if os.path.isfile(_WMS_LOG_PATH):
+            with open(_WMS_LOG_PATH, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+            lines = [l.rstrip() for l in all_lines[-n:]]
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'lines': lines})
 
+
+@app.route('/admin/backup', methods=['POST'])
 @login_required
 def admin_backup():
     """Backup manual do banco de dados (somente admin)."""

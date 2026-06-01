@@ -2,7 +2,7 @@
 Script para rodar o WMS em modo produção usando Waitress
 """
 from waitress import serve
-from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers, init_db_mode
+from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers, apply_db_mode, save_db_mode
 import db_mdb
 import socket
 import sys
@@ -48,8 +48,10 @@ if __name__ == '__main__':
     print("=" * 60)
     print("\nPressione CTRL+C para parar o servidor\n")
 
-    # Aplica modo de banco salvo (produção/teste)
-    init_db_mode()
+    # Sempre inicia em PRODUÇÃO (ignora db_mode.json salvo pelo admin)
+    apply_db_mode('production')
+    save_db_mode('production')
+    print(f'[DB] Modo forçado: PRODUCTION → {db_mdb.get_db_path()}')
 
     # Inicia agendador de backup automático diário (02:00)
     start_daily_backup_scheduler()

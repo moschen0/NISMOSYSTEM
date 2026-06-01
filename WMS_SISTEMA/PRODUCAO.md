@@ -15,7 +15,7 @@ Ou simplesmente clique duas vezes em: **start_wms.bat**
 
 O servidor ficará rodando e acessível em:
 - Local: http://localhost:5000
-- Rede: http://192.168.2.28:5000
+- Rede: http://192.168.1.210:5000
 
 ---
 

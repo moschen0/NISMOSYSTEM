@@ -1,9 +1,9 @@
 """
 WMS - Servidor de TESTE local (porta 5001)
-NUNCA altere o banco de rede nem o banco de producao.
+NUNCA altere o banco de produção.
 
-Este script força o uso do banco LOCAL em:
-  <raiz_repo>/WMS_BD/wms_database.mdb
+Usa o banco de teste definido em WMS_MDB_PATH_TEST no .env:
+  \\192.168.1.210\apps master\DATABASE WMS\BD TEST\wms_database_test.mdb
 """
 import os
 import sys
@@ -15,22 +15,26 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 # ---------------------------------------------------------------------------
-# 2. Resolve o caminho do banco LOCAL (WMS_BD na raiz do repositório)
+# 2. Carrega .env antes de qualquer import (necessário para WMS_MDB_PATH_TEST)
 # ---------------------------------------------------------------------------
-LOCAL_DB = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'WMS_BD', 'wms_database.mdb'))
-
-if not os.path.exists(LOCAL_DB):
-    print(f"[ERRO] Banco de dados local não encontrado em:\n  {LOCAL_DB}")
-    print("Execute primeiro: Copy-Item <rede>\\wms_database.mdb WMS_BD\\")
-    sys.exit(1)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(SCRIPT_DIR, '.env'), override=False)
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
-# 3. Importa db_mdb e SOBRESCREVE DB_PATH antes de qualquer conexão
-#    (impede uso do caminho de rede definido em preferred_paths)
+# 3. Importa db_mdb e força banco de TESTE antes de qualquer conexão
 # ---------------------------------------------------------------------------
 import db_mdb
-db_mdb.DB_PATH = LOCAL_DB          # força banco local
-# Fecha qualquer conexão residual que possa ter sido aberta
+TEST_DB = db_mdb.DB_PATH_TEST
+
+if not TEST_DB:
+    print("[ERRO] WMS_MDB_PATH_TEST não configurado no .env")
+    sys.exit(1)
+
+db_mdb.switch_database(TEST_DB)
+# Fecha qualquer conexão residual
 try:
     conn = getattr(db_mdb._thread_local, 'connection', None)
     if conn:
@@ -45,22 +49,22 @@ except Exception:
 from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers
 
 # ---------------------------------------------------------------------------
-# 5. Inicializa e verifica conexão com o banco LOCAL
+# 5. Inicializa e verifica conexão com o banco de TESTE
 # ---------------------------------------------------------------------------
 print("=" * 60)
-print("WMS Web Application - MODO TESTE (banco LOCAL)")
+print("WMS Web Application - MODO TESTE (banco de rede)")
 print("=" * 60)
-print(f"[INFO] Banco MDB local : {db_mdb.get_db_path()}")
+print(f"[INFO] Banco MDB teste : {db_mdb.get_db_path()}")
 
 try:
     stats = db_mdb.get_database_stats()
-    print("[OK]  Banco de dados LOCAL conectado com sucesso!")
+    print("[OK]  Banco de dados TESTE conectado com sucesso!")
     print(f"   - Usuarios         : {stats['users']}")
     print(f"   - Prateleiras      : {stats['shelves']}")
     print(f"   - Pedidos ativos   : {stats['active_orders']}")
     print(f"   - Pedidos removidos: {stats['removed_orders']}")
 except Exception as e:
-    print(f"[ERRO] Não foi possível conectar ao banco local: {e}")
+    print(f"[ERRO] Não foi possível conectar ao banco de teste: {e}")
     sys.exit(1)
 
 print()

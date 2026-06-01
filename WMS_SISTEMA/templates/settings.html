@@ -1,207 +1,122 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block title %}Configurações - WMS{% endblock %}
 
+{% block head %}
+<style>
+    #cfgTabs .nav-link { color: #495057 !important; }
+    #cfgTabs .nav-link.active { color: #0d6efd !important; font-weight: 600; }
+    #cfgTabs .nav-link:hover { color: #0d6efd !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
-    <div class="col-lg-7 mx-auto">
+    <div class="col-lg-8 mx-auto">
 
-        <h2 class="mb-4"><i class="bi bi-gear"></i> Configurações</h2>
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <h2 class="mb-0"><i class="bi bi-gear"></i> Configurações</h2>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Voltar
+            </a>
+        </div>
 
-        <!-- ── Seleção de Banco de Dados (somente admin) ─────────────── -->
-        {% if session.get('user', '')|lower == 'admin' %}
-        <div class="card mb-4" style="border-left: 5px solid #dc3545;">
-            <div class="card-header" style="background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%); color: white;">
-                <h5 class="mb-0"><i class="bi bi-database-gear"></i> Banco de Dados</h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted small mb-3">
-                    Selecione qual banco de dados o servidor deve utilizar.
-                    A troca afeta <strong>todos os usuários</strong> imediatamente.
-                </p>
+        <!-- Tabs -->
+        <ul class="nav nav-tabs mb-4" id="cfgTabs" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBanco" type="button"><i class="bi bi-database-gear"></i> Banco</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTelegram" type="button"><i class="bi bi-telegram"></i> Telegram</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLimites" type="button"><i class="bi bi-clock-history"></i> Limites</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBackup" type="button"><i class="bi bi-archive"></i> Backup</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLog" type="button"><i class="bi bi-terminal"></i> Log</button></li>
+        </ul>
 
-                <div class="d-flex gap-3 flex-wrap align-items-center mb-3">
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="radio" name="db_mode_radio"
-                               id="dbModeProd" value="production"
-                               {% if db_mode == 'production' %}checked{% endif %}>
-                        <label class="form-check-label fw-semibold" for="dbModeProd">
+        <div class="tab-content">
+
+            {# ── TAB BANCO ────────────────────────────────────────────── #}
+            <div class="tab-pane fade show active" id="tabBanco">
+
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    {% if db_mode == 'production' %}
+                    <span class="badge fs-6 bg-success"><i class="bi bi-database-fill"></i> Produção</span>
+                    {% else %}
+                    <span class="badge fs-6 bg-warning text-dark"><i class="bi bi-database-fill"></i> Teste</span>
+                    {% endif %}
+                    <code class="small text-muted">{{ db_path_active }}</code>
+                </div>
+
+                <div class="d-flex gap-3 align-items-center mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="db_mode_radio" id="dbModeProd"
+                               value="production" {% if db_mode == 'production' %}checked{% endif %}>
+                        <label class="form-check-label" for="dbModeProd">
                             <i class="bi bi-database-fill text-success"></i> Produção
                         </label>
                     </div>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="radio" name="db_mode_radio"
-                               id="dbModeTest" value="test"
-                               {% if db_mode == 'test' %}checked{% endif %}>
-                        <label class="form-check-label fw-semibold" for="dbModeTest">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="db_mode_radio" id="dbModeTest"
+                               value="test" {% if db_mode == 'test' %}checked{% endif %}>
+                        <label class="form-check-label" for="dbModeTest">
                             <i class="bi bi-database-fill text-warning"></i> Teste
                         </label>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-danger ms-2" id="btnApplyDbMode">
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="btnApplyDbMode">
                         <i class="bi bi-arrow-repeat"></i> Aplicar
                     </button>
-                    <span id="dbModeResult" class="small ms-2"></span>
-                </div>
-
-                <div class="small text-muted">
-                    <div><i class="bi bi-hdd-network text-success"></i>
-                        <strong>Produção:</strong>
-                        <span class="font-monospace" style="font-size:0.8em;">{{ db_path_prod }}</span>
-                    </div>
-                    <div class="mt-1"><i class="bi bi-hdd text-warning"></i>
-                        <strong>Teste:</strong>
-                        <span class="font-monospace" style="font-size:0.8em;">{{ db_path_test }}</span>
-                    </div>
-                    <div class="mt-2 {% if db_mode == 'test' %}text-warning fw-bold{% else %}text-success{% endif %}">
-                        <i class="bi bi-plug-fill"></i>
-                        Banco ativo: <span id="dbActivePath" class="font-monospace" style="font-size:0.8em;">{{ db_path_active }}</span>
-                    </div>
+                    <span id="dbModeResult" class="small"></span>
                 </div>
 
                 {% if db_mode == 'test' %}
-                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                <div class="alert alert-warning py-2 small mb-3">
                     <i class="bi bi-exclamation-triangle-fill"></i>
-                    <strong>Atenção:</strong> o sistema está usando o banco de <strong>TESTE</strong>.
-                    Usuários normais não veem esta mensagem mas estão conectados ao banco de teste.
+                    Sistema operando no banco de <strong>TESTE</strong> — afeta todos os usuários.
                 </div>
                 {% endif %}
 
-                <hr class="my-3">
-
-                <!-- Sessões ativas -->
-                <p class="small fw-semibold mb-2">
-                    <i class="bi bi-people-fill"></i> Usuários com sessão ativa
+                <hr>
+                <p class="fw-semibold mb-2">
+                    <i class="bi bi-people-fill"></i> Sessões ativas
                     <span class="badge bg-secondary ms-1" id="activeUserCount">{{ active_users|length }}</span>
                 </p>
                 {% if active_users %}
                 <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0" style="font-size:0.82em;">
-                    <thead class="table-light">
-                        <tr><th>Usuário</th><th>Unidade</th><th>Setor</th><th>IP</th><th>Visto</th></tr>
-                    </thead>
-                    <tbody id="activeUsersBody">
-                    {% for u in active_users %}
-                    <tr class="{% if u.user|lower == 'admin' %}table-danger{% endif %}">
-                        <td class="fw-semibold">{{ u.user }}</td>
-                        <td>{{ u.unit }}</td>
-                        <td>{{ u.sector }}</td>
-                        <td class="font-monospace">{{ u.ip }}</td>
-                        <td>{{ u.last_seen.strftime('%H:%M:%S') }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
+                    <table class="table table-sm table-hover mb-0" style="font-size:0.83em;">
+                        <thead class="table-light">
+                            <tr><th>Usuário</th><th>Unidade</th><th>IP</th><th>Visto</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for u in active_users %}
+                        <tr class="{% if u.user|lower == 'admin' %}table-danger{% endif %}">
+                            <td class="fw-semibold">{{ u.user }}</td>
+                            <td>{{ u.unit }}</td>
+                            <td class="font-monospace">{{ u.ip }}</td>
+                            <td>{{ u.last_seen.strftime('%H:%M:%S') }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
                 {% else %}
-                <p class="text-muted small mb-0" id="noActiveUsers">Nenhuma sessão ativa no momento.</p>
+                <p class="text-muted small mb-0">Nenhuma sessão ativa no momento.</p>
                 {% endif %}
             </div>
-        </div>
-        {% endif %}
 
-        <!-- ── Controle de tempo de permanência ──────────────────────── -->
-        <div class="card mb-4" style="border-left: 5px solid #667eea;">
-            <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Controle de Tempo de Permanência</h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">
-                    Define os limiares (em dias) que determinam a cor exibida em cada caixa nas visualizações
-                    de prateleiras. Os valores devem ser crescentes.
-                </p>
+            {# ── TAB TELEGRAM ─────────────────────────────────────────── #}
+            <div class="tab-pane fade" id="tabTelegram">
 
-                <!-- Prévia das cores -->
-                <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
-                    <strong style="font-size:13px;">Prévia:</strong>
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#166534;font-size:12px;">
-                        Verde &mdash; &lt; {{ thresholds.green_days }}d (Normal)
-                    </span>
-                    <span class="px-3 py-1 rounded fw-bold" style="background:#FFDE21;color:#1a1a1a;font-size:12px;">
-                        Amarelo &mdash; {{ thresholds.green_days }}&ndash;{{ thresholds.yellow_days }}d (Atenção)
-                    </span>
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#991b1b;font-size:12px;">
-                        Vermelho &mdash; {{ thresholds.yellow_days }}&ndash;{{ thresholds.red_days }}d (Urgente)
-                    </span>
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#0a0a0a;border:1px solid #555;font-size:12px;">
-                        Preto &mdash; &ge; {{ thresholds.red_days }}d (Crítico)
-                    </span>
-                </div>
-
-                <form method="POST" action="{{ url_for('settings') }}">
-                    <input type="hidden" name="form_type" value="thresholds">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">
-                                <span class="badge" style="background:#166534;">Verde</span>
-                                Limite Normal (dias)
-                            </label>
-                            <input type="number" class="form-control" name="green_days"
-                                   value="{{ thresholds.green_days }}" min="1" max="30" required>
-                            <div class="form-text">0 a &lt; N dias → <strong>Normal</strong></div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">
-                                <span class="badge" style="background:#FFDE21;color:#1a1a1a;">Amarelo</span>
-                                Limite Atenção (dias)
-                            </label>
-                            <input type="number" class="form-control" name="yellow_days"
-                                   value="{{ thresholds.yellow_days }}" min="1" max="60" required>
-                            <div class="form-text">N a &lt; M dias → <strong>Atenção</strong></div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">
-                                <span class="badge" style="background:#991b1b;">Vermelho</span>
-                                Limite Urgente (dias)
-                            </label>
-                            <input type="number" class="form-control" name="red_days"
-                                   value="{{ thresholds.red_days }}" min="1" max="90" required>
-                            <div class="form-text">M a &lt; R dias → <strong>Urgente</strong> / ≥ R → <strong>Crítico</strong></div>
-                        </div>
-                    </div>
-
-                    <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:13px;">
-                        <i class="bi bi-info-circle"></i>
-                        Os limiares devem ser crescentes: <code>Verde &lt; Amarelo &lt; Vermelho</code>.
-                        Exemplo padrão: <strong>3 / 4 / 6</strong>.
-                    </div>
-
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-floppy"></i> Salvar Configurações
-                        </button>
-                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left"></i> Voltar
-                        </a>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- ── Notificações Telegram ────────────────────────────────── -->
-        {% if is_admin %}
-        <div class="card mb-4" style="border-left: 5px solid #0088cc;">
-            <div class="card-header" style="background: linear-gradient(135deg, #0088cc 0%, #005f8e 100%); color: white;">
-                <h5 class="mb-0"><i class="bi bi-telegram"></i> Notificações Telegram</h5>
-            </div>
-            <div class="card-body">
-
-                {% if tg_configured %}
-                <div class="alert alert-success py-2 mb-3" style="font-size:13px;">
-                    <i class="bi bi-check-circle-fill"></i>
-                    Bot configurado e pronto para uso.
-                    <button type="button" class="btn btn-outline-success btn-sm ms-2" id="btnTestTelegram">
-                        <i class="bi bi-send"></i> Testar conexão
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    {% if tg_configured %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Bot configurado</span>
+                    <button type="button" class="btn btn-outline-success btn-sm" id="btnTestTelegram">
+                        <i class="bi bi-send"></i> Testar
                     </button>
-                    <span id="testTgResult" class="ms-2 small"></span>
+                    <span id="testTgResult" class="small"></span>
+                    {% else %}
+                    <div class="alert alert-warning py-2 small mb-0">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        Configure <code>TELEGRAM_BOT_TOKEN</code> e <code>TELEGRAM_CHAT_ID</code> no <code>.env</code> e reinicie.
+                    </div>
+                    {% endif %}
                 </div>
-                {% else %}
-                <div class="alert alert-warning py-2 mb-3" style="font-size:13px;">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    Bot <strong>não configurado</strong>.
-                    Defina <code>TELEGRAM_BOT_TOKEN</code> e <code>TELEGRAM_CHAT_ID</code>
-                    no arquivo <code>.env</code> e reinicie o servidor.
-                </div>
-                {% endif %}
 
                 <form method="POST" action="{{ url_for('settings') }}">
                     <input type="hidden" name="form_type" value="telegram">
@@ -209,257 +124,186 @@
                     <div class="mb-3">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="notifyStatusAlerts"
-                                   name="notify_status_alerts"
-                                   {% if tg_cfg.notify_status_alerts %}checked{% endif %}>
-                            <label class="form-check-label fw-semibold" for="notifyStatusAlerts">
-                                Alertar quando pedidos mudarem de estado
-                            </label>
+                                   name="notify_status_alerts" {% if tg_cfg.notify_status_alerts %}checked{% endif %}>
+                            <label class="form-check-label" for="notifyStatusAlerts">Alertas de status (verificado a cada hora)</label>
                         </div>
-                        <div class="form-text ms-4">
-                            Envia mensagem ao Telegram quando um pedido passar para Atenção, Urgente ou Crítico
-                            (verificado a cada hora).
-                        </div>
-                    </div>
-
-                    <div class="mb-3 ms-4">
-                        <label class="form-label fw-semibold small text-muted">Notificar nos tiers:</label>
-                        <div class="d-flex gap-3 flex-wrap">
-                            <div class="form-check">
+                        <div class="ms-4 mt-1 d-flex gap-3 flex-wrap">
+                            {% for tier, lbl, color in [('attention','Atenção','#FFDE21'), ('urgent','Urgente','#991b1b'), ('critical','Crítico','#0a0a0a')] %}
+                            <div class="form-check form-check-inline">
                                 <input class="form-check-input" type="checkbox" name="notify_tiers"
-                                       value="attention" id="tierAttention"
-                                       {% if 'attention' in tg_cfg.notify_tiers %}checked{% endif %}>
-                                <label class="form-check-label" for="tierAttention">
-                                    <span class="badge" style="background:#FFDE21;color:#1a1a1a;">Atenção</span>
+                                       value="{{ tier }}" id="tier_{{ tier }}"
+                                       {% if tier in tg_cfg.notify_tiers %}checked{% endif %}>
+                                <label class="form-check-label" for="tier_{{ tier }}">
+                                    <span class="badge" style="background:{{ color }};{% if tier=='attention' %}color:#1a1a1a{% endif %}">{{ lbl }}</span>
                                 </label>
                             </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_tiers"
-                                       value="urgent" id="tierUrgent"
-                                       {% if 'urgent' in tg_cfg.notify_tiers %}checked{% endif %}>
-                                <label class="form-check-label" for="tierUrgent">
-                                    <span class="badge" style="background:#991b1b;">Urgente</span>
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_tiers"
-                                       value="critical" id="tierCritical"
-                                       {% if 'critical' in tg_cfg.notify_tiers %}checked{% endif %}>
-                                <label class="form-check-label" for="tierCritical">
-                                    <span class="badge" style="background:#0a0a0a;">Crítico</span>
-                                </label>
-                            </div>
+                            {% endfor %}
                         </div>
                     </div>
 
                     <hr class="my-3">
 
-                    <!-- Relatório diário (texto) -->
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="notifyDailyReport"
-                                   name="notify_daily_report"
-                                   {% if tg_cfg.notify_daily_report %}checked{% endif %}>
-                            <label class="form-check-label fw-semibold" for="notifyDailyReport">
-                                Enviar resumo diário (texto) de pedidos
-                            </label>
-                        </div>
-                        <div class="form-text ms-4">
-                            Envia automaticamente uma contagem dos pedidos por tier no horário configurado.
-                        </div>
-                    </div>
-
-                    <div class="mb-4 ms-4">
-                        <label class="form-label fw-semibold small text-muted" for="dailyReportHour">
-                            Horário do resumo diário:
-                        </label>
-                        <div style="max-width:140px;">
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="dailyReportHour"
-                                       name="daily_report_hour"
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="notifyDailyReport"
+                                       name="notify_daily_report" {% if tg_cfg.notify_daily_report %}checked{% endif %}>
+                                <label class="form-check-label" for="notifyDailyReport">Resumo diário</label>
+                            </div>
+                            <div class="input-group" style="max-width:140px;">
+                                <input type="number" class="form-control" name="daily_report_hour"
                                        value="{{ tg_cfg.daily_report_hour }}" min="0" max="23">
                                 <span class="input-group-text">h</span>
                             </div>
                         </div>
-                    </div>
-
-                    <hr class="my-3">
-
-                    <!-- Relatório de Período (CSV — fecha mês) -->
-                    <p class="fw-semibold mb-2">
-                        <i class="bi bi-file-earmark-spreadsheet"></i>
-                        Relatório de Período — Fecha Mês (CSV)
-                    </p>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="scheduledReportEnabled"
-                                   name="scheduled_report_enabled"
-                                   {% if tg_cfg.scheduled_report_enabled %}checked{% endif %}>
-                            <label class="form-check-label fw-semibold" for="scheduledReportEnabled">
-                                Envio automático do relatório de período
-                            </label>
-                        </div>
-                        <div class="form-text ms-4">
-                            Gera e envia um CSV com pedidos cadastrados, retirados e ativos no período.
-                        </div>
-                    </div>
-
-                    <div class="mb-3 ms-4">
-                        <label class="form-label fw-semibold small text-muted">Modo do período:</label>
-                        <div class="d-flex flex-column gap-2">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
-                                       value="month_to_date" id="modeMonthToDate"
-                                       {% if tg_cfg.scheduled_report_mode == 'month_to_date' %}checked{% endif %}
-                                       onchange="updatePeriodPreview()">
-                                <label class="form-check-label" for="modeMonthToDate">
-                                    Do dia <strong>N</strong> do mês até <strong>hoje</strong>
-                                    <small class="text-muted">(útil para acompanhamento contínuo)</small>
-                                </label>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="scheduledReportEnabled"
+                                       name="scheduled_report_enabled" {% if tg_cfg.scheduled_report_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="scheduledReportEnabled">Relatório de período (CSV)</label>
                             </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
-                                       value="full_month" id="modeFullMonth"
-                                       {% if tg_cfg.scheduled_report_mode == 'full_month' %}checked{% endif %}
-                                       onchange="updatePeriodPreview()">
-                                <label class="form-check-label" for="modeFullMonth">
-                                    Do dia <strong>N</strong> ao <strong>último dia do mês</strong>
-                                    <small class="text-muted">(mês completo)</small>
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="scheduled_report_mode"
-                                       value="custom_days" id="modeCustomDays"
-                                       {% if tg_cfg.scheduled_report_mode == 'custom_days' %}checked{% endif %}
-                                       onchange="updatePeriodPreview()">
-                                <label class="form-check-label" for="modeCustomDays">
-                                    Período personalizado (dia inicial → dia final do mês)
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row g-2 ms-4 mb-3" style="max-width:360px;">
-                        <div class="col-6">
-                            <label class="form-label small text-muted fw-semibold">Dia inicial:</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="scheduledStartDay"
-                                       name="scheduled_report_start_day"
-                                       value="{{ tg_cfg.scheduled_report_start_day }}"
-                                       min="1" max="28" oninput="updatePeriodPreview()">
-                                <span class="input-group-text">dia</span>
-                            </div>
-                        </div>
-                        <div class="col-6" id="endDayCol"
-                             style="{% if tg_cfg.scheduled_report_mode != 'custom_days' %}opacity:.4;pointer-events:none{% endif %}">
-                            <label class="form-label small text-muted fw-semibold">Dia final:</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="scheduledEndDay"
-                                       name="scheduled_report_end_day"
-                                       value="{{ tg_cfg.scheduled_report_end_day }}"
-                                       min="0" max="31" placeholder="0=último" oninput="updatePeriodPreview()">
-                                <span class="input-group-text">dia</span>
-                            </div>
-                            <div class="form-text">0 = último dia do mês</div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3 ms-4">
-                        <label class="form-label small text-muted fw-semibold" for="scheduledReportHour">
-                            Horário do envio automático:
-                        </label>
-                        <div style="max-width:140px;">
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="scheduledReportHour"
-                                       name="scheduled_report_hour"
+                            <div class="input-group" style="max-width:140px;">
+                                <input type="number" class="form-control" name="scheduled_report_hour"
                                        value="{{ tg_cfg.scheduled_report_hour }}" min="0" max="23">
                                 <span class="input-group-text">h</span>
                             </div>
                         </div>
-                        <div id="periodPreview" class="form-text mt-1" style="color:#0088cc;font-weight:500;"></div>
                     </div>
 
-                    <div class="d-flex gap-2 flex-wrap">
-                        <button type="submit" class="btn btn-primary">
+                    <div class="row g-2 mb-3 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label small text-muted">Modo do período:</label>
+                            <select class="form-select form-select-sm" name="scheduled_report_mode" id="scheduledReportMode" onchange="updatePeriodPreview()">
+                                <option value="month_to_date" {% if tg_cfg.scheduled_report_mode == 'month_to_date' %}selected{% endif %}>Início do mês → hoje</option>
+                                <option value="full_month"    {% if tg_cfg.scheduled_report_mode == 'full_month'    %}selected{% endif %}>Mês completo</option>
+                                <option value="custom_days"   {% if tg_cfg.scheduled_report_mode == 'custom_days'   %}selected{% endif %}>Personalizado</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small text-muted">Dia inicial:</label>
+                            <input type="number" class="form-control form-control-sm" name="scheduled_report_start_day"
+                                   id="scheduledStartDay" value="{{ tg_cfg.scheduled_report_start_day }}" min="1" max="28"
+                                   oninput="updatePeriodPreview()" style="width:80px;">
+                        </div>
+                        <div class="col-auto" id="endDayCol">
+                            <label class="form-label small text-muted">Dia final:</label>
+                            <input type="number" class="form-control form-control-sm" name="scheduled_report_end_day"
+                                   id="scheduledEndDay" value="{{ tg_cfg.scheduled_report_end_day }}" min="0" max="31"
+                                   placeholder="0=último" oninput="updatePeriodPreview()" style="width:80px;">
+                        </div>
+                    </div>
+                    <div id="periodPreview" class="small text-primary mb-3"></div>
+
+                    <div class="d-flex gap-2 flex-wrap align-items-center">
+                        <button type="submit" class="btn btn-primary btn-sm">
                             <i class="bi bi-floppy"></i> Salvar
                         </button>
                         {% if tg_configured %}
-                        <button type="button" class="btn btn-outline-info" id="btnSendDailyReport">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="btnSendDailyReport">
                             <i class="bi bi-bar-chart-line"></i> Enviar resumo agora
                         </button>
-                        <span id="dailyReportResult" class="ms-1 small align-self-center"></span>
+                        <span id="dailyReportResult" class="small"></span>
                         {% endif %}
                     </div>
                 </form>
 
                 {% if tg_configured %}
-                <!-- Envio manual de relatório de período -->
                 <hr class="my-3">
-                <p class="fw-semibold mb-2">
-                    <i class="bi bi-send"></i> Gerar e enviar relatório de período agora
-                </p>
-                <div class="row g-2 align-items-end" style="max-width:520px;">
-                    <div class="col-5">
-                        <label class="form-label small text-muted">Data inicial:</label>
-                        <input type="date" class="form-control" id="manualDateFrom">
+                <p class="fw-semibold small mb-2"><i class="bi bi-send"></i> Relatório de período manual</p>
+                <div class="d-flex gap-2 align-items-end flex-wrap">
+                    <div>
+                        <label class="form-label small text-muted mb-1">De:</label>
+                        <input type="date" class="form-control form-control-sm" id="manualDateFrom" style="width:150px;">
                     </div>
-                    <div class="col-5">
-                        <label class="form-label small text-muted">Data final:</label>
-                        <input type="date" class="form-control" id="manualDateTo">
+                    <div>
+                        <label class="form-label small text-muted mb-1">Até:</label>
+                        <input type="date" class="form-control form-control-sm" id="manualDateTo" style="width:150px;">
                     </div>
-                    <div class="col-2">
-                        <button type="button" class="btn btn-primary w-100" id="btnSendPeriodReport">
-                            <i class="bi bi-telegram"></i>
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" id="btnSendPeriodReport">
+                        <i class="bi bi-telegram"></i> Enviar CSV
+                    </button>
+                    <span id="periodReportResult" class="small"></span>
                 </div>
-                <span id="periodReportResult" class="mt-2 d-block small"></span>
                 {% endif %}
             </div>
-        </div>
-        {% endif %}{# end is_admin #}
 
-        <!-- ── Backup do Banco de Dados ─────────────────────────────── -->
-        <div class="card mb-4" style="border-left: 5px solid #198754;">
-            <div class="card-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white;">
-                <h5 class="mb-0"><i class="bi bi-archive"></i> Backup do Banco de Dados</h5>
+            {# ── TAB LIMITES ──────────────────────────────────────────── #}
+            <div class="tab-pane fade" id="tabLimites">
+
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#166534;font-size:12px;">Verde &lt; {{ thresholds.green_days }}d</span>
+                    <span class="px-3 py-1 rounded fw-bold" style="background:#FFDE21;color:#1a1a1a;font-size:12px;">Amarelo {{ thresholds.green_days }}–{{ thresholds.yellow_days }}d</span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#991b1b;font-size:12px;">Vermelho {{ thresholds.yellow_days }}–{{ thresholds.red_days }}d</span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#0a0a0a;border:1px solid #555;font-size:12px;">Preto ≥ {{ thresholds.red_days }}d</span>
+                </div>
+
+                <form method="POST" action="{{ url_for('settings') }}">
+                    <input type="hidden" name="form_type" value="thresholds">
+                    <div class="row g-3 mb-3">
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold"><span class="badge" style="background:#166534;">Verde</span> Normal (dias)</label>
+                            <input type="number" class="form-control" name="green_days"
+                                   value="{{ thresholds.green_days }}" min="1" max="30" required>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold"><span class="badge" style="background:#FFDE21;color:#1a1a1a;">Amarelo</span> Atenção (dias)</label>
+                            <input type="number" class="form-control" name="yellow_days"
+                                   value="{{ thresholds.yellow_days }}" min="1" max="60" required>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold"><span class="badge" style="background:#991b1b;">Vermelho</span> Urgente (dias)</label>
+                            <input type="number" class="form-control" name="red_days"
+                                   value="{{ thresholds.red_days }}" min="1" max="90" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-floppy"></i> Salvar Limites
+                    </button>
+                </form>
             </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">
-                    <i class="bi bi-hdd-network"></i> Destino:
-                    <code>{{ backup_dir }}</code><br>
-                    <i class="bi bi-clock"></i> Backup automático executado diariamente às <strong>02:00</strong>.
+
+            {# ── TAB BACKUP ───────────────────────────────────────────── #}
+            <div class="tab-pane fade" id="tabBackup">
+
+                <p class="text-muted small mb-3">
+                    <i class="bi bi-hdd-network"></i> Destino: <code>{{ backup_dir }}</code><br>
+                    <i class="bi bi-clock"></i> Automático diariamente às <strong>02:00</strong>.
                 </p>
 
-                {% if is_admin %}
                 <form method="POST" action="{{ url_for('admin_backup') }}"
-                      onsubmit="return confirm('Fazer backup do banco agora?');">
-                    <button type="submit" class="btn btn-success">
+                      onsubmit="return confirm('Fazer backup agora?');">
+                    <button type="submit" class="btn btn-success btn-sm mb-3">
                         <i class="bi bi-cloud-upload"></i> Fazer Backup Agora
                     </button>
                 </form>
-                {% else %}
-                <div class="alert alert-secondary py-2 mb-0" style="font-size:0.875rem;">
-                    <i class="bi bi-lock"></i> Backup manual disponível somente para administradores.
-                </div>
-                {% endif %}
 
                 {% if backup_log %}
-                <hr class="my-3">
-                <p class="text-muted mb-1 small">
-                    <i class="bi bi-journal-text"></i> Últimas entradas do log
-                    <code style="font-size:10px;">({{ backup_dir }}\backup.log)</code>:
-                </p>
                 <pre class="rounded p-2 mb-0"
-                     style="background:#1a1a1a; color:#d4edda; font-size:11px; max-height:200px; overflow-y:auto; white-space:pre-wrap;">{% for line in backup_log %}{{ line }}
+                     style="background:#1a1a1a;color:#d4edda;font-size:11px;max-height:220px;overflow-y:auto;white-space:pre-wrap;">{% for line in backup_log %}{{ line }}
 {% endfor %}</pre>
                 {% else %}
-                <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:0.875rem;">
-                    <i class="bi bi-info-circle"></i> Nenhum backup realizado ainda.
-                    O log será criado automaticamente após o primeiro backup.
-                </div>
+                <p class="text-muted small">Nenhum backup realizado ainda.</p>
                 {% endif %}
             </div>
-        </div>
+
+            {# ── TAB LOG ──────────────────────────────────────────────── #}
+            <div class="tab-pane fade" id="tabLog">
+
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="text-muted small"><i class="bi bi-terminal"></i> WMS.log (tempo real)</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="btnRefreshLog">
+                        <i class="bi bi-arrow-clockwise"></i> Atualizar
+                    </button>
+                    <div class="form-check form-switch mb-0 ms-2">
+                        <input class="form-check-input" type="checkbox" id="autoRefreshLog" checked>
+                        <label class="form-check-label small" for="autoRefreshLog">Auto (5s)</label>
+                    </div>
+                </div>
+                <pre id="logContainer"
+                     style="background:#1a1a1a;color:#d4edda;font-size:11px;height:420px;overflow-y:auto;white-space:pre-wrap;border-radius:6px;padding:10px;">Carregando…</pre>
+            </div>
+
+        </div>{# /tab-content #}
 
     </div>
 </div>
@@ -467,141 +311,121 @@
 
 {% block scripts %}
 <script>
-// ── Troca de banco de dados ───────────────────────────────────────────────
+// ── Banco ─────────────────────────────────────────────────────────────────
 const btnApplyDbMode = document.getElementById('btnApplyDbMode');
 if (btnApplyDbMode) {
     btnApplyDbMode.addEventListener('click', function () {
         const mode = document.querySelector('input[name="db_mode_radio"]:checked')?.value;
         if (!mode) return;
         const label = mode === 'production' ? 'Produção' : 'Teste';
-        const activeCount = parseInt(document.getElementById('activeUserCount')?.textContent || '0');
-        const warnUsers = activeCount > 1 ? `\n⚠️ ${activeCount} usuário(s) ativo(s) serão afetados.` : '';
-        if (!confirm(`Trocar para o banco de ${label}?${warnUsers}`)) return;
+        const n = parseInt(document.getElementById('activeUserCount')?.textContent || '0');
+        const warn = n > 1 ? `\n⚠️ ${n} usuário(s) ativo(s) serão afetados.` : '';
+        if (!confirm(`Trocar para o banco de ${label}?${warn}`)) return;
         const result = document.getElementById('dbModeResult');
-        result.textContent = 'Aplicando…';
-        result.className = 'small ms-2 text-muted';
-        const fd = new FormData();
-        fd.append('mode', mode);
-        fetch('{{ url_for("admin_set_db_mode") }}', {
-            method: 'POST', body: fd,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(r => r.json())
-        .then(data => {
-            result.textContent = data.message;
-            result.className = 'small ms-2 ' + (data.ok ? 'text-success fw-bold' : 'text-danger');
-            if (data.ok && data.path) {
-                const pathEl = document.getElementById('dbActivePath');
-                if (pathEl) pathEl.textContent = data.path;
-                // Recarrega para atualizar badge e alert de teste
-                setTimeout(() => location.reload(), 1200);
-            }
-        })
-        .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small ms-2 text-danger'; });
+        result.textContent = 'Aplicando…'; result.className = 'small text-muted';
+        const fd = new FormData(); fd.append('mode', mode);
+        fetch('{{ url_for("admin_set_db_mode") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                result.textContent = d.message;
+                result.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
+                if (d.ok) setTimeout(() => location.reload(), 1200);
+            })
+            .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small text-danger'; });
     });
 }
 
+// ── Telegram helpers ───────────────────────────────────────────────────────
 function _tgFetch(url, resultEl, loadingText, extraData) {
-    resultEl.textContent = loadingText || 'Aguarde…';
-    resultEl.className = 'ms-2 small text-muted';
+    resultEl.textContent = loadingText || 'Aguarde…'; resultEl.className = 'ms-2 small text-muted';
     const fd = new FormData();
     if (extraData) Object.entries(extraData).forEach(([k, v]) => fd.append(k, v));
     fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
-        .then(data => {
-            resultEl.textContent = data.message;
-            resultEl.className = 'ms-2 small ' + (data.ok ? 'text-success' : 'text-danger');
-        })
-        .catch(e => {
-            resultEl.textContent = 'Erro de rede: ' + e;
-            resultEl.className = 'ms-2 small text-danger';
-        });
+        .then(d => { resultEl.textContent = d.message; resultEl.className = 'ms-2 small ' + (d.ok ? 'text-success' : 'text-danger'); })
+        .catch(e => { resultEl.textContent = 'Erro: ' + e; resultEl.className = 'ms-2 small text-danger'; });
 }
 
 const btnTest = document.getElementById('btnTestTelegram');
-if (btnTest) {
-    btnTest.addEventListener('click', function () {
-        _tgFetch('{{ url_for("telegram_test") }}',
-                 document.getElementById('testTgResult'),
-                 'Enviando…');
-    });
-}
+if (btnTest) btnTest.addEventListener('click', () => _tgFetch('{{ url_for("telegram_test") }}', document.getElementById('testTgResult'), 'Enviando…'));
 
 const btnDaily = document.getElementById('btnSendDailyReport');
-if (btnDaily) {
-    btnDaily.addEventListener('click', function () {
-        _tgFetch('{{ url_for("telegram_send_daily_report_manual") }}',
-                 document.getElementById('dailyReportResult'),
-                 'Enviando…');
-    });
-}
+if (btnDaily) btnDaily.addEventListener('click', () => _tgFetch('{{ url_for("telegram_send_daily_report_manual") }}', document.getElementById('dailyReportResult'), 'Enviando…'));
 
 const btnPeriod = document.getElementById('btnSendPeriodReport');
 if (btnPeriod) {
     btnPeriod.addEventListener('click', function () {
         const df = document.getElementById('manualDateFrom').value;
         const dt = document.getElementById('manualDateTo').value;
-        if (!df || !dt) {
-            const el = document.getElementById('periodReportResult');
-            el.textContent = 'Informe as duas datas.';
-            el.className = 'mt-2 d-block small text-danger';
-            return;
-        }
-        _tgFetch('{{ url_for("telegram_send_period_report") }}',
-                 document.getElementById('periodReportResult'),
-                 'Gerando CSV e enviando…',
-                 { date_from: df, date_to: dt });
+        const el = document.getElementById('periodReportResult');
+        if (!df || !dt) { el.textContent = 'Informe as duas datas.'; el.className = 'small text-danger'; return; }
+        _tgFetch('{{ url_for("telegram_send_period_report") }}', el, 'Gerando CSV…', { date_from: df, date_to: dt });
     });
 }
 
-// ── Pré-visualização do período configurado ───────────────────────────────
+// ── Período preview ────────────────────────────────────────────────────────
 function updatePeriodPreview() {
-    const mode      = document.querySelector('input[name="scheduled_report_mode"]:checked')?.value || 'month_to_date';
-    const startDay  = parseInt(document.getElementById('scheduledStartDay')?.value) || 1;
-    const endDay    = parseInt(document.getElementById('scheduledEndDay')?.value) || 0;
-    const endDayCol = document.getElementById('endDayCol');
-    const preview   = document.getElementById('periodPreview');
+    const mode = document.getElementById('scheduledReportMode')?.value || 'month_to_date';
+    const startDay = parseInt(document.getElementById('scheduledStartDay')?.value) || 1;
+    const endDay   = parseInt(document.getElementById('scheduledEndDay')?.value)   || 0;
+    const endCol   = document.getElementById('endDayCol');
+    const preview  = document.getElementById('periodPreview');
     if (!preview) return;
-
-    // Habilita/desabilita campo de dia final
-    if (endDayCol) {
-        endDayCol.style.opacity = mode === 'custom_days' ? '1' : '0.4';
-        endDayCol.style.pointerEvents = mode === 'custom_days' ? '' : 'none';
-    }
-
-    const now    = new Date();
-    const year   = now.getFullYear();
-    const month  = now.getMonth(); // 0-based
-    const lastDay = new Date(year, month + 1, 0).getDate();
-    const clampedStart = Math.min(startDay, lastDay);
-    const clampedEnd   = endDay <= 0 || endDay > lastDay ? lastDay : endDay;
+    if (endCol) { endCol.style.opacity = mode === 'custom_days' ? '1' : '0.4'; endCol.style.pointerEvents = mode === 'custom_days' ? '' : 'none'; }
+    const now = new Date();
+    const lastDay  = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
     const monthStr = now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-
+    const s = Math.min(startDay, lastDay);
     let label = '';
-    if (mode === 'month_to_date') {
-        const todayDay = now.getDate();
-        label = `Período: dia ${clampedStart} → dia ${todayDay} (hoje) de ${monthStr}`;
-    } else if (mode === 'full_month') {
-        label = `Período: dia ${clampedStart} → dia ${lastDay} de ${monthStr}`;
-    } else {
-        label = `Período: dia ${clampedStart} → dia ${clampedEnd} de ${monthStr}`;
-    }
+    if      (mode === 'month_to_date') label = `Dia ${s} → ${now.getDate()} (hoje) de ${monthStr}`;
+    else if (mode === 'full_month')    label = `Dia ${s} → ${lastDay} de ${monthStr}`;
+    else                               label = `Dia ${s} → ${endDay <= 0 || endDay > lastDay ? lastDay : endDay} de ${monthStr}`;
     preview.textContent = '📅 ' + label;
 }
-
-// Inicializa prévia
 updatePeriodPreview();
 
-// Data padrão no seletor manual: início do mês até hoje
 (function setDefaultDates() {
-    const now   = new Date();
-    const y     = now.getFullYear();
-    const m     = String(now.getMonth() + 1).padStart(2, '0');
-    const d     = String(now.getDate()).padStart(2, '0');
-    const from  = document.getElementById('manualDateFrom');
-    const to    = document.getElementById('manualDateTo');
+    const now = new Date();
+    const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
+    const from = document.getElementById('manualDateFrom'), to = document.getElementById('manualDateTo');
     if (from && !from.value) from.value = `${y}-${m}-01`;
     if (to   && !to.value)   to.value   = `${y}-${m}-${d}`;
 })();
+
+// ── Log viewer ─────────────────────────────────────────────────────────────
+let _logAutoInterval = null;
+
+function loadLog() {
+    fetch('{{ url_for("admin_log_tail") }}?n=80')
+        .then(r => r.json())
+        .then(d => {
+            const el = document.getElementById('logContainer');
+            if (!el) return;
+            el.textContent = d.lines.join('\n') || '(log vazio)';
+            el.scrollTop = el.scrollHeight;
+        })
+        .catch(() => {});
+}
+
+document.getElementById('btnRefreshLog')?.addEventListener('click', loadLog);
+
+document.getElementById('autoRefreshLog')?.addEventListener('change', function () {
+    if (this.checked) { _logAutoInterval = setInterval(loadLog, 5000); }
+    else              { clearInterval(_logAutoInterval); }
+});
+
+document.querySelector('[data-bs-target="#tabLog"]')?.addEventListener('shown.bs.tab', function () {
+    loadLog();
+    if (document.getElementById('autoRefreshLog')?.checked) {
+        clearInterval(_logAutoInterval);
+        _logAutoInterval = setInterval(loadLog, 5000);
+    }
+});
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+    if (btn.dataset.bsTarget !== '#tabLog') {
+        btn.addEventListener('shown.bs.tab', () => clearInterval(_logAutoInterval));
+    }
+});
 </script>
 {% endblock %}

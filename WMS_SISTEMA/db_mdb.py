@@ -62,51 +62,14 @@ def resolve_db_path():
     # Variavel de ambiente tem prioridade maxima (permite override em qualquer maquina).
     env_override = os.environ.get('WMS_MDB_PATH_PROD', '').strip()
     if not env_override:
-        # Compatibilidade com versao anterior que usava WMS_MDB_PATH
         env_override = os.environ.get('WMS_MDB_PATH', '').strip()
     if env_override:
         if os.path.isdir(env_override):
             env_override = os.path.join(env_override, 'wms_database.mdb')
-        if os.path.exists(env_override):
-            return env_override
+        return env_override
 
-    preferred_paths = [
-        r'C:\APPS MASTER\WMS\WMS_BD\wms_database.mdb',
-        r'\\192.168.1.210\apps master\WMS\WMS_BD\wms_database.mdb',
-    ]
-
-    for path in preferred_paths:
-        if os.path.exists(path):
-            return path
-
-    runtime_dir = get_runtime_base_dir()
-
-    # Procura WMS_BD subindo niveis a partir da pasta de execucao.
-    wms_bd_candidates = []
-    current_dir = runtime_dir
-    for _ in range(5):
-        wms_bd_candidates.append(os.path.join(current_dir, 'WMS_BD', 'wms_database.mdb'))
-        parent_dir = os.path.dirname(current_dir)
-        if parent_dir == current_dir:
-            break
-        current_dir = parent_dir
-
-    runtime_local_db = os.path.join(runtime_dir, 'wms_database.mdb')
-
-    meipass_dir = getattr(sys, '_MEIPASS', None)
-    meipass_bd  = os.path.join(meipass_dir, 'WMS_BD', 'wms_database.mdb') if meipass_dir else None
-
-    candidates = [
-        *wms_bd_candidates,
-        meipass_bd,
-        runtime_local_db,
-    ]
-
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path
-
-    return runtime_local_db
+    # Sem variavel de ambiente configurada — retorna caminho vazio para forcar erro explicito
+    return ''
 
 
 def resolve_db_path_test():
