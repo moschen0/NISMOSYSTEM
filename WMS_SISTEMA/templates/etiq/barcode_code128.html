@@ -110,12 +110,12 @@
 </head>
 <body class="dashboard-page">
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-logo">M</div>
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="45" class="me-3" style="object-fit: contain;">
       <div class="brand-text">
         <strong>MASTER ETIQUETAS</strong>
       </div>
-    </div>
+    </a>
 
     <nav class="topbar-nav" aria-label="Navegacao principal">
       <a href="{{ url_for('etiquetas.index') }}" class="topbar-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">Criar</a>

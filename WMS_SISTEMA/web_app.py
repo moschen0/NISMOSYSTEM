@@ -93,6 +93,10 @@ TAG_RULES = {
 }
 TRIAGE_SECTOR = 'TRIAGEM'
 
+# PERMISSION_FLAGS será carregado dinamicamente de load_permissions()
+# Inicializar com padrão vazio para evitar erro antes do Flask estar pronto
+PERMISSION_FLAGS = {}
+
 # ============================================================================
 # LOGGER WMS
 # ============================================================================
@@ -289,46 +293,67 @@ def make_box_entry(order, thresholds):
 # MODEL — SETORES
 # ============================================================================
 
+def _normalize_sector_permissions(sector):
+    perms = sector.get('permissions', [])
+    if isinstance(perms, str):
+        perms = [p.strip() for p in perms.split(',') if p.strip()]
+    if not isinstance(perms, list):
+        return []
+    return [p for p in perms if p in PERMISSION_FLAGS]
+
+
+def _make_sector_entry(name, description, permissions=None):
+    return {
+        'name': name,
+        'description': description,
+        'status': 'active',
+        'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        'permissions': permissions or []
+    }
+
+
 def load_sectors():
     """Carrega definições de células/setores do arquivo JSON."""
+    default = {
+        'AR': _make_sector_entry('AR', 'Setor AR', permissions=[]),
+        TRIAGE_SECTOR: _make_sector_entry(TRIAGE_SECTOR, 'Setor de recebimento e triagem', permissions=['triage', 'etiquetas']),
+        'VTA': _make_sector_entry('VTA', 'Setor VTA', permissions=[])
+    }
+
     if not os.path.exists(SECTORS_PATH):
-        default = {
-            'AR': {
-                'name': 'AR',
-                'description': 'Setor AR',
-                'status': 'active',
-                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            },
-            TRIAGE_SECTOR: {
-                'name': TRIAGE_SECTOR,
-                'description': 'Setor de recebimento e triagem',
-                'status': 'active',
-                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            },
-            'VTA': {
-                'name': 'VTA',
-                'description': 'Setor VTA',
-                'status': 'active',
-                'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            }
-        }
         save_sectors(default)
         return default
     try:
         with open(SECTORS_PATH, 'r', encoding='utf-8') as f:
             sectors = json.load(f)
-            if TRIAGE_SECTOR not in sectors:
-                sectors[TRIAGE_SECTOR] = {
-                    'name': TRIAGE_SECTOR,
-                    'description': 'Setor de recebimento e triagem',
-                    'status': 'active',
-                    'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                }
-                save_sectors(sectors)
-            return sectors
     except Exception as e:
         print(f"Erro ao ler sectors.json: {e}")
-        return {}
+        return default
+
+    changed = False
+    for key, sector in list(sectors.items()):
+        if key == TRIAGE_SECTOR and 'permissions' not in sector:
+            sector['permissions'] = ['triage', 'etiquetas']
+            changed = True
+        normalized = _normalize_sector_permissions(sector)
+        if sector.get('permissions') != normalized:
+            sector['permissions'] = normalized
+            changed = True
+        if 'status' not in sector:
+            sector['status'] = 'active'
+            changed = True
+        if 'created_at' not in sector:
+            sector['created_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            changed = True
+        sectors[key] = sector
+
+    if TRIAGE_SECTOR not in sectors:
+        sectors[TRIAGE_SECTOR] = _make_sector_entry(TRIAGE_SECTOR, 'Setor de recebimento e triagem', permissions=['triage', 'etiquetas'])
+        changed = True
+
+    if changed:
+        save_sectors(sectors)
+    return sectors
 
 def save_sectors(sectors):
     """Salva setores de forma atômica."""
@@ -341,6 +366,51 @@ def get_active_sector_keys():
     """Retorna lista de chaves de setores ativos."""
     sectors = load_sectors()
     return [k for k, v in sectors.items() if v.get('status') == 'active']
+
+# ============================================================================
+# MODEL — PERMISSÕES
+# ============================================================================
+
+PERMISSIONS_PATH = os.path.join(DATA_BASE_DIR, 'permissions.json')
+
+def load_permissions():
+    """Carrega permissões do arquivo JSON."""
+    try:
+        if os.path.exists(PERMISSIONS_PATH):
+            with open(PERMISSIONS_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return {p['id']: p for p in data.get('permissions', [])}
+    except Exception as e:
+        logger.error(f"Erro ao carregar permissões: {e}")
+    
+    # Padrão: Triagem e Etiquetas
+    return {
+        'triage': {
+            'id': 'triage',
+            'name': 'Triagem',
+            'description': 'Acesso à triagem de recebimento',
+            'icon': 'bi-box2'
+        },
+        'etiquetas': {
+            'id': 'etiquetas',
+            'name': 'Etiquetas',
+            'description': 'Geração e impressão de etiquetas',
+            'icon': 'bi-tag'
+        }
+    }
+
+def save_permissions(permissions_dict):
+    """Salva permissões para arquivo JSON."""
+    try:
+        permissions_list = list(permissions_dict.values())
+        tmp_path = f"{PERMISSIONS_PATH}.tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump({'permissions': permissions_list}, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, PERMISSIONS_PATH)
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar permissões: {e}")
+        return False
 
 # ============================================================================
 # MODEL — BACKUP
@@ -631,6 +701,7 @@ MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT
 DEFAULT_SECTOR = db_mdb.DEFAULT_SECTOR
 AVAILABLE_UNITS = list(db_mdb.AVAILABLE_UNITS)
+app.jinja_env.globals['permission_labels'] = PERMISSION_FLAGS
 
 
 # ============================================================================
@@ -805,11 +876,37 @@ def _track_active_session():
         }
 
 
+def get_sector_permissions(sector_name):
+    sectors = load_sectors()
+    if sector_name is None:
+        return set()
+    sector_name = str(sector_name).strip().upper()
+    if sector_name == 'ALL':
+        return set(PERMISSION_FLAGS.keys())
+    sector = sectors.get(sector_name, {})
+    return set(sector.get('permissions', []) if isinstance(sector.get('permissions', []), list) else [])
+
+
+def can_access_feature(feature):
+    if session.get('user', '').lower() == 'admin':
+        return True
+    sector = session.get('sector', DEFAULT_SECTOR)
+    if sector == 'ALL':
+        return True
+    return feature in get_sector_permissions(sector)
+
+
 @app.context_processor
 def inject_admin_context():
     """Injeta variáveis globais úteis em todos os templates."""
     sectors = load_sectors()
     current_sec = session.get('sector', DEFAULT_SECTOR)
+    # Carregar permissões - versão simplificada para evitar problemas
+    try:
+        permissions = load_permissions()
+    except:
+        permissions = {}
+    permission_labels = {perm_id: perm['name'] for perm_id, perm in permissions.items()}
     return {
         'is_admin': session.get('user', '').lower() == 'admin',
         'all_units': AVAILABLE_UNITS,
@@ -817,7 +914,10 @@ def inject_admin_context():
         'all_sectors': sectors,
         'current_sector': current_sec,
         'sector_is_all': current_sec == 'ALL',
-        'can_access_triage': can_access_triage(),
+        'can_access_triage': can_access_feature('triage'),
+        'can_access_etiquetas': can_access_feature('etiquetas'),
+        'permission_labels': permission_labels,
+        'all_permissions': permissions,
     }
 
 
@@ -1690,9 +1790,11 @@ def login():
             if username.lower() == 'admin':
                 session['unit'] = unit
                 session['sector'] = 'ALL'  # Admin vê todos os setores por padrão
+                session['permissions'] = list(PERMISSION_FLAGS.keys())
             else:
                 session['unit'] = db_mdb.normalize_unit(user.get('unit', unit))
                 session['sector'] = user.get('sector', DEFAULT_SECTOR) or DEFAULT_SECTOR
+                session['permissions'] = list(get_sector_permissions(session['sector']))
             flash(f'Bem-vindo, {username}!', 'success')
             wms_logger.info(f'LOGIN OK | user={username} unit={session["unit"]} ip={request.remote_addr}')
             return redirect(url_for('dashboard'))
@@ -1805,6 +1907,10 @@ def switch_sector(sector_name):
             flash('Setor inválido', 'danger')
             return redirect(url_for('dashboard'))
     session['sector'] = sector_name
+    if sector_name == 'ALL':
+        session['permissions'] = list(PERMISSION_FLAGS.keys())
+    else:
+        session['permissions'] = list(get_sector_permissions(sector_name))
     label = 'Todos os setores' if sector_name == 'ALL' else sector_name
     flash(f'Setor alterado para {label}', 'success')
     return redirect(request.referrer or url_for('dashboard'))
@@ -1819,7 +1925,7 @@ def switch_sector(sector_name):
 def list_cells():
     """Lista todas as células/setores cadastrados"""
     sectors = load_sectors()
-    return render_template('cells.html', sectors=sectors)
+    return render_template('cells.html', sectors=sectors, permission_labels=PERMISSION_FLAGS)
 
 
 @app.route('/cells/add', methods=['POST'])
@@ -1833,6 +1939,7 @@ def add_cell():
 
     name = request.form.get('name', '').strip().upper()
     description = request.form.get('description', '').strip()
+    permissions = [p for p in request.form.getlist('permissions') if p in PERMISSION_FLAGS]
 
     if not name:
         flash('Nome do setor é obrigatório', 'danger')
@@ -1851,7 +1958,8 @@ def add_cell():
         'name': name,
         'description': description,
         'status': 'active',
-        'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        'created_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        'permissions': permissions
     }
     save_sectors(sectors)
 
@@ -1880,6 +1988,7 @@ def edit_cell():
     name = request.form.get('name', '').strip().upper()
     description = request.form.get('description', '').strip()
     status = request.form.get('status', 'active').strip()
+    permissions = [p for p in request.form.getlist('permissions') if p in PERMISSION_FLAGS]
 
     sectors = load_sectors()
     if name not in sectors:
@@ -1887,6 +1996,7 @@ def edit_cell():
         return redirect(url_for('list_cells'))
 
     sectors[name]['description'] = description
+    sectors[name]['permissions'] = permissions
     sectors[name]['status'] = status if status in ('active', 'inactive') else 'active'
     save_sectors(sectors)
 
@@ -1927,6 +2037,147 @@ def delete_cell():
     )
 
     flash(f'Setor {name} removido com sucesso!', 'success')
+    return redirect(url_for('list_cells'))
+
+
+# ============================================================================
+# ROTAS DE GERENCIAMENTO DE PERMISSÕES
+# ============================================================================
+
+@app.route('/permissions/add', methods=['POST'])
+@login_required
+def add_permission():
+    """Cria uma nova permissão"""
+    if not session.get('user', '').lower() == 'admin':
+        return jsonify({'error': 'Apenas administradores podem criar permissões'}), 403
+    
+    try:
+        perm_id = request.form.get('perm_id', '').strip().lower()
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        icon = request.form.get('icon', 'bi-gear')
+        
+        if not perm_id or not name:
+            flash('ID e Nome da permissão são obrigatórios', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        # Verificar se já existe
+        permissions = load_permissions()
+        if perm_id in permissions:
+            flash(f'Permissão "{perm_id}" já existe', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        # Adicionar nova permissão
+        permissions[perm_id] = {
+            'id': perm_id,
+            'name': name,
+            'description': description,
+            'icon': icon,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        if save_permissions(permissions):
+            audit_log(
+                action='CREATE_PERMISSION',
+                details=f'Permissão {perm_id} ({name}) criada',
+                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                unit=get_current_unit(),
+                sector=session.get('sector', DEFAULT_SECTOR)
+            )
+            flash(f'Permissão "{name}" criada com sucesso!', 'success')
+        else:
+            flash('Erro ao salvar permissão', 'danger')
+    except Exception as e:
+        logger.error(f"Erro ao criar permissão: {e}")
+        flash(f'Erro: {str(e)}', 'danger')
+    
+    return redirect(url_for('list_cells'))
+
+
+@app.route('/permissions/edit/<perm_id>', methods=['POST'])
+@login_required
+def edit_permission(perm_id):
+    """Edita uma permissão existente"""
+    if not session.get('user', '').lower() == 'admin':
+        return jsonify({'error': 'Apenas administradores podem editar permissões'}), 403
+    
+    try:
+        permissions = load_permissions()
+        if perm_id not in permissions:
+            flash('Permissão não encontrada', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        icon = request.form.get('icon', permissions[perm_id].get('icon', 'bi-gear'))
+        
+        if not name:
+            flash('Nome da permissão é obrigatório', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        permissions[perm_id].update({
+            'name': name,
+            'description': description,
+            'icon': icon
+        })
+        
+        if save_permissions(permissions):
+            audit_log(
+                action='EDIT_PERMISSION',
+                details=f'Permissão {perm_id} editada',
+                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                unit=get_current_unit(),
+                sector=session.get('sector', DEFAULT_SECTOR)
+            )
+            flash(f'Permissão "{name}" atualizada com sucesso!', 'success')
+        else:
+            flash('Erro ao salvar permissão', 'danger')
+    except Exception as e:
+        logger.error(f"Erro ao editar permissão: {e}")
+        flash(f'Erro: {str(e)}', 'danger')
+    
+    return redirect(url_for('list_cells'))
+
+
+@app.route('/permissions/delete/<perm_id>', methods=['POST'])
+@login_required
+def delete_permission(perm_id):
+    """Deleta uma permissão (se não estiver em uso)"""
+    if not session.get('user', '').lower() == 'admin':
+        return jsonify({'error': 'Apenas administradores podem deletar permissões'}), 403
+    
+    try:
+        permissions = load_permissions()
+        if perm_id not in permissions:
+            flash('Permissão não encontrada', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        # Verificar se permissão está em uso em algum setor
+        sectors = load_sectors()
+        in_use = any(perm_id in sector.get('permissions', []) for sector in sectors.values())
+        
+        if in_use:
+            flash(f'Não é possível deletar - permissão "{perm_id}" está em uso em setores', 'danger')
+            return redirect(url_for('list_cells'))
+        
+        perm_name = permissions[perm_id].get('name', perm_id)
+        del permissions[perm_id]
+        
+        if save_permissions(permissions):
+            audit_log(
+                action='DELETE_PERMISSION',
+                details=f'Permissão {perm_id} ({perm_name}) deletada',
+                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                unit=get_current_unit(),
+                sector=session.get('sector', DEFAULT_SECTOR)
+            )
+            flash(f'Permissão "{perm_name}" deletada com sucesso!', 'success')
+        else:
+            flash('Erro ao salvar permissões', 'danger')
+    except Exception as e:
+        logger.error(f"Erro ao deletar permissão: {e}")
+        flash(f'Erro: {str(e)}', 'danger')
+    
     return redirect(url_for('list_cells'))
 
 # ============================================================================

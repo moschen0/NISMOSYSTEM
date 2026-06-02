@@ -3,18 +3,21 @@
     "name": "AR",
     "description": "Setor AR",
     "status": "active",
-    "created_at": "12/05/2026 11:41:56"
+    "created_at": "12/05/2026 11:41:56",
+    "permissions": []
   },
   "TRIAGEM": {
     "name": "TRIAGEM",
     "description": "Setor de recebimento e triagem",
     "status": "active",
-    "created_at": "25/05/2026 00:00:00"
+    "created_at": "25/05/2026 00:00:00",
+    "permissions": []
   },
   "VTA": {
     "name": "VTA",
     "description": "Setor VTA",
     "status": "active",
-    "created_at": "12/05/2026 11:41:56"
+    "created_at": "12/05/2026 11:41:56",
+    "permissions": []
   }
 }

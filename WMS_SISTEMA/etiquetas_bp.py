@@ -129,13 +129,13 @@ def _check_etiq_access():
     if "user" not in session:
         flash("Faça login para continuar.", "warning")
         return redirect(url_for("login"))
-    user = session.get("user", "").lower()
-    if user == "admin":
+    if session.get("user", "").lower() == "admin":
         return
-    sector = (session.get("sector", "") or "").strip().upper()
-    if sector != TRIAGE_SECTOR:
-        flash("Acesso restrito ao setor TRIAGEM ou admin.", "danger")
-        return redirect(url_for("dashboard"))
+    permissions = session.get('permissions', [])
+    if 'etiquetas' in permissions:
+        return
+    flash("Acesso restrito ao setor autorizado para etiquetas ou admin.", "danger")
+    return redirect(url_for("dashboard"))
 
 
 # ---------------------------------------------------------------------------

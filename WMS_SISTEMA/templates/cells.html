@@ -5,11 +5,30 @@
 <div class="row mb-4">
     <div class="col-md-12">
         <h1><i class="bi bi-diagram-3"></i> Gerenciamento de Células / Setores</h1>
-        <p class="text-muted">Gerencie os setores disponíveis no sistema. Cada setor isola completamente seus dados.</p>
+        <p class="text-muted">Gerencie os setores e permissões disponíveis no sistema. Cada setor isola completamente seus dados.</p>
     </div>
 </div>
 
-<!-- Adicionar Setor -->
+<!-- Tabs: Setores vs Permissões -->
+<ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="sectors-tab" data-bs-toggle="tab" data-bs-target="#sectors-panel" type="button" role="tab">
+            <i class="bi bi-diagram-3"></i> Setores
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="permissions-tab" data-bs-toggle="tab" data-bs-target="#permissions-panel" type="button" role="tab">
+            <i class="bi bi-lock"></i> Permissões
+        </button>
+    </li>
+</ul>
+
+<!-- Content Tabs -->
+<div class="tab-content">
+<!-- ====================================================================
+     TAB 1: SETORES
+     ==================================================================== -->
+<div class="tab-pane fade show active" id="sectors-panel" role="tabpanel">
 <div class="row mb-4">
     <div class="col-lg-12">
         <div class="card">
@@ -32,15 +51,32 @@
                                 <input type="text" class="form-control text-uppercase" name="name" placeholder="Ex: VTA, EXPEDICAO" required maxlength="20">
                                 <small class="text-muted">Apenas letras, números, hífen e underscore</small>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label class="form-label">Descrição</label>
                                 <input type="text" class="form-control" name="description" placeholder="Descrição do setor">
                             </div>
                             <div class="col-md-3">
+                                <label class="form-label">Permissões</label>
+                                <div class="border rounded p-2" style="background:#fff; max-height: 150px; overflow-y: auto;">
+                                    {% if all_permissions %}
+                                        {% for perm_id, perm in all_permissions.items() %}
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="permissions" value="{{ perm_id }}" id="permCheck_{{ perm_id }}">
+                                            <label class="form-check-label" for="permCheck_{{ perm_id }}">
+                                                <i class="bi {{ perm.icon }}"></i> {{ perm.name }}
+                                            </label>
+                                        </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <p class="text-muted small">Nenhuma permissão disponível</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-2">
                                 <label class="form-label">Senha Mestre *</label>
                                 <input type="password" class="form-control" name="master_key" required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <button type="submit" class="btn btn-success w-100">
                                     <i class="bi bi-plus-lg"></i> Criar Setor
                                 </button>
@@ -64,6 +100,7 @@
                         <tr>
                             <th><i class="bi bi-diagram-3"></i> Setor</th>
                             <th><i class="bi bi-text-paragraph"></i> Descrição</th>
+                            <th><i class="bi bi-lock"></i> Permissões</th>
                             <th><i class="bi bi-toggles"></i> Status</th>
                             <th><i class="bi bi-calendar-check"></i> Criado em</th>
                             <th><i class="bi bi-gear"></i> Ações</th>
@@ -84,6 +121,15 @@
                             </td>
                             <td>{{ s.description or '—' }}</td>
                             <td>
+                                {% if s.permissions %}
+                                    {% for perm in s.permissions %}
+                                        <span class="badge bg-secondary me-1">{% if perm in permission_labels %}{{ permission_labels[perm] }}{% else %}{{ perm }}{% endif %}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">Nenhuma</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if s.status == 'active' %}
                                     <span class="badge bg-success"><i class="bi bi-check-lg"></i> Ativo</span>
                                 {% else %}
@@ -99,7 +145,8 @@
                                             data-bs-target="#editSectorModal"
                                             data-key="{{ key }}"
                                             data-description="{{ s.description or '' }}"
-                                            data-status="{{ s.status }}">
+                                            data-status="{{ s.status }}"
+                                    data-permissions="{{ s.permissions | join(',') }}">
                                         <i class="bi bi-pencil"></i>
                                     </button>
 
@@ -169,6 +216,23 @@
                         <input type="text" class="form-control" name="description" id="editSectorDesc">
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Permissões:</label>
+                        <div class="border rounded p-2" style="background:#fff; max-height: 150px; overflow-y: auto;">
+                            {% if all_permissions %}
+                                {% for perm_id, perm in all_permissions.items() %}
+                                <div class="form-check">
+                                    <input class="form-check-input edit-perm-check" type="checkbox" name="permissions" value="{{ perm_id }}" id="editPermCheck_{{ perm_id }}">
+                                    <label class="form-check-label" for="editPermCheck_{{ perm_id }}">
+                                        <i class="bi {{ perm.icon }}"></i> {{ perm.name }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted small">Nenhuma permissão disponível</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Status:</label>
                         <select class="form-select" name="status" id="editSectorStatus">
                             <option value="active">Ativo</option>
@@ -218,6 +282,195 @@
     </div>
 </div>
 
+</div> <!-- Fim tab-pane sectors-panel -->
+
+<!-- ====================================================================
+     TAB 2: PERMISSÕES
+     ==================================================================== -->
+<div class="tab-pane fade" id="permissions-panel" role="tabpanel">
+
+<!-- Criar Permissão -->
+<div class="row mb-4">
+    <div class="col-lg-12">
+        <div class="card">
+            <a href="#" class="text-decoration-none text-white"
+               style="display: block; padding: 15px; background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); cursor: pointer;"
+               onclick="event.preventDefault(); togglePermForm(this);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-plus-circle"></i> Criar Nova Permissão
+                        <i class="bi bi-chevron-down ms-2" style="transition: transform 0.3s; display: inline-block;"></i>
+                    </h5>
+                </div>
+            </a>
+            <div class="perm-form-collapse" style="display: none;">
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('add_permission') }}">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-2">
+                                <label class="form-label">ID da Permissão *</label>
+                                <input type="text" class="form-control text-lowercase" name="perm_id" placeholder="Ex: triagem" required maxlength="30">
+                                <small class="text-muted">Apenas letras e underscore</small>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Nome / Label *</label>
+                                <input type="text" class="form-control" name="name" placeholder="Ex: Triagem de Recebimento" required maxlength="100">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Ícone Bootstrap</label>
+                                <input type="text" class="form-control" name="icon" placeholder="Ex: bi-box2" value="bi-gear">
+                                <small class="text-muted"><a href="https://icons.getbootstrap.com/" target="_blank">Ver ícones</a></small>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Descrição</label>
+                                <input type="text" class="form-control" name="description" placeholder="Descrição da permissão">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-plus-lg"></i> Criar
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista de Permissões -->
+<div class="row">
+    <div class="col-md-12">
+        {% if all_permissions %}
+        <div class="card">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><i class="bi bi-lock"></i> ID</th>
+                            <th><i class="bi bi-tag"></i> Nome</th>
+                            <th><i class="bi bi-text-paragraph"></i> Descrição</th>
+                            <th><i class="bi bi-icons"></i> Ícone</th>
+                            <th><i class="bi bi-gear"></i> Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for perm_id, perm in all_permissions.items() %}
+                        <tr>
+                            <td>
+                                <code class="bg-light p-1 rounded">{{ perm_id }}</code>
+                            </td>
+                            <td>
+                                <i class="bi {{ perm.icon }}"></i> <strong>{{ perm.name }}</strong>
+                            </td>
+                            <td>{{ perm.description or '—' }}</td>
+                            <td>
+                                <code class="bg-light p-1 rounded">{{ perm.icon }}</code>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <!-- Editar -->
+                                    <button type="button" class="btn btn-info"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#editPermissionModal"
+                                            data-perm-id="{{ perm_id }}"
+                                            data-name="{{ perm.name }}"
+                                            data-description="{{ perm.description or '' }}"
+                                            data-icon="{{ perm.icon }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+
+                                    <!-- Deletar -->
+                                    <button type="button" class="btn btn-danger"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deletePermissionModal"
+                                            data-perm-id="{{ perm_id }}"
+                                            data-name="{{ perm.name }}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Nenhuma permissão cadastrada. Crie uma nova permissão acima.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+</div> <!-- Fim tab-pane permissions-panel -->
+</div> <!-- Fim tab-content -->
+
+<!-- Modal: Editar Permissão -->
+<div class="modal fade" id="editPermissionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Editar Permissão</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="#">
+                <div class="modal-body">
+                    <input type="hidden" name="perm_id" id="editPermId">
+                    <div class="mb-3">
+                        <label class="form-label">ID da Permissão:</label>
+                        <p class="fw-bold" id="editPermIdDisplay"></p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nome / Label:</label>
+                        <input type="text" class="form-control" name="name" id="editPermName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Ícone Bootstrap:</label>
+                        <input type="text" class="form-control" name="icon" id="editPermIcon" placeholder="Ex: bi-gear">
+                        <small class="text-muted"><a href="https://icons.getbootstrap.com/" target="_blank">Ver ícones</a></small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Descrição:</label>
+                        <input type="text" class="form-control" name="description" id="editPermDescription">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-info"><i class="bi bi-save"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Deletar Permissão -->
+<div class="modal fade" id="deletePermissionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Deletar Permissão</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="#">
+                <div class="modal-body">
+                    <input type="hidden" name="perm_id" id="deletePermId">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Atenção: a permissão <strong id="deletePermName"></strong> será deletada permanentemente. 
+                        Isso só é possível se nenhum setor estiver usando essa permissão.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> Deletar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 function toggleForm(el) {
     const content = el.nextElementSibling;
@@ -230,6 +483,18 @@ function toggleForm(el) {
     }
 }
 
+function togglePermForm(el) {
+    const content = el.nextElementSibling;
+    const icon = el.querySelector('.bi-chevron-down, .bi-chevron-up');
+    const isHidden = content.style.display === 'none';
+    content.style.display = isHidden ? 'block' : 'none';
+    if (icon) {
+        icon.classList.toggle('bi-chevron-down', !isHidden);
+        icon.classList.toggle('bi-chevron-up', isHidden);
+    }
+}
+
+// Modal: Editar Setor
 const editModal = document.getElementById('editSectorModal');
 editModal.addEventListener('show.bs.modal', function(e) {
     const btn = e.relatedTarget;
@@ -237,8 +502,19 @@ editModal.addEventListener('show.bs.modal', function(e) {
     document.getElementById('editSectorName').textContent = btn.getAttribute('data-key');
     document.getElementById('editSectorDesc').value = btn.getAttribute('data-description');
     document.getElementById('editSectorStatus').value = btn.getAttribute('data-status');
+    const permissions = (btn.getAttribute('data-permissions') || '').split(',').map(p => p.trim()).filter(Boolean);
+    
+    // Desmarcar todos os checkboxes primeiro
+    document.querySelectorAll('.edit-perm-check').forEach(cb => cb.checked = false);
+    
+    // Marcar apenas os que estão nas permissões do setor
+    permissions.forEach(perm => {
+        const checkbox = document.getElementById('editPermCheck_' + perm);
+        if (checkbox) checkbox.checked = true;
+    });
 });
 
+// Modal: Deletar Setor
 const deleteModal = document.getElementById('deleteSectorModal');
 deleteModal.addEventListener('show.bs.modal', function(e) {
     const btn = e.relatedTarget;
@@ -246,5 +522,36 @@ deleteModal.addEventListener('show.bs.modal', function(e) {
     document.getElementById('deleteSectorKey').value = key;
     document.getElementById('deleteSectorName').textContent = key;
 });
+
+// Modal: Editar Permissão
+const editPermModal = document.getElementById('editPermissionModal');
+if (editPermModal) {
+    editPermModal.addEventListener('show.bs.modal', function(e) {
+        const btn = e.relatedTarget;
+        const permId = btn.getAttribute('data-perm-id');
+        const form = editPermModal.querySelector('form');
+        form.action = '/permissions/edit/' + permId;
+        
+        document.getElementById('editPermId').value = permId;
+        document.getElementById('editPermIdDisplay').textContent = permId;
+        document.getElementById('editPermName').value = btn.getAttribute('data-name');
+        document.getElementById('editPermIcon').value = btn.getAttribute('data-icon');
+        document.getElementById('editPermDescription').value = btn.getAttribute('data-description');
+    });
+}
+
+// Modal: Deletar Permissão
+const deletePermModal = document.getElementById('deletePermissionModal');
+if (deletePermModal) {
+    deletePermModal.addEventListener('show.bs.modal', function(e) {
+        const btn = e.relatedTarget;
+        const permId = btn.getAttribute('data-perm-id');
+        const form = deletePermModal.querySelector('form');
+        form.action = '/permissions/delete/' + permId;
+        
+        document.getElementById('deletePermId').value = permId;
+        document.getElementById('deletePermName').textContent = btn.getAttribute('data-name');
+    });
+}
 </script>
 {% endblock %}
