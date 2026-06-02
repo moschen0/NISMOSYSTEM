@@ -696,6 +696,10 @@ app = Flask(
 )
 from etiquetas_bp import etq_bp
 app.register_blueprint(etq_bp)
+
+from confirmations_bp import confirmations_bp
+app.register_blueprint(confirmations_bp)
+
 app.secret_key = os.environ.get('WMS_SECRET_KEY', 'wms-dev-key-insecure')
 MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT

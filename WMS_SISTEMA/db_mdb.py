@@ -1208,3 +1208,248 @@ def datetime_now_str():
     """Timestamp padrao do sistema."""
     from datetime import datetime
     return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+
+# ============================================================================
+# CONFIRMAÇÕES DE OS (Conferência de Ordens de Serviço)
+# ============================================================================
+
+def add_confirmation(username, sector, os_reference, os_confirmation, result, unit=None):
+    """Insere novo registro de confirmação de OS
+    
+    NOTA: Usa SQL direto (not parametrized) por compatibilidade com Access via ODBC.
+    Os valores são escapados apropriadamente para evitar SQL injection.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    unit = normalize_unit(unit)
+    now = datetime_now_str()
+    timestamp = int(__import__('time').time())  # Usar segundos, não milissegundos
+    
+    # Extrai data e hora do timestamp
+    from datetime import datetime
+    dt = datetime.now()
+    data = dt.strftime("%d/%m/%Y")
+    hora = dt.strftime("%H:%M:%S")
+    
+    # Escape de valores de string (simples proteção contra SQL injection)
+    def escape_sql(value):
+        if isinstance(value, str):
+            # Escape single quotes by doubling them
+            return f"'{value.replace(chr(39), chr(39) + chr(39))}'"
+        elif value is None:
+            return 'NULL'
+        else:
+            return str(value)
+    
+    # Construir query com SQL direto (compatível com Access)
+    sql = f"""
+        INSERT INTO order_confirmations (
+            username, sector, os_reference, os_confirmation, result, unit,
+            created_at, [data], hora, ts_millis
+        ) VALUES (
+            {escape_sql(username)}, {escape_sql(sector)}, {escape_sql(os_reference)},
+            {escape_sql(os_confirmation)}, {escape_sql(result)}, {escape_sql(unit)},
+            {escape_sql(now)}, {escape_sql(data)}, {escape_sql(hora)}, {timestamp}
+        )
+    """
+    
+    cursor.execute(sql)
+    conn.commit()
+    
+    # Tenta obter ID da última inserção (Access)
+    try:
+        cursor.execute("SELECT MAX(id) FROM order_confirmations")
+        row = cursor.fetchone()
+        conf_id = int(row[0]) if row and row[0] else None
+    except:
+        conf_id = None
+    
+    return {
+        'id': conf_id,
+        'username': username,
+        'sector': sector,
+        'os_reference': os_reference,
+        'os_confirmation': os_confirmation,
+        'result': result,
+        'unit': unit,
+        'data': data,
+        'hora': hora,
+        'timestamp': timestamp,
+    }
+
+
+def get_confirmations(unit=None, sector=None, username=None, result=None, limit=None):
+    """Retorna confirmações com filtros opcionais"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    conditions = []
+    params = []
+    
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    
+    if username is not None:
+        conditions.append("[username] = ?")
+        params.append(username)
+    
+    if result is not None:
+        conditions.append("[result] = ?")
+        params.append(result)
+    
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    limit_clause = f" LIMIT {int(limit)}" if limit else ""
+    
+    cursor.execute(
+        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC{limit_clause}",
+        params
+    )
+    
+    rows = cursor.fetchall()
+    confirmations = dicts_from_rows(cursor, rows)
+    return confirmations
+
+
+def get_confirmations_filtered(filters, unit=None):
+    """Retorna confirmações filtradas por período e resultado"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    conditions = []
+    params = []
+    
+    unit = normalize_unit(unit) if unit else None
+    if unit:
+        conditions.append("[unit] = ?")
+        params.append(unit)
+    
+    # Filtro de resultado (ok, erro, todos)
+    if filters.get('result') and filters['result'] != 'all':
+        conditions.append("[result] = ?")
+        params.append(filters['result'])
+    
+    # Filtro de usuário
+    if filters.get('username'):
+        conditions.append("[username] = ?")
+        params.append(filters['username'])
+    
+    # Filtro de data inicial
+    if filters.get('date_from'):
+        conditions.append("[data] >= ?")
+        params.append(filters['date_from'])
+    
+    # Filtro de data final
+    if filters.get('date_to'):
+        conditions.append("[data] <= ?")
+        params.append(filters['date_to'])
+    
+    # Filtro de setor
+    if filters.get('sector') and filters['sector'] != 'all':
+        conditions.append("[sector] = ?")
+        params.append(filters['sector'])
+    
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    
+    cursor.execute(
+        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC",
+        params
+    )
+    
+    rows = cursor.fetchall()
+    confirmations = dicts_from_rows(cursor, rows)
+    return confirmations
+
+
+def get_confirmation_stats(unit=None, filters=None):
+    """Retorna estatísticas das confirmações"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    conditions = []
+    params = []
+    
+    unit = normalize_unit(unit) if unit else None
+    if unit:
+        conditions.append("[unit] = ?")
+        params.append(unit)
+    
+    if filters:
+        if filters.get('result') and filters['result'] != 'all':
+            conditions.append("[result] = ?")
+            params.append(filters['result'])
+        
+        if filters.get('username'):
+            conditions.append("[username] = ?")
+            params.append(filters['username'])
+        
+        if filters.get('date_from'):
+            conditions.append("[data] >= ?")
+            params.append(filters['date_from'])
+        
+        if filters.get('date_to'):
+            conditions.append("[data] <= ?")
+            params.append(filters['date_to'])
+        
+        if filters.get('sector') and filters['sector'] != 'all':
+            conditions.append("[sector] = ?")
+            params.append(filters['sector'])
+    
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    
+    # Total
+    cursor.execute(f"SELECT COUNT(*) FROM order_confirmations {where}", params)
+    total = cursor.fetchone()[0]
+    
+    # OK
+    ok_where = f"{where} AND [result] = 'ok'" if where else "WHERE [result] = 'ok'"
+    cursor.execute(f"SELECT COUNT(*) FROM order_confirmations {ok_where}", params if where else [])
+    ok_count = cursor.fetchone()[0]
+    
+    # Erro
+    error_where = f"{where} AND [result] <> 'ok'" if where else "WHERE [result] <> 'ok'"
+    cursor.execute(f"SELECT COUNT(*) FROM order_confirmations {error_where}", params if where else [])
+    error_count = cursor.fetchone()[0]
+    
+    accuracy = round((ok_count / total * 100), 1) if total > 0 else 0
+    
+    return {
+        'total': total,
+        'ok': ok_count,
+        'error': error_count,
+        'accuracy_percent': accuracy,
+    }
+
+
+def search_confirmations(query, unit=None, sector=None):
+    """Busca confirmações por OS ou usuário"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    search_pattern = f"%{query}%"
+    conditions = ["(os_reference LIKE ? OR os_confirmation LIKE ? OR username LIKE ?)"]
+    params = [search_pattern, search_pattern, search_pattern]
+    
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    
+    where = f"WHERE {' AND '.join(conditions)}"
+    
+    cursor.execute(
+        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC",
+        params
+    )
+    
+    rows = cursor.fetchall()
+    confirmations = dicts_from_rows(cursor, rows)
+    return confirmations
