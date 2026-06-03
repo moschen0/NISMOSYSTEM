@@ -2,30 +2,102 @@
   "version": 1,
   "drafts": [
     {
-      "draft_id": "206ef6414846440a9ab71ea26fea5f87",
-      "created_at": "2026-06-01T17:21:44",
-      "address": "P-01-01",
-      "username": "admin",
+      "draft_id": "604a3d3a8830471d8f78ef8252d84b5d",
+      "created_at": "2026-06-03T11:05:55",
+      "address": "P-01-06",
+      "username": "maria",
       "unit": "MASTER",
       "sector": "AR",
-      "status": "draft",
-      "updated_at": "2026-06-01T17:39:11",
-      "scanned_ids": [
-        "13245678",
-        "2",
-        "3",
-        "4",
-        "5",
-        "6",
-        "67"
-      ],
-      "scan_count": 7,
+      "status": "completed",
+      "updated_at": "2026-06-03T11:05:55",
+      "scanned_ids": [],
+      "scan_count": 0,
       "result_summary": {
         "ok": 0,
         "missing": 28,
         "wrong_location": 0,
-        "not_found": 10,
-        "total_scanned": 10,
+        "not_found": 0,
+        "total_scanned": 0,
+        "total_expected": 28
+      }
+    },
+    {
+      "draft_id": "ca418d1e84ff4a85ba217b5e62517d1f",
+      "created_at": "2026-06-03T11:02:03",
+      "address": "P-01-06",
+      "username": "maria",
+      "unit": "MASTER",
+      "sector": "AR",
+      "status": "completed",
+      "updated_at": "2026-06-03T11:02:03",
+      "scanned_ids": [],
+      "scan_count": 0,
+      "result_summary": {
+        "ok": 0,
+        "missing": 28,
+        "wrong_location": 0,
+        "not_found": 0,
+        "total_scanned": 0,
+        "total_expected": 28
+      }
+    },
+    {
+      "draft_id": "8d3bac6d778f4403a17ae953223a3eb0",
+      "created_at": "2026-06-03T11:01:47",
+      "address": "P-01-06",
+      "username": "maria",
+      "unit": "MASTER",
+      "sector": "AR",
+      "status": "completed",
+      "updated_at": "2026-06-03T11:01:47",
+      "scanned_ids": [],
+      "scan_count": 0,
+      "result_summary": {
+        "ok": 0,
+        "missing": 28,
+        "wrong_location": 0,
+        "not_found": 0,
+        "total_scanned": 0,
+        "total_expected": 28
+      }
+    },
+    {
+      "draft_id": "1483370e3c6748578f31591907d1dc07",
+      "created_at": "2026-06-03T11:01:21",
+      "address": "P-01-06",
+      "username": "maria",
+      "unit": "MASTER",
+      "sector": "AR",
+      "status": "completed",
+      "updated_at": "2026-06-03T11:01:21",
+      "scanned_ids": [],
+      "scan_count": 0,
+      "result_summary": {
+        "ok": 0,
+        "missing": 28,
+        "wrong_location": 0,
+        "not_found": 0,
+        "total_scanned": 0,
+        "total_expected": 28
+      }
+    },
+    {
+      "draft_id": "39bd562fa6b145fab2153b35797d9d45",
+      "created_at": "2026-06-03T10:59:48",
+      "address": "P-01-06",
+      "username": "maria",
+      "unit": "MASTER",
+      "sector": "AR",
+      "status": "completed",
+      "updated_at": "2026-06-03T10:59:48",
+      "scanned_ids": [],
+      "scan_count": 0,
+      "result_summary": {
+        "ok": 0,
+        "missing": 28,
+        "wrong_location": 0,
+        "not_found": 0,
+        "total_scanned": 0,
         "total_expected": 28
       }
     }

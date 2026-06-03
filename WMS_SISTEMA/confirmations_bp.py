@@ -3,7 +3,7 @@ Blueprint: Confirmações de Ordens de Serviço (Conferência)
 Módulo integrado ao WMS para validação e rastreamento de OS
 """
 
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, send_file
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, send_file, flash
 from functools import wraps
 import json
 from datetime import datetime
@@ -47,6 +47,13 @@ def is_admin():
     return get_current_user() == 'admin'
 
 
+def can_access_feature(feature):
+    if is_admin():
+        return True
+    permissions = session.get('permissions', [])
+    return feature in permissions if isinstance(permissions, list) else False
+
+
 # ============================================================================
 # ROTAS PRINCIPAIS
 # ============================================================================
@@ -55,6 +62,9 @@ def is_admin():
 @login_required
 def confirmations_page():
     """Página principal de conferência de OS"""
+    if not can_access_feature('confirmations'):
+        flash('Acesso restrito à conferência de OS.', 'danger')
+        return redirect(url_for('dashboard'))
     user = get_current_user()
     unit = get_current_unit()
     sector = get_current_sector()
@@ -66,6 +76,33 @@ def confirmations_page():
         username=user,
         sector=sector or user_info.get('sector', 'Geral') if user_info else 'Geral',
         unit=unit
+    )
+
+
+@confirmations_bp.route('/confirmations/history', methods=['GET'])
+@login_required
+def confirmations_history_page():
+    """Lista histórica das conferências do usuário logado"""
+    if not (is_admin() or can_access_feature('confirmations_history')):
+        flash('Acesso restrito ao histórico da conferência de OS.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    user = get_current_user()
+    unit = get_current_unit()
+    sector = get_current_sector()
+
+    confirmations = db_mdb.get_confirmations(
+        unit=unit,
+        username=user,
+        limit=200
+    )
+
+    return render_template(
+        'confirmations_history.html',
+        username=user,
+        sector=sector,
+        unit=unit,
+        confirmations=confirmations,
     )
 
 
@@ -263,7 +300,7 @@ def export_confirmations_xlsx():
             ws.title = "Confirmações OS"
             
             # Headers
-            headers = ['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Resultado']
+            headers = ['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Status']
             ws.append(headers)
             
             # Estilo header
@@ -276,7 +313,7 @@ def export_confirmations_xlsx():
             
             # Dados
             for i, conf in enumerate(confirmations, 1):
-                resultado = '✓ OK' if conf.get('result') == 'ok' else '✗ Erro'
+                resultado = 'OK' if conf.get('result') == 'ok' else 'Divergente'
                 ws.append([
                     i,
                     conf.get('username', ''),
@@ -350,13 +387,13 @@ def export_confirmations_xlsx():
                 })
                 
                 # Headers
-                headers = ['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Resultado']
+                headers = ['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Status']
                 for col, header in enumerate(headers):
                     worksheet.write(0, col, header, header_format)
                 
                 # Dados
                 for row, conf in enumerate(confirmations, 1):
-                    resultado = '✓ OK' if conf.get('result') == 'ok' else '✗ Erro'
+                    resultado = 'OK' if conf.get('result') == 'ok' else 'Divergente'
                     worksheet.write(row, 0, row)
                     worksheet.write(row, 1, conf.get('username', ''))
                     worksheet.write(row, 2, conf.get('sector', ''))
@@ -387,10 +424,10 @@ def export_confirmations_xlsx():
                 text_buffer = StringIO()
                 writer = csv.writer(text_buffer)
                 
-                writer.writerow(['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Resultado'])
+                writer.writerow(['#', 'Usuário', 'Setor', 'OS Referência', 'OS Confirmação', 'Data', 'Hora', 'Status'])
                 
                 for i, conf in enumerate(confirmations, 1):
-                    resultado = 'OK' if conf.get('result') == 'ok' else 'Erro'
+                    resultado = 'OK' if conf.get('result') == 'ok' else 'Divergente'
                     writer.writerow([
                         i,
                         conf.get('username', ''),

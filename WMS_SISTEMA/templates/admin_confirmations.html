@@ -45,8 +45,8 @@
               <label class="form-label small">Resultado</label>
               <select class="form-select form-select-sm" id="filter-result">
                 <option value="">Todos</option>
-                <option value="ok">Conferidas ✓</option>
-                <option value="error">Divergentes ✗</option>
+                <option value="ok">Conferidas OK</option>
+                <option value="error">Divergentes</option>
               </select>
             </div>
 
@@ -58,7 +58,7 @@
                 <i class="bi bi-arrow-clockwise"></i> Limpar
               </button>
               <button type="button" class="btn btn-success btn-sm" onclick="AdminConfirmations.exportarFiltrado()">
-                <i class="bi bi-download"></i> Exportar XLSX
+                <i class="bi bi-download"></i> Baixar XLSX
               </button>
             </div>
           </form>
@@ -214,7 +214,7 @@
           <td class="small">${conf.data}<br><small class="text-muted">${conf.hora}</small></td>
           <td>
             <span class="badge-resultado ${conf.result === 'ok' ? 'badge-ok' : 'badge-erro'}">
-              ${conf.result === 'ok' ? '✓ OK' : '✗ Erro'}
+              ${conf.result === 'ok' ? 'OK' : 'Divergente'}
             </span>
           </td>
         </tr>

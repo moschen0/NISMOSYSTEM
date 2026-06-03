@@ -197,6 +197,7 @@ const Confirmations = (() => {
 
         // Adiciona ao histórico local
         sessionHistory.unshift({
+          username: currentUser,
           os_reference: osA,
           os_confirmation: osB,
           result: result,
@@ -245,11 +246,13 @@ const Confirmations = (() => {
 
     list.innerHTML = sessionHistory.map((h, i) => `
       <div class="history-item">
-        <span class="history-os">${h.os_reference}</span>
-        <span class="history-setor">${currentSector}</span>
-        <span class="history-time">${h.data} ${h.hora}</span>
+        <div class="history-main">
+          <span class="history-os">OS ${h.os_reference}</span>
+          <span class="history-meta">${h.username || currentUser} • ${currentSector}</span>
+          <span class="history-time">${h.data} ${h.hora}</span>
+        </div>
         <span class="badge-resultado ${h.result === 'ok' ? 'badge-ok' : 'badge-erro'}">
-          ${h.result === 'ok' ? '✓ OK' : '✗ Erro'}
+          ${h.result === 'ok' ? '✓ OK' : '✗ Divergente'}
         </span>
       </div>
     `).join('');

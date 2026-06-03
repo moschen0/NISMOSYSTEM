@@ -254,7 +254,6 @@
         </div>
       </div>
 
-      {% if is_admin %}
       {# ── OK ── #}
       {% if result.ok %}
       <div class="card border-0 shadow-sm mb-3">
@@ -345,11 +344,6 @@
         </div>
       </div>
       {% endif %}
-      {% else %}
-      <div class="alert alert-secondary py-2 mt-2" style="font-size:0.85rem;">
-        <i class="bi bi-eye-slash"></i> Detalhes dos pedidos visíveis somente para administradores.
-      </div>
-      {% endif %}{# end is_admin #}
 
       {# Ação: repetir conferência #}
       <div class="d-flex gap-2 mt-3 flex-wrap">

@@ -253,7 +253,6 @@ def get_order_age_days(timestamp_str):
             continue
     return None
 
-
 def get_age_tier(age_days, thresholds):
     """Retorna o tier de cor: 'normal'|'attention'|'urgent'|'critical'."""
     if age_days is None:
@@ -331,7 +330,11 @@ def load_sectors():
         return default
 
     changed = False
+    legacy_default_permissions = list(PERMISSION_FLAGS.keys())
     for key, sector in list(sectors.items()):
+        if key in {'AR', 'VTA'} and not sector.get('permissions'):
+            sector['permissions'] = list(legacy_default_permissions)
+            changed = True
         if key == TRIAGE_SECTOR and 'permissions' not in sector:
             sector['permissions'] = ['triage', 'etiquetas']
             changed = True
@@ -383,8 +386,50 @@ def load_permissions():
     except Exception as e:
         logger.error(f"Erro ao carregar permissões: {e}")
     
-    # Padrão: Triagem e Etiquetas
+    # Padrão: áreas principais do sistema
     return {
+        'dashboard': {
+            'id': 'dashboard',
+            'name': 'Dashboard / Prateleiras',
+            'description': 'Visualização do painel principal e das prateleiras',
+            'icon': 'bi-speedometer2'
+        },
+        'audit': {
+            'id': 'audit',
+            'name': 'Conferência de Endereço',
+            'description': 'Conferência de posições e endereços de estoque',
+            'icon': 'bi-clipboard2-check'
+        },
+        'audit_expected_orders': {
+            'id': 'audit_expected_orders',
+            'name': 'Conferência de Endereço - Detalhes',
+            'description': 'Visualização dos pedidos esperados na conferência de endereço',
+            'icon': 'bi-list-check'
+        },
+        'confirmations': {
+            'id': 'confirmations',
+            'name': 'Conferência de OS',
+            'description': 'Acesso à tela de conferência de ordens de serviço',
+            'icon': 'bi-check2-circle'
+        },
+        'confirmations_history': {
+            'id': 'confirmations_history',
+            'name': 'Histórico da Conferência de OS',
+            'description': 'Consulta à lista das próprias conferências realizadas',
+            'icon': 'bi-list-check'
+        },
+        'search': {
+            'id': 'search',
+            'name': 'Busca',
+            'description': 'Pesquisa de pedidos, posições e caixas',
+            'icon': 'bi-search'
+        },
+        'checkout': {
+            'id': 'checkout',
+            'name': 'Saída de Pedidos',
+            'description': 'Registro de retirada de pedidos do estoque',
+            'icon': 'bi-box-arrow-up'
+        },
         'triage': {
             'id': 'triage',
             'name': 'Triagem',
@@ -396,6 +441,24 @@ def load_permissions():
             'name': 'Etiquetas',
             'description': 'Geração e impressão de etiquetas',
             'icon': 'bi-tag'
+        },
+        'movements': {
+            'id': 'movements',
+            'name': 'Histórico',
+            'description': 'Consulta ao histórico de movimentos',
+            'icon': 'bi-clock-history'
+        },
+        'users': {
+            'id': 'users',
+            'name': 'Usuários',
+            'description': 'Gerenciamento de usuários do sistema',
+            'icon': 'bi-people'
+        },
+        'settings': {
+            'id': 'settings',
+            'name': 'Configurações',
+            'description': 'Acesso às configurações do sistema',
+            'icon': 'bi-gear'
         }
     }
 
@@ -411,6 +474,9 @@ def save_permissions(permissions_dict):
     except Exception as e:
         logger.error(f"Erro ao salvar permissões: {e}")
         return False
+
+
+PERMISSION_FLAGS = load_permissions()
 
 # ============================================================================
 # MODEL — BACKUP
@@ -897,7 +963,26 @@ def can_access_feature(feature):
     sector = session.get('sector', DEFAULT_SECTOR)
     if sector == 'ALL':
         return True
+    session_permissions = session.get('permissions', [])
+    if isinstance(session_permissions, list) and session_permissions:
+        return feature in session_permissions
     return feature in get_sector_permissions(sector)
+
+
+def require_feature_access(feature, message=None, redirect_endpoint='dashboard'):
+    if can_access_feature(feature):
+        return None
+    flash(message or 'Acesso restrito para este setor.', 'danger')
+    if redirect_endpoint:
+        return redirect(url_for(redirect_endpoint))
+    return render_template(
+        'error.html',
+        title='Acesso restrito',
+        message=message or 'Acesso restrito para este setor.'
+    ), 403
+
+
+app.jinja_env.globals['can_access_feature'] = can_access_feature
 
 
 @app.context_processor
@@ -920,6 +1005,16 @@ def inject_admin_context():
         'sector_is_all': current_sec == 'ALL',
         'can_access_triage': can_access_feature('triage'),
         'can_access_etiquetas': can_access_feature('etiquetas'),
+        'can_access_dashboard': can_access_feature('dashboard'),
+        'can_access_audit': can_access_feature('audit'),
+        'can_access_audit_expected_orders': can_access_feature('audit_expected_orders'),
+        'can_access_confirmations': can_access_feature('confirmations'),
+        'can_access_confirmations_history': can_access_feature('confirmations_history'),
+        'can_access_search': can_access_feature('search'),
+        'can_access_checkout': can_access_feature('checkout'),
+        'can_access_movements': can_access_feature('movements'),
+        'can_access_users': can_access_feature('users'),
+        'can_access_settings': can_access_feature('settings'),
         'permission_labels': permission_labels,
         'all_permissions': permissions,
     }
@@ -964,16 +1059,14 @@ def is_admin_user():
 
 def can_access_triage():
     """Permite triagem para admin ou usuario do setor TRIAGEM."""
-    if session.get('user', '').lower() == 'admin':
-        return True
-    return (session.get('sector', '') or '').strip().upper() == TRIAGE_SECTOR
+    return can_access_feature('triage')
 
 
 def require_triage_access():
     """Retorna redirect quando nao ha permissao de triagem."""
     if can_access_triage():
         return None
-    flash('Acesso permitido apenas ao setor TRIAGEM ou admin.', 'danger')
+    flash('Acesso permitido apenas ao setor autorizado para triagem ou admin.', 'danger')
     return redirect(url_for('dashboard'))
 
 
@@ -2192,6 +2285,9 @@ def delete_permission(perm_id):
 @login_required
 def dashboard():
     """Dashboard principal com visualização de prateleiras e pedidos"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.', redirect_endpoint=None)
+    if access_denied:
+        return access_denied
     try:
         unit = get_current_unit()
         sector = get_current_sector()
@@ -2979,6 +3075,9 @@ def remove_zone():
 @login_required
 def add_order():
     """Adiciona novo pedido"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
@@ -3144,6 +3243,9 @@ def add_order():
 @login_required
 def position_detail(code):
     """Página detalhada de uma posição"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     orders = db_mdb.get_orders_by_position(code, unit=unit, sector=sector)
@@ -3393,6 +3495,9 @@ def triage_next_order_id_lookup():
 @login_required
 def checkout_order():
     """Dar saída em pedido pelo ID"""
+    access_denied = require_feature_access('checkout', 'Acesso restrito à saída de pedidos.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
@@ -3448,6 +3553,9 @@ def checkout_order():
 @login_required
 def remove_order():
     """Remove um pedido (muda status para removed)"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     position = request.form.get('position', '').strip().upper()
     order_id = request.form.get('order_id', '').strip()
@@ -3478,6 +3586,9 @@ def remove_order():
 @login_required
 def move_order():
     """Move um pedido para outra posição (apenas admin)"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     # Verificar se o usuário é admin
     current_user = session.get('user', '')
@@ -3553,6 +3664,9 @@ def move_order():
 @login_required
 def api_positions_all():
     """Retorna todas as posições com ocupação atual (para dropdown de mover)."""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
@@ -3574,6 +3688,9 @@ def api_positions_all():
 @login_required
 def api_remove_order():
     """Remove um pedido via AJAX (retorna JSON)."""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     position = request.form.get('position', '').strip().upper()
     order_id = request.form.get('order_id', '').strip()
@@ -3602,6 +3719,9 @@ def api_remove_order():
 @login_required
 def api_move_order():
     """Move um pedido via AJAX (retorna JSON). Apenas admin."""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     current_user = session.get('user', '')
     if current_user.lower() != 'admin':
         return jsonify({'ok': False, 'message': 'Apenas admin pode mover pedidos'}), 403
@@ -3655,6 +3775,9 @@ def api_move_order():
 @login_required
 def view_movements():
     """Visualiza histórico de movimentos"""
+    access_denied = require_feature_access('movements', 'Acesso restrito ao histórico de movimentos.')
+    if access_denied:
+        return access_denied
     movements = db_mdb.get_all_movements(unit=get_current_unit(), sector=get_current_sector())
     return render_template('movements.html', movements=movements)
 
@@ -3662,6 +3785,9 @@ def view_movements():
 @login_required
 def api_level_detail(zone, module, level):
     """API que retorna pedidos ativos de um andar em JSON"""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
@@ -3702,6 +3828,9 @@ def api_level_detail(zone, module, level):
 @login_required
 def search_orders():
     """Página de busca de pedidos"""
+    access_denied = require_feature_access('search', 'Acesso restrito à busca de pedidos.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     sector = get_current_sector()
     all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
@@ -3745,6 +3874,9 @@ def search_orders():
 @login_required
 def search_autocomplete():
     """API de autocomplete para busca de pedidos (apenas ativos)"""
+    access_denied = require_feature_access('search', 'Acesso restrito à busca de pedidos.')
+    if access_denied:
+        return access_denied
     query = request.args.get('q', '').strip().upper()
     
     if not query or len(query) < 2:
@@ -3792,6 +3924,9 @@ def search_autocomplete():
 @login_required
 def list_users():
     """Lista todos os usuários"""
+    access_denied = require_feature_access('users', 'Acesso restrito ao gerenciamento de usuários.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     users = db_mdb.get_all_users(unit=unit)
     current_user = session.get('user')
@@ -3802,6 +3937,9 @@ def list_users():
 @login_required
 def reset_user_password():
     """Reseta a senha de um usuário (apenas admin)"""
+    access_denied = require_feature_access('users', 'Acesso restrito ao gerenciamento de usuários.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     target_username = request.form.get('username', '').strip()
     new_password = request.form.get('new_password', '').strip()
@@ -3848,6 +3986,9 @@ def reset_user_password():
 @login_required
 def toggle_user_status():
     """Ativa ou desativa um usuário (apenas admin)"""
+    access_denied = require_feature_access('users', 'Acesso restrito ao gerenciamento de usuários.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     target_username = request.form.get('username', '').strip()
     master_pass = request.form.get('master_password', '').strip()
@@ -3895,6 +4036,9 @@ def toggle_user_status():
 @login_required
 def delete_user():
     """Deleta um usuário do sistema (apenas admin)"""
+    access_denied = require_feature_access('users', 'Acesso restrito ao gerenciamento de usuários.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     target_username = request.form.get('username', '').strip()
     master_pass = request.form.get('master_password', '').strip()
@@ -3939,6 +4083,9 @@ def delete_user():
 @login_required
 def edit_user_sector():
     """Edita o setor de um usuário (apenas admin)"""
+    access_denied = require_feature_access('users', 'Acesso restrito ao gerenciamento de usuários.')
+    if access_denied:
+        return access_denied
     unit = get_current_unit()
     target_username = request.form.get('username', '').strip()
     new_sector = request.form.get('sector', '').strip()
@@ -3985,9 +4132,9 @@ def about():
 @login_required
 def settings():
     """Página de configurações — acesso restrito a admin."""
-    if not is_admin_user():
-        flash('Acesso restrito a administradores.', 'danger')
-        return redirect(url_for('dashboard'))
+    access_denied = require_feature_access('settings', 'Acesso restrito às configurações.', redirect_endpoint=None)
+    if access_denied:
+        return access_denied
     thresholds = load_time_thresholds()
     tg_cfg = load_telegram_config()
     if request.method == 'POST':
@@ -4205,6 +4352,9 @@ def admin_backup():
 @login_required
 def audit_select():
     """Seleção de endereço para entrar no modo de conferência."""
+    access_denied = require_feature_access('audit', 'Acesso restrito à conferência de endereço.')
+    if access_denied:
+        return access_denied
     if request.method == 'POST':
         address = request.form.get('address', '').strip().upper()
         if not address:
@@ -4365,6 +4515,9 @@ def audit_history_complete():
 @login_required
 def audit_conference(address):
     """Modo de conferência double-checking para um endereço."""
+    access_denied = require_feature_access('audit', 'Acesso restrito à conferência de endereço.')
+    if access_denied:
+        return access_denied
     address = address.strip().upper()
     unit = get_current_unit()
     sector = get_current_sector()

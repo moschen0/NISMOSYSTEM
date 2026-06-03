@@ -445,7 +445,9 @@
         <span style="background:#FFDE21;color:#1a1a1a;padding:2px 8px;border-radius:3px;">Amarelo &mdash; {{ time_thresholds.green_days }}&ndash;{{ time_thresholds.yellow_days }}d (Atenção)</span>
         <span style="background:#991b1b;color:#fff;padding:2px 8px;border-radius:3px;">Vermelho &mdash; {{ time_thresholds.yellow_days }}&ndash;{{ time_thresholds.red_days }}d (Urgente)</span>
         <span style="background:#0a0a0a;color:#fff;padding:2px 8px;border-radius:3px;border:1px solid #555;">Preto &mdash; &ge; {{ time_thresholds.red_days }}d (Crítico)</span>
+        {% if can_access_settings %}
         <a href="{{ url_for('settings') }}" class="ms-1" style="font-size:10px;"><i class="bi bi-gear"></i> Configurar</a>
+        {% endif %}
     </div>
     {% endif %}
     <div class="racks-wrap">
@@ -537,15 +539,21 @@
     <a href="{{ url_for('add_order', bipador=1, quick=1) }}" class="btn btn-lg btn-success" title="Modo rapido (menos cliques)">
         <i class="bi bi-plus-circle"></i> Novo Pedido
     </a>
+    {% if can_access_checkout %}
     <a href="{{ url_for('checkout_order') }}" class="btn btn-lg btn-danger">
         <i class="bi bi-box-arrow-up"></i> Saída de Pedido
     </a>
+    {% endif %}
+    {% if can_access_search %}
     <a href="{{ url_for('search_orders') }}" class="btn btn-lg btn-primary">
         <i class="bi bi-search"></i> Buscar Pedidos
     </a>
+    {% endif %}
+    {% if can_access_movements %}
     <a href="{{ url_for('view_movements') }}" class="btn btn-lg btn-info">
         <i class="bi bi-clock-history"></i> Ver Histórico
     </a>
+    {% endif %}
 </div>
 
 <script>

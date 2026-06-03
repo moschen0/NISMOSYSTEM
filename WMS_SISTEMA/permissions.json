@@ -1,6 +1,55 @@
 {
   "permissions": [
     {
+      "id": "dashboard",
+      "name": "Dashboard / Prateleiras",
+      "description": "Visualização do painel principal e das prateleiras",
+      "icon": "bi-speedometer2",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "audit",
+      "name": "Conferência de Endereço",
+      "description": "Conferência de posições e endereços de estoque",
+      "icon": "bi-clipboard2-check",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "audit_expected_orders",
+      "name": "Conferência de Endereço - Detalhes",
+      "description": "Visualização dos pedidos esperados na conferência de endereço",
+      "icon": "bi-list-check",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "confirmations",
+      "name": "Conferência de OS",
+      "description": "Acesso à tela de conferência de ordens de serviço",
+      "icon": "bi-check2-circle",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "confirmations_history",
+      "name": "Histórico da Conferência de OS",
+      "description": "Consulta à lista das próprias conferências realizadas",
+      "icon": "bi-list-check",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "search",
+      "name": "Busca",
+      "description": "Pesquisa de pedidos, posições e caixas",
+      "icon": "bi-search",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "checkout",
+      "name": "Saída de Pedidos",
+      "description": "Registro de retirada de pedidos do estoque",
+      "icon": "bi-box-arrow-up",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
       "id": "triage",
       "name": "Triagem",
       "description": "Acesso à triagem de recebimento",
@@ -12,6 +61,27 @@
       "name": "Etiquetas",
       "description": "Geração e impressão de etiquetas",
       "icon": "bi-tag",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "movements",
+      "name": "Histórico",
+      "description": "Consulta ao histórico de movimentos",
+      "icon": "bi-clock-history",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "users",
+      "name": "Usuários",
+      "description": "Gerenciamento de usuários do sistema",
+      "icon": "bi-people",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "settings",
+      "name": "Configurações",
+      "description": "Acesso às configurações do sistema",
+      "icon": "bi-gear",
       "created_at": "2024-01-01T00:00:00"
     }
   ]

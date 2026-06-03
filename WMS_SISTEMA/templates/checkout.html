@@ -96,12 +96,16 @@
                 </div>
 
                 <div class="text-center mt-3">
+                    {% if can_access_search %}
                     <a href="{{ url_for('search_orders') }}" class="btn btn-outline-primary">
                         <i class="bi bi-search"></i> Buscar Pedidos Ativos
                     </a>
+                    {% endif %}
+                    {% if can_access_movements %}
                     <a href="{{ url_for('view_movements') }}" class="btn btn-outline-info">
                         <i class="bi bi-clock-history"></i> Ver Histórico
                     </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
