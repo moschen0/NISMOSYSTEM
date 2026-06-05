@@ -15,6 +15,7 @@
         <thead class="table-light">
             <tr>
                 <th><i class="bi bi-box"></i> ID do Pedido</th>
+                <th><i class="bi bi-building"></i> OS OPTO</th>
                 <th><i class="bi bi-box2"></i> Caixa</th>
                 <th><i class="bi bi-tools"></i> Ações</th>
             </tr>
@@ -23,6 +24,7 @@
             {% for order in orders %}
             <tr>
                 <td><code>{{ order.order_id }}</code></td>
+                <td>{{ order.os_opto or '-' }}</td>
                 <td>{{ order.box or '-' }}</td>
                 <td>
                     <form method="POST" action="{{ url_for('remove_order') }}" style="display: inline;">

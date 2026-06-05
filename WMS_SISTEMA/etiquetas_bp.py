@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 import json
-import shutil
+import os
 import sys
-import tempfile
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +22,8 @@ from flask import (
     url_for,
 )
 from reportlab.lib.units import mm
+
+import db_mdb
 
 
 # ---------------------------------------------------------------------------
@@ -45,16 +45,11 @@ def _get_etiq_data_dir() -> Path:
 
 _DATA_DIR = _get_etiq_data_dir()
 
-DEFAULT_XLS_FILENAME = "CONTROLE CLIENTES COM ESTOJOS.xlsx"
+LEGACY_XLS_FILENAME = "CONTROLE CLIENTES COM ESTOJOS.xlsx"
 CODE128_LAYOUT_CONFIG_PATH = _DATA_DIR / "etiq_code128_layout_config.json"
 LABEL_MODELS_PATH = _DATA_DIR / "etiq_label_models.json"
 
-
-def get_db_path() -> str:
-    env_db_path = os.environ.get("XLS_DB_PATH") or os.environ.get("ACCESS_DB_PATH")
-    if env_db_path:
-        return env_db_path
-    return str(_DATA_DIR / DEFAULT_XLS_FILENAME)
+LABEL_CLIENTS_TABLE = "etiq_clients"
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +105,10 @@ ROUTE_COLOR_MAP = {
 # Thread-safety globals
 DB_BOOTSTRAP_LOCK = Lock()
 DB_FILE_LOCK = Lock()
-DB_READY = False
+DB_READY_KEY: tuple[str, int, int] | None = None
 CLIENTS_CACHE: list[dict[str, Any]] | None = None
 CLIENTS_CACHE_KEY: tuple[str, int, int] | None = None
+LEGACY_IMPORT_DONE_KEY: tuple[str, int, int] | None = None
 LABEL_MODELS_LOCK = Lock()
 
 TRIAGE_SECTOR = "TRIAGEM"
@@ -200,6 +196,10 @@ def _normalize_numero_cliente(value: Any) -> int | None:
         return None
 
 
+def get_db_path() -> str:
+    return db_mdb.get_db_path()
+
+
 def _normalize_data_impressao(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
@@ -259,65 +259,159 @@ def _find_existing_column_index(ws: Any, *aliases: str) -> int | None:
     return None
 
 
-def _copy_db_to_temp(source_path: str) -> tuple[Path, Path]:
-    source = Path(source_path)
-    suffix = source.suffix or ".xlsx"
-    with tempfile.NamedTemporaryFile(prefix="etiquetas-db-", suffix=suffix, delete=False) as tmp_file:
-        temp_path = Path(tmp_file.name)
-    shutil.copy2(source, temp_path)
-    return source, temp_path
-
-
-def _open_workbook_for_update() -> tuple[Any, Any, dict[str, int], Path, Path]:
-    from openpyxl import load_workbook
-    source_path = Path(get_db_path())
-    workbook = load_workbook(source_path)
-    worksheet = workbook[workbook.sheetnames[0]]
-    columns = _resolve_column_indexes(worksheet)
-    return workbook, worksheet, columns, source_path, source_path
-
-
-def _open_workbook_for_read() -> tuple[Any, Any, dict[str, int], Path | None]:
-    from openpyxl import load_workbook
-    source_path = Path(get_db_path())
-    temp_path: Path | None = None
+def _build_db_cache_key() -> tuple[str, int, int] | None:
     try:
-        workbook = load_workbook(source_path, read_only=True, data_only=False)
-    except PermissionError:
-        _source_path, temp_path = _copy_db_to_temp(str(source_path))
-        workbook = load_workbook(temp_path, read_only=True, data_only=False)
-    worksheet = workbook[workbook.sheetnames[0]]
-    columns = _resolve_existing_column_indexes(worksheet)
-    return workbook, worksheet, columns, temp_path
-
-
-def _close_workbook(workbook: Any) -> None:
-    try:
-        workbook.close()
-    except Exception:
-        pass
-
-
-def _cleanup_temp_file(temp_path: Path | None) -> None:
-    if temp_path is None:
-        return
-    try:
-        if "etiquetas-db-" in temp_path.name:
-            temp_path.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
-def _save_updated_workbook(workbook: Any, source_path: Path, temp_path: Path) -> None:
-    workbook.save(source_path)
-
-
-def _build_cache_key(source_path: Path) -> tuple[str, int, int] | None:
-    try:
-        stat_info = source_path.stat()
+        db_path = Path(get_db_path())
+        stat_info = db_path.stat()
     except OSError:
         return None
-    return (str(source_path.resolve()), int(stat_info.st_mtime_ns), int(stat_info.st_size))
+    return (str(db_path.resolve()), int(stat_info.st_mtime_ns), int(stat_info.st_size))
+
+
+def _table_exists(cursor: Any, table_name: str) -> bool:
+    try:
+        cursor.tables(table=table_name, tableType="TABLE")
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+
+
+def _column_exists(cursor: Any, table_name: str, column_name: str) -> bool:
+    try:
+        cursor.columns(table=table_name, column=column_name)
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+
+
+def _run_ddl_on_conn(conn: Any, sql: str) -> None:
+    old_autocommit = getattr(conn, "autocommit", False)
+    try:
+        conn.autocommit = True
+        conn.execute(sql)
+    finally:
+        conn.autocommit = old_autocommit
+
+
+def _get_legacy_labels_path() -> Path:
+    env_path = os.environ.get("XLS_DB_PATH", "").strip()
+    if env_path:
+        return Path(env_path)
+    return _DATA_DIR / LEGACY_XLS_FILENAME
+
+
+def _ensure_labels_schema(conn: Any) -> None:
+    cursor = conn.cursor()
+    if not _table_exists(cursor, LABEL_CLIENTS_TABLE):
+        _run_ddl_on_conn(
+            conn,
+            f"""
+            CREATE TABLE {LABEL_CLIENTS_TABLE} (
+                id COUNTER PRIMARY KEY,
+                numero_cliente LONG,
+                nome_cliente TEXT(255),
+                cor_roteiro TEXT(100),
+                horario_roteiro TEXT(20),
+                entregador TEXT(100),
+                data_impressao TEXT(50),
+                created_at TEXT(50),
+                updated_at TEXT(50)
+            )
+            """,
+        )
+
+    expected_columns = {
+        "numero_cliente": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN numero_cliente LONG",
+        "nome_cliente": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN nome_cliente TEXT(255)",
+        "cor_roteiro": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN cor_roteiro TEXT(100)",
+        "horario_roteiro": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN horario_roteiro TEXT(20)",
+        "entregador": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN entregador TEXT(100)",
+        "data_impressao": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN data_impressao TEXT(50)",
+        "created_at": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN created_at TEXT(50)",
+        "updated_at": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN updated_at TEXT(50)",
+    }
+    for column_name, ddl in expected_columns.items():
+        if not _column_exists(cursor, LABEL_CLIENTS_TABLE, column_name):
+            try:
+                _run_ddl_on_conn(conn, ddl)
+            except Exception:
+                pass
+    conn.commit()
+
+
+def _import_legacy_labels_if_needed(conn: Any) -> None:
+    global LEGACY_IMPORT_DONE_KEY
+    legacy_path = _get_legacy_labels_path()
+    legacy_key = _build_db_cache_key() if legacy_path == Path(get_db_path()) else None
+    if not legacy_path.exists():
+        return
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT COUNT(*) FROM {LABEL_CLIENTS_TABLE}")
+        if int(cursor.fetchone()[0] or 0) > 0:
+            if legacy_key is not None:
+                LEGACY_IMPORT_DONE_KEY = legacy_key
+            return
+    except Exception:
+        return
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return
+
+    try:
+        workbook = load_workbook(legacy_path, read_only=True, data_only=False)
+    except Exception:
+        return
+
+    worksheet = workbook[workbook.sheetnames[0]]
+    try:
+        columns = _resolve_existing_column_indexes(worksheet)
+        inserted = 0
+        cursor = conn.cursor()
+        for row_idx in range(2, worksheet.max_row + 1):
+            numero_cliente = _normalize_numero_cliente(worksheet.cell(row=row_idx, column=columns["NumeroCliente"]).value)
+            if numero_cliente is None:
+                continue
+            record = {
+                "numero_cliente": numero_cliente,
+                "cor_roteiro": _normalize_text(worksheet.cell(row=row_idx, column=columns["CorRoteiro"]).value),
+                "horario_roteiro": _normalize_horario(worksheet.cell(row=row_idx, column=columns["HorarioRoteiro"]).value),
+                "data_impressao": _normalize_data_impressao(worksheet.cell(row=row_idx, column=columns["DataImpressao"]).value),
+                "nome_cliente": _normalize_text(
+                    worksheet.cell(row=row_idx, column=columns["NomeCliente"]).value
+                    if columns.get("NomeCliente") else None
+                ),
+                "entregador": _normalize_text(
+                    worksheet.cell(row=row_idx, column=columns["Entregador"]).value
+                    if columns.get("Entregador") else None
+                ),
+            }
+            cursor.execute(
+                f"""
+                INSERT INTO {LABEL_CLIENTS_TABLE} (
+                    numero_cliente, nome_cliente, cor_roteiro, horario_roteiro,
+                    entregador, data_impressao, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(record["numero_cliente"]),
+                    record.get("nome_cliente") or None,
+                    str(record.get("cor_roteiro") or "").strip().upper(),
+                    record.get("horario_roteiro") or None,
+                    record.get("entregador") or None,
+                    record["data_impressao"].strftime("%Y-%m-%d %H:%M:%S") if record.get("data_impressao") else None,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            inserted += 1
+        conn.commit()
+        if inserted and legacy_key is not None:
+            LEGACY_IMPORT_DONE_KEY = legacy_key
+    finally:
+        workbook.close()
 
 
 def _invalidate_clients_cache() -> None:
@@ -326,88 +420,74 @@ def _invalidate_clients_cache() -> None:
     CLIENTS_CACHE_KEY = None
 
 
-def _iter_client_rows(ws: Any, columns: dict[str, int]) -> list[tuple[int, dict[str, Any]]]:
-    rows: list[tuple[int, dict[str, Any]]] = []
-    for row_idx in range(2, ws.max_row + 1):
-        numero_cliente = _normalize_numero_cliente(ws.cell(row=row_idx, column=columns["NumeroCliente"]).value)
-        if numero_cliente is None:
-            continue
-        rows.append((
-            row_idx,
-            {
-                "numero_cliente": numero_cliente,
-                "cor_roteiro": _normalize_text(ws.cell(row=row_idx, column=columns["CorRoteiro"]).value),
-                "horario_roteiro": _normalize_horario(ws.cell(row=row_idx, column=columns["HorarioRoteiro"]).value),
-                "data_impressao": _normalize_data_impressao(ws.cell(row=row_idx, column=columns["DataImpressao"]).value),
-                "nome_cliente": _normalize_text(
-                    ws.cell(row=row_idx, column=columns["NomeCliente"]).value
-                    if columns.get("NomeCliente") else None
-                ),
-                "entregador": _normalize_text(
-                    ws.cell(row=row_idx, column=columns["Entregador"]).value
-                    if columns.get("Entregador") else None
-                ),
-            },
-        ))
-    return rows
-
-
-def _find_row_by_cliente(ws: Any, columns: dict[str, int], numero_cliente: int) -> int | None:
-    for row_idx, record in _iter_client_rows(ws, columns):
-        if int(record["numero_cliente"]) == int(numero_cliente):
-            return row_idx
-    return None
-
-
 def ensure_database_ready() -> None:
-    global DB_READY
-    if DB_READY:
+    global DB_READY_KEY
+    db_key = _build_db_cache_key()
+    if db_key is not None and DB_READY_KEY == db_key:
         return
     with DB_BOOTSTRAP_LOCK:
-        if DB_READY:
+        db_key = _build_db_cache_key()
+        if db_key is not None and DB_READY_KEY == db_key:
             return
-        db_path = Path(get_db_path())
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        if not db_path.exists():
-            from openpyxl import Workbook
-            workbook = Workbook()
-            worksheet = workbook.active
-            worksheet.title = "Clientes"
-            for col_idx, column_name in enumerate(CLIENTES_REQUIRED_COLUMNS, start=1):
-                worksheet.cell(row=1, column=col_idx, value=column_name)
-            workbook.save(db_path)
-        DB_READY = True
+        conn = db_mdb.get_connection()
+        _ensure_labels_schema(conn)
+        _import_legacy_labels_if_needed(conn)
+        DB_READY_KEY = _build_db_cache_key() or db_key
 
 
 def fetch_client_label_base(numero_cliente: int) -> tuple[Any, Any, Any, Any]:
-    clients = fetch_all_clients()
-    for record in clients:
-        if int(record["numero_cliente"]) == int(numero_cliente):
-            return record["numero_cliente"], record["cor_roteiro"], record["horario_roteiro"], record.get("entregador", "")
-    return None, None, None, None
+    ensure_database_ready()
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""
+        SELECT TOP 1 numero_cliente, cor_roteiro, horario_roteiro, entregador
+        FROM {LABEL_CLIENTS_TABLE}
+        WHERE numero_cliente = ?
+        ORDER BY id DESC
+        """,
+        (int(numero_cliente),),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None, None, None, None
+    return row[0], row[1], row[2], row[3] or ""
 
 
 def fetch_all_clients() -> list[dict[str, Any]]:
     global CLIENTS_CACHE, CLIENTS_CACHE_KEY
     ensure_database_ready()
-    source_path = Path(get_db_path())
-    cache_key = _build_cache_key(source_path)
+    cache_key = _build_db_cache_key()
     if CLIENTS_CACHE is not None and CLIENTS_CACHE_KEY is not None and cache_key == CLIENTS_CACHE_KEY:
         return [row.copy() for row in CLIENTS_CACHE]
     with DB_FILE_LOCK:
-        cache_key = _build_cache_key(source_path)
+        cache_key = _build_db_cache_key()
         if CLIENTS_CACHE is not None and CLIENTS_CACHE_KEY is not None and cache_key == CLIENTS_CACHE_KEY:
             return [row.copy() for row in CLIENTS_CACHE]
-        workbook, worksheet, columns, temp_path = _open_workbook_for_read()
-        try:
-            rows = [record for _row_idx, record in _iter_client_rows(worksheet, columns)]
-        finally:
-            _close_workbook(workbook)
-            _cleanup_temp_file(temp_path)
-    sorted_rows = sorted(rows, key=lambda row: int(row["numero_cliente"]))
-    CLIENTS_CACHE = [row.copy() for row in sorted_rows]
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT numero_cliente, nome_cliente, cor_roteiro, horario_roteiro, entregador, data_impressao
+            FROM {LABEL_CLIENTS_TABLE}
+            ORDER BY numero_cliente ASC, id ASC
+            """
+        )
+        rows: list[dict[str, Any]] = []
+        for row in cursor.fetchall():
+            rows.append(
+                {
+                    "numero_cliente": _normalize_numero_cliente(row[0]),
+                    "nome_cliente": _normalize_text(row[1]),
+                    "cor_roteiro": _normalize_text(row[2]),
+                    "horario_roteiro": _normalize_horario(row[3]),
+                    "entregador": _normalize_text(row[4]),
+                    "data_impressao": _normalize_data_impressao(row[5]),
+                }
+            )
+    CLIENTS_CACHE = [row.copy() for row in rows]
     CLIENTS_CACHE_KEY = cache_key
-    return sorted_rows
+    return [row.copy() for row in rows]
 
 
 def fetch_clients_filtered(filter_color: str, filter_data: str) -> list[dict[str, Any]]:
@@ -430,67 +510,90 @@ def fetch_clients_filtered(filter_color: str, filter_data: str) -> list[dict[str
 def delete_client(numero_cliente: int) -> None:
     ensure_database_ready()
     with DB_FILE_LOCK:
-        workbook, worksheet, columns, source_path, temp_path = _open_workbook_for_update()
-        try:
-            row_idx = _find_row_by_cliente(worksheet, columns, numero_cliente)
-            if row_idx is not None:
-                worksheet.delete_rows(row_idx)
-                _save_updated_workbook(workbook, source_path, temp_path)
-                _invalidate_clients_cache()
-        finally:
-            _close_workbook(workbook)
-            _cleanup_temp_file(temp_path)
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {LABEL_CLIENTS_TABLE} WHERE numero_cliente = ?", (int(numero_cliente),))
+        conn.commit()
+        _invalidate_clients_cache()
 
 
 def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, nome_cliente: str = "", entregador: str = "") -> None:
     ensure_database_ready()
     with DB_FILE_LOCK:
-        workbook, worksheet, columns, source_path, temp_path = _open_workbook_for_update()
-        try:
-            row_idx = _find_row_by_cliente(worksheet, columns, numero_cliente)
-            atualizado_em_col = _find_existing_column_index(worksheet, "AtualizadoEm")
-            ativo_col = _find_existing_column_index(worksheet, "Ativo")
-            nome_col = columns.get("NomeCliente") or _find_existing_column_index(worksheet, "NomeCliente", "Nome", "NomeDoCliente")
-            if nome_col is None:
-                nome_col = worksheet.max_column + 1
-                worksheet.cell(row=1, column=nome_col, value="NomeCliente")
-            entregador_col = columns.get("Entregador") or _find_existing_column_index(worksheet, "Entregador")
-            if entregador_col is None:
-                entregador_col = worksheet.max_column + 1
-                worksheet.cell(row=1, column=entregador_col, value="Entregador")
-            if row_idx is None:
-                row_idx = worksheet.max_row + 1
-                worksheet.cell(row=row_idx, column=columns["NumeroCliente"], value=int(numero_cliente))
-                worksheet.cell(row=row_idx, column=columns["DataImpressao"], value=None)
-                if ativo_col is not None:
-                    worksheet.cell(row=row_idx, column=ativo_col, value=True)
-            worksheet.cell(row=row_idx, column=columns["CorRoteiro"], value=cor_roteiro.upper())
-            worksheet.cell(row=row_idx, column=columns["HorarioRoteiro"], value=horario_roteiro)
-            if nome_cliente:
-                worksheet.cell(row=row_idx, column=nome_col, value=nome_cliente)
-            worksheet.cell(row=row_idx, column=entregador_col, value=entregador or None)
-            if atualizado_em_col is not None:
-                worksheet.cell(row=row_idx, column=atualizado_em_col, value=datetime.now())
-            _save_updated_workbook(workbook, source_path, temp_path)
-            _invalidate_clients_cache()
-        finally:
-            _close_workbook(workbook)
-            _cleanup_temp_file(temp_path)
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT TOP 1 id, data_impressao, created_at
+            FROM {LABEL_CLIENTS_TABLE}
+            WHERE numero_cliente = ?
+            ORDER BY id DESC
+            """,
+            (int(numero_cliente),),
+        )
+        row = cursor.fetchone()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if row:
+            cursor.execute(
+                f"""
+                UPDATE {LABEL_CLIENTS_TABLE}
+                SET nome_cliente = ?, cor_roteiro = ?, horario_roteiro = ?, entregador = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    nome_cliente or None,
+                    cor_roteiro.upper(),
+                    horario_roteiro or None,
+                    entregador or None,
+                    now_str,
+                    int(row[0]),
+                ),
+            )
+        else:
+            cursor.execute(
+                f"""
+                INSERT INTO {LABEL_CLIENTS_TABLE} (
+                    numero_cliente, nome_cliente, cor_roteiro, horario_roteiro,
+                    entregador, data_impressao, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(numero_cliente),
+                    nome_cliente or None,
+                    cor_roteiro.upper(),
+                    horario_roteiro or None,
+                    entregador or None,
+                    None,
+                    now_str,
+                    now_str,
+                ),
+            )
+        conn.commit()
+        _invalidate_clients_cache()
 
 
 def _persist_print_date(numero_cliente: int, print_dt: datetime) -> None:
     with DB_FILE_LOCK:
-        workbook, worksheet, columns, source_path, temp_path = _open_workbook_for_update()
-        try:
-            row_idx = _find_row_by_cliente(worksheet, columns, numero_cliente)
-            if row_idx is None:
-                return
-            worksheet.cell(row=row_idx, column=columns["DataImpressao"], value=print_dt)
-            _save_updated_workbook(workbook, source_path, temp_path)
-            _invalidate_clients_cache()
-        finally:
-            _close_workbook(workbook)
-            _cleanup_temp_file(temp_path)
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT TOP 1 id FROM {LABEL_CLIENTS_TABLE} WHERE numero_cliente = ? ORDER BY id DESC",
+            (int(numero_cliente),),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return
+        timestamp = print_dt.strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute(
+            f"""
+            UPDATE {LABEL_CLIENTS_TABLE}
+            SET data_impressao = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (timestamp, timestamp, int(row[0])),
+        )
+        conn.commit()
+        _invalidate_clients_cache()
 
 
 def build_label_data(numero_cliente: int, persist_print_date: bool = True) -> dict[str, Any] | None:
@@ -666,13 +769,10 @@ def index():
     success = request.args.get("success")
     try:
         ensure_database_ready()
-        clients = fetch_all_clients()
     except Exception as exc:
-        clients = []
         error = setup_error_message(exc)
     return render_template(
         "etiq/index.html",
-        clients=clients,
         error=error,
         success=success,
         active_tab="dashboard",

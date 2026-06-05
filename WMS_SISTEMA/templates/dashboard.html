@@ -484,6 +484,7 @@
                                                             <div class="box-block box-tier-{{ box.tier }}"
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
+                                                                data-os-opto="{{ box.os_opto|default('', true)|e }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
                                                                  data-added-at="{{ box.created_at|default('', true)|e }}"
                                                                  data-position="{{ cell.position|e }}"
@@ -506,6 +507,7 @@
                                                             <div class="box-block box-tier-{{ box.tier }}"
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
+                                                                data-os-opto="{{ box.os_opto|default('', true)|e }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
                                                                  data-added-at="{{ box.created_at|default('', true)|e }}"
                                                                  data-position="{{ only_cell.position|e }}"
@@ -593,6 +595,7 @@ function initBoxInfoTooltip() {
             <button type="button" data-tip-close style="background:none;border:none;padding:0 2px;cursor:pointer;color:#6c757d;font-size:15px;line-height:1;">&#x2715;</button>
         </div>
         <div class="tip-line"><strong>OS:</strong> <span data-tip="order"></span></div>
+        <div class="tip-line"><strong>OS OPTO:</strong> <span data-tip="os-opto"></span></div>
         <div class="tip-line"><strong>Caixa:</strong> <span data-tip="box"></span></div>
         <div class="tip-line"><strong>Adicionado por:</strong> <span data-tip="user"></span></div>
         <div class="tip-line"><strong>Data de add:</strong> <span data-tip="date"></span></div>
@@ -623,6 +626,7 @@ function initBoxInfoTooltip() {
     document.body.appendChild(tooltip);
 
     const elOrder     = tooltip.querySelector('[data-tip="order"]');
+    const elOpto      = tooltip.querySelector('[data-tip="os-opto"]');
     const elBox       = tooltip.querySelector('[data-tip="box"]');
     const elUser      = tooltip.querySelector('[data-tip="user"]');
     const elDate      = tooltip.querySelector('[data-tip="date"]');
@@ -677,12 +681,14 @@ function initBoxInfoTooltip() {
     function openFor(block, cx, cy) {
         payload = {
             order: fb(block.dataset.orderId),
+            osOpto: fb(block.dataset.osOpto),
             box:   fb(block.dataset.boxNumber || block.textContent),
             user:  fb(block.dataset.addedBy),
             date:  fb(block.dataset.addedAt),
             pos:   fb(block.dataset.position),
         };
-        elOrder.textContent = payload.order; elBox.textContent = payload.box;
+        elOrder.textContent = payload.order; elOpto.textContent = payload.osOpto;
+        elBox.textContent = payload.box;
         elUser.textContent  = payload.user;  elDate.textContent = payload.date;
         elPos.textContent   = payload.pos;
         movePanel.style.display = 'none'; destList.style.display = 'none';
@@ -707,7 +713,7 @@ function initBoxInfoTooltip() {
     // Copiar
     copyBtn.addEventListener('click', async () => {
         if (!payload) return;
-        const t = `OS: ${payload.order}\nCaixa: ${payload.box}\nAdicionado por: ${payload.user}\nData de add: ${payload.date}\nPosição: ${payload.pos}`;
+        const t = `OS: ${payload.order}\nOS OPTO: ${payload.osOpto}\nCaixa: ${payload.box}\nAdicionado por: ${payload.user}\nData de add: ${payload.date}\nPosição: ${payload.pos}`;
         try { await navigator.clipboard.writeText(t); showMsg('Copiado!', true); }
         catch { showMsg('Falha ao copiar', false); }
     });

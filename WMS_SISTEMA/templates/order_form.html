@@ -90,6 +90,14 @@
                         <small class="form-text text-muted">Informe a OS/ID com exatamente 8 dígitos numéricos</small>
                     </div>
 
+                    {% if show_os_opto_field %}
+                    <div class="mb-3">
+                        <label for="os_opto" class="form-label"><i class="bi bi-building"></i> OS OPTO *</label>
+                        <input type="text" class="form-control text-uppercase" id="os_opto" name="os_opto" placeholder="Ex: 9MA123456" required autocomplete="off" maxlength="100" pattern="(9MA|2BA|6VA).*$" title="A OS OPTO deve começar com 9MA, 2BA ou 6VA" oninput="this.value = this.value.toUpperCase();">
+                        <small class="form-text text-muted">Obrigatório neste setor. A OS deve iniciar com 9MA, 2BA ou 6VA.</small>
+                    </div>
+                    {% endif %}
+
                     <div class="mb-4">
                         <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa *{% endif %}</label>
                         <input type="text" class="form-control" id="box" name="box" placeholder="Ex: 12345" required autocomplete="off" inputmode="numeric" pattern="\d{1,5}" maxlength="5" title="Número da caixa é obrigatório e deve ter até 5 dígitos numéricos">

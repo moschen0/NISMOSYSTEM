@@ -35,8 +35,7 @@
     "status": "active",
     "created_at": "12/05/2026 11:41:56",
     "permissions": [
-      "search",
-      "audit"
+      "search"
     ]
   }
 }

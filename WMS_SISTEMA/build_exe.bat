@@ -92,12 +92,29 @@ if exist "templates" (
     echo [AVISO] Pasta "templates" nao encontrada.
 )
 
+rem ── Copia static ────────────────────────────────────────────
+if not exist "dist\WMS_Server\static" mkdir "dist\WMS_Server\static"
+if exist "static" (
+    xcopy "static" "dist\WMS_Server\static" /E /I /Y >nul
+    echo [OK] Static copiado.
+) else (
+    echo [AVISO] Pasta "static" nao encontrada.
+)
+
 rem ── Copia JSONs de configuracao ─────────────────────────────
 for %%f in (zone_metadata.json zone_tag_catalog.json zone_tags_map.json sectors.json) do (
     if exist "%%f" (
         copy /Y "%%f" "dist\WMS_Server\%%f" >nul
         echo [OK] %%f copiado.
     )
+)
+
+rem ── Copia banco local para fallback offline ─────────────────
+if exist "..\WMS_BD\wms_database.mdb" (
+    copy /Y "..\WMS_BD\wms_database.mdb" "dist\WMS_Server\wms_database.mdb" >nul
+    echo [OK] wms_database.mdb copiado.
+) else (
+    echo [AVISO] Banco local nao encontrado em ..\WMS_BD\wms_database.mdb.
 )
 
 rem ── Copia .env ──────────────────────────────────────────────

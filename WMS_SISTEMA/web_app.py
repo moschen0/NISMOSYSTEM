@@ -92,6 +92,8 @@ TAG_RULES = {
     'none': 'Sem regra automatica'
 }
 TRIAGE_SECTOR = 'TRIAGEM'
+AR_SECTOR = 'AR'
+OPTO_OS_PREFIXES = ('9MA', '2BA', '6VA')
 
 # PERMISSION_FLAGS será carregado dinamicamente de load_permissions()
 # Inicializar com padrão vazio para evitar erro antes do Flask estar pronto
@@ -274,6 +276,7 @@ def make_box_entry(order, thresholds):
     label = str(order.get('box') or order.get('order_id', '')).strip()
     order_id = str(order.get('order_id', '') or '').strip()
     box_number = str(order.get('box', '') or '').strip()
+    os_opto = str(order.get('os_opto', '') or '').strip()
     created_by = str(order.get('created_by', '') or '').strip()
     created_at = str(order.get('timestamp') or order.get('date') or '').strip()
     age_days = get_order_age_days(order.get('timestamp'))
@@ -284,6 +287,7 @@ def make_box_entry(order, thresholds):
         'age_days': age_days,
         'order_id': order_id,
         'box': box_number,
+        'os_opto': os_opto,
         'created_by': created_by,
         'created_at': created_at,
     }
@@ -429,6 +433,12 @@ def load_permissions():
             'name': 'Saída de Pedidos',
             'description': 'Registro de retirada de pedidos do estoque',
             'icon': 'bi-box-arrow-up'
+        },
+        'os_opto': {
+            'id': 'os_opto',
+            'name': 'OS OPTO',
+            'description': 'Exige o campo OS OPTO no cadastro de pedidos do setor',
+            'icon': 'bi-building'
         },
         'triage': {
             'id': 'triage',
@@ -963,10 +973,13 @@ def can_access_feature(feature):
     sector = session.get('sector', DEFAULT_SECTOR)
     if sector == 'ALL':
         return True
+    live_permissions = get_sector_permissions(sector)
+    if feature in live_permissions:
+        return True
     session_permissions = session.get('permissions', [])
     if isinstance(session_permissions, list) and session_permissions:
         return feature in session_permissions
-    return feature in get_sector_permissions(sector)
+    return False
 
 
 def require_feature_access(feature, message=None, redirect_endpoint='dashboard'):
@@ -1095,6 +1108,14 @@ def validate_password(password):
 def is_valid_triage_os(order_id):
     """OS da triagem deve ter exatamente 8 digitos numericos."""
     return bool(re.fullmatch(r'\d{8}', str(order_id or '').strip()))
+
+
+def is_valid_opto_os(os_opto):
+    """OS OPTO deve começar com uma das siglas permitidas."""
+    value = str(os_opto or '').strip().upper()
+    if not value:
+        return False
+    return any(value.startswith(prefix) for prefix in OPTO_OS_PREFIXES)
 
 def is_valid_box_number(box):
     """Numero da caixa/cliente aceita somente 1 a 5 digitos."""
@@ -3081,6 +3102,8 @@ def add_order():
     unit = get_current_unit()
     sector = get_current_sector()
     is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
+    is_ar_sector = str(sector or '').strip().upper() == AR_SECTOR
+    show_os_opto_field = is_ar_sector and can_access_feature('os_opto')
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
@@ -3102,6 +3125,7 @@ def add_order():
         order_id = request.form.get('order_id', '').strip()
         box = request.form.get('box', '').strip()
         zone = request.form.get('zone', '').strip().upper()
+        os_opto = request.form.get('os_opto', '').strip().upper()
         bipador_mode = request.form.get('bipador_mode', '0') == '1'
         quick_mode = request.form.get('quick_mode', '0') == '1'
         
@@ -3119,6 +3143,16 @@ def add_order():
         if not box:
             flash('Número da Caixa é obrigatório (1 a 5 dígitos numéricos)', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+
+        if show_os_opto_field:
+            if not os_opto:
+                flash('A OS OPTO é obrigatória no setor AR.', 'danger')
+                return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+            if not is_valid_opto_os(os_opto):
+                flash('A OS OPTO deve começar com 9MA, 2BA ou 6VA.', 'danger')
+                return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+        else:
+            os_opto = ''
 
         if not is_valid_triage_os(order_id):
             flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
@@ -3165,7 +3199,8 @@ def add_order():
                     position=position,
                     box=box,
                     timestamp=now_str,
-                    unit=unit
+                    unit=unit,
+                    os_opto=os_opto
                 )
                 movement_action = 'order_reactivate'
                 movement_details = 'Pedido reativado'
@@ -3180,7 +3215,8 @@ def add_order():
                     created_by=session.get('user', 'Sistema'),
                     status='add',
                     unit=unit,
-                    sector=sector
+                    sector=sector,
+                    os_opto=os_opto
                 )
                 movement_action = 'order_add'
                 movement_details = 'Pedido adicionado'
@@ -3237,7 +3273,9 @@ def add_order():
                          suggested_position=suggested_position,
                          requested_zone=requested_zone,
                          quick_mode=quick_mode_from_query,
-                         is_triage_sector=is_triage_sector)
+                         is_triage_sector=is_triage_sector,
+                         is_ar_sector=is_ar_sector,
+                         show_os_opto_field=show_os_opto_field)
 
 @app.route('/position/<code>')
 @login_required
@@ -3412,17 +3450,44 @@ def triage_receiving():
         return redirect(url_for('triage_receiving'))
 
     query = request.args.get('q', '').strip()
-    if query:
-        receipts = db_mdb.search_triage_receipts(query, unit=unit, sector=TRIAGE_SECTOR)
+    filters = {
+        'order_id': request.args.get('order_id', '').strip(),
+        'customer_code': request.args.get('customer_code', '').strip(),
+        'customer_name': request.args.get('customer_name', '').strip(),
+        'service_name': request.args.get('service_name', '').strip(),
+        'received_by': request.args.get('received_by', '').strip(),
+        'notes': request.args.get('notes', '').strip(),
+        'date_from': request.args.get('date_from', '').strip(),
+        'date_to': request.args.get('date_to', '').strip(),
+    }
+
+    has_filters = any([query, *filters.values()])
+    if has_filters:
+        receipts = db_mdb.search_triage_receipts(
+            query=query,
+            unit=unit,
+            sector=TRIAGE_SECTOR,
+            order_id=filters['order_id'],
+            customer_code=filters['customer_code'],
+            customer_name=filters['customer_name'],
+            service_name=filters['service_name'],
+            received_by=filters['received_by'],
+            notes=filters['notes'],
+            date_from=filters['date_from'],
+            date_to=filters['date_to'],
+        )
     else:
         receipts = db_mdb.get_recent_triage_receipts(limit=150, unit=unit, sector=TRIAGE_SECTOR)
 
     now_iso = datetime.now().strftime('%Y-%m-%dT%H:%M')
     next_order_id = str(db_mdb.get_next_triage_order_id(unit=unit, sector=TRIAGE_SECTOR)).zfill(2)
+    customer_code_suggestions = db_mdb.get_top_triage_customer_codes(limit=8, unit=unit, sector=TRIAGE_SECTOR)
     return render_template(
         'triage_receiving.html',
         receipts=receipts,
         query=query,
+        filters=filters,
+        customer_code_suggestions=customer_code_suggestions,
         now_iso=now_iso,
         next_order_id=next_order_id,
     )
@@ -3778,8 +3843,41 @@ def view_movements():
     access_denied = require_feature_access('movements', 'Acesso restrito ao histórico de movimentos.')
     if access_denied:
         return access_denied
-    movements = db_mdb.get_all_movements(unit=get_current_unit(), sector=get_current_sector())
-    return render_template('movements.html', movements=movements)
+    movement_filters = {
+        'date_from': request.args.get('date_from', '').strip(),
+        'date_to': request.args.get('date_to', '').strip(),
+        'username': request.args.get('username', '').strip(),
+        'action': request.args.get('action', '').strip(),
+        'order_id': request.args.get('order_id', '').strip(),
+        'box': request.args.get('box', '').strip(),
+        'position': request.args.get('position', '').strip(),
+    }
+    has_filters = any(movement_filters.values())
+    movements = db_mdb.get_all_movements(
+        unit=get_current_unit(),
+        sector=get_current_sector(),
+        filters=movement_filters if has_filters else None,
+    )
+    movement_username_suggestions = db_mdb.get_top_movements_suggestions(
+        'username',
+        limit=8,
+        unit=get_current_unit(),
+        sector=get_current_sector(),
+    )
+    movement_action_suggestions = db_mdb.get_top_movements_suggestions(
+        'action',
+        limit=8,
+        unit=get_current_unit(),
+        sector=get_current_sector(),
+    )
+    return render_template(
+        'movements.html',
+        movements=movements,
+        filters=movement_filters,
+        has_filters=has_filters,
+        movement_username_suggestions=movement_username_suggestions,
+        movement_action_suggestions=movement_action_suggestions,
+    )
 
 @app.route('/api/level/<zone>/<module>/<int:level>')
 @login_required

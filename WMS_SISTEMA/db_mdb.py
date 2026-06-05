@@ -57,19 +57,34 @@ def get_runtime_base_dir():
 def resolve_db_path():
     """Resolve caminho do MDB de producao.
 
-    Prioridade: WMS_MDB_PATH_PROD (env) → caminhos fixos conhecidos → busca subindo dirs.
+    Prioridade: WMS_MDB_PATH_PROD (env) → copia local do banco no bundle/exe.
     """
     # Variavel de ambiente tem prioridade maxima (permite override em qualquer maquina).
     env_override = os.environ.get('WMS_MDB_PATH_PROD', '').strip()
     if not env_override:
         env_override = os.environ.get('WMS_MDB_PATH', '').strip()
+
+    candidates = []
     if env_override:
         if os.path.isdir(env_override):
             env_override = os.path.join(env_override, 'wms_database.mdb')
+        candidates.append(env_override)
+
+    base_dir = get_runtime_base_dir()
+    candidates.extend([
+        os.path.join(base_dir, 'wms_database.mdb'),
+        os.path.join(base_dir, 'WMS_BD', 'wms_database.mdb'),
+        os.path.normpath(os.path.join(base_dir, '..', 'WMS_BD', 'wms_database.mdb')),
+    ])
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+
+    if env_override:
         return env_override
 
-    # Sem variavel de ambiente configurada — retorna caminho vazio para forcar erro explicito
-    return ''
+    return candidates[0] if candidates else ''
 
 
 def resolve_db_path_test():
@@ -260,6 +275,14 @@ def _ensure_unit_schema(conn):
                     import logging
                     logging.warning(f"Nao foi possivel adicionar [ativo_inativo] em orders: {_e}")
 
+        if not _column_exists(cursor, 'orders', 'os_opto'):
+            try:
+                _run_ddl_on_conn(conn, "ALTER TABLE orders ADD COLUMN os_opto TEXT(100)")
+            except Exception as _e:
+                if not _column_exists(cursor, 'orders', 'os_opto'):
+                    import logging
+                    logging.warning(f"Nao foi possivel adicionar [os_opto] em orders: {_e}")
+
         try:
             cursor.execute(
                 "UPDATE orders SET ativo_inativo = ? WHERE [status] = 'add' AND (ativo_inativo IS NULL OR ativo_inativo = '')",
@@ -284,6 +307,7 @@ def _ensure_unit_schema(conn):
             ('orders', 'sector'),
             ('movements', 'sector'),
             ('orders', 'ativo_inativo'),
+            ('orders', 'os_opto'),
         ]
         all_ready = all(_column_exists(cursor, table_name, column_name) for table_name, column_name in required_columns)
         _schema_checked = all_ready
@@ -639,16 +663,17 @@ def get_order_by_id(order_id, unit=None):
     order = dict_from_row(cursor, row)
     return order
 
-def add_order(position, order_id, box, date, timestamp, created_by, status='add', unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
+def add_order(position, order_id, box, date, timestamp, created_by, status='add', unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR, os_opto=''):
     """Adiciona um novo pedido"""
     unit = normalize_unit(unit)
     sector = sector or DEFAULT_SECTOR
+    os_opto = str(os_opto or '').strip().upper()
     activity_flag = 'ativo' if str(status).strip().lower() == 'add' else 'inativo'
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], ativo_inativo, [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (position, order_id, box, date, timestamp, created_by, status, activity_flag, unit, sector)
+        "INSERT INTO orders (position, order_id, box, [date], [timestamp], created_by, [status], ativo_inativo, [unit], [sector], os_opto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (position, order_id, box, date, timestamp, created_by, status, activity_flag, unit, sector, os_opto)
     )
     conn.commit()
 
@@ -679,20 +704,21 @@ def update_order_status(order_id, status, removed_at=None, removed_by=None, unit
     
     conn.commit()
 
-def reactivate_order(order_id, position, box, timestamp, unit=None):
+def reactivate_order(order_id, position, box, timestamp, unit=None, os_opto=''):
     """Reativa pedido removido sem criar novo registro (evita conflito UNIQUE)."""
     conn = get_connection()
     cursor = conn.cursor()
+    os_opto = str(os_opto or '').strip().upper()
     if unit is not None:
         unit = normalize_unit(unit)
         cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ? AND [unit] = ?",
-            (position, box, timestamp, order_id, unit)
+            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL, os_opto = ? WHERE order_id = ? AND [unit] = ?",
+            (position, box, timestamp, os_opto, order_id, unit)
         )
     else:
         cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL WHERE order_id = ?",
-            (position, box, timestamp, order_id)
+            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL, os_opto = ? WHERE order_id = ?",
+            (position, box, timestamp, os_opto, order_id)
         )
     conn.commit()
 
@@ -765,7 +791,34 @@ def count_all_orders_in_positions(unit=None, sector=None):
 # MOVEMENTS
 # ============================================================================
 
-def get_all_movements(limit=None, unit=None, sector=None):
+def _parse_any_datetime(value):
+    """Tenta converter datas armazenadas em formatos mistos do sistema."""
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    from datetime import datetime
+
+    for fmt in (
+        '%d/%m/%Y %H:%M:%S',
+        '%d/%m/%Y %H:%M',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M',
+        '%Y-%m-%d',
+    ):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+def get_all_movements(limit=None, unit=None, sector=None, filters=None):
     """Retorna movimentações, opcionalmente limitadas"""
     conn = get_connection()
     cursor = conn.cursor()
@@ -778,13 +831,121 @@ def get_all_movements(limit=None, unit=None, sector=None):
         conditions.append("[sector] = ?")
         params.append(sector)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    if limit:
-        cursor.execute(f"SELECT TOP {int(limit)} * FROM movements {where} ORDER BY [timestamp] DESC", params)
-    else:
-        cursor.execute(f"SELECT * FROM movements {where} ORDER BY [timestamp] DESC", params)
+    cursor.execute(f"SELECT * FROM movements {where}", params)
     rows = cursor.fetchall()
+
     movements = dicts_from_rows(cursor, rows)
-    return movements
+    filters = filters or {}
+
+    def _matches_contains(value, expected):
+        expected_text = str(expected or '').strip().lower()
+        if not expected_text:
+            return True
+        return expected_text in str(value or '').strip().lower()
+
+    def _matches_exact(value, expected):
+        expected_text = str(expected or '').strip().lower()
+        if not expected_text:
+            return True
+        return str(value or '').strip().lower() == expected_text
+
+    date_from = _parse_any_datetime(filters.get('date_from'))
+    date_to = _parse_any_datetime(filters.get('date_to'))
+
+    filtered_movements = []
+    for movement in movements:
+        if not _matches_contains(movement.get('username'), filters.get('username')):
+            continue
+        if not _matches_exact(movement.get('action'), filters.get('action')):
+            continue
+        if not _matches_contains(movement.get('order_id'), filters.get('order_id')):
+            continue
+        if not _matches_contains(movement.get('box'), filters.get('box')):
+            continue
+        if not _matches_contains(movement.get('position'), filters.get('position')):
+            continue
+
+        movement_dt = _parse_any_datetime(movement.get('timestamp'))
+        if date_from and (movement_dt is None or movement_dt.date() < date_from.date()):
+            continue
+        if date_to and (movement_dt is None or movement_dt.date() > date_to.date()):
+            continue
+
+        filtered_movements.append(movement)
+
+    filtered_movements.sort(
+        key=lambda item: (
+            _parse_any_datetime(item.get('timestamp')) or _parse_any_datetime('1970-01-01'),
+            int(str(item.get('id', 0) or 0)) if str(item.get('id', 0) or '0').isdigit() else 0,
+        ),
+        reverse=True,
+    )
+
+    if limit:
+        filtered_movements = filtered_movements[:int(limit)]
+
+    return filtered_movements
+
+
+def get_top_triage_customer_codes(limit=8, unit=None, sector=None):
+    """Retorna os códigos de cliente mais usados na triagem."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["[status] = 'received'"]
+    params = []
+
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(
+        f"""
+        SELECT TOP {int(limit)} customer_code, COUNT(*) AS total
+        FROM triage_receipts {where}
+        GROUP BY customer_code
+        ORDER BY COUNT(*) DESC, customer_code ASC
+        """,
+        params,
+    )
+    rows = cursor.fetchall()
+    return [str(row[0]).strip() for row in rows if str(row[0] or '').strip()]
+
+
+def get_top_movements_suggestions(field, limit=8, unit=None, sector=None):
+    """Retorna valores mais comuns de movimentos para campos de filtro rápidos."""
+    allowed_fields = {'username', 'action'}
+    if field not in allowed_fields:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = []
+    params = []
+
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    cursor.execute(
+        f"""
+        SELECT TOP {int(limit)} [{field}], COUNT(*) AS total
+        FROM movements {where}
+        GROUP BY [{field}]
+        HAVING [{field}] IS NOT NULL AND [{field}] <> ''
+        ORDER BY COUNT(*) DESC, [{field}] ASC
+        """,
+        params,
+    )
+    rows = cursor.fetchall()
+    return [str(row[0]).strip() for row in rows if str(row[0] or '').strip()]
 
 def add_movement(username, action, position="", order_id="", box="", details="", timestamp="", unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
     """Adiciona uma nova movimentação"""
@@ -1069,16 +1230,43 @@ def get_recent_triage_receipts(limit=100, unit=None, sector=None):
     return dicts_from_rows(cursor, rows)
 
 
-def search_triage_receipts(query, unit=None, sector=None):
-    """Busca triagem por pedido, cliente, nome, servico, usuario e observacao."""
+def search_triage_receipts(query=None, unit=None, sector=None, order_id=None, customer_code=None, customer_name=None, service_name=None, received_by=None, notes=None, date_from=None, date_to=None):
+    """Busca triagem por texto livre e filtros específicos."""
     conn = get_connection()
     cursor = conn.cursor()
-    pattern = f"%{str(query or '').strip()}%"
-    conditions = [
-        "(order_id LIKE ? OR customer_code LIKE ? OR customer_name LIKE ? OR service_name LIKE ? OR received_by LIKE ? OR notes LIKE ?)",
-        "[status] = 'received'"
-    ]
-    params = [pattern, pattern, pattern, pattern, pattern, pattern]
+    conditions = ["[status] = 'received'"]
+    params = []
+
+    search_text = str(query or '').strip()
+    if search_text:
+        pattern = f"%{search_text}%"
+        conditions.append("(order_id LIKE ? OR customer_code LIKE ? OR customer_name LIKE ? OR service_name LIKE ? OR received_by LIKE ? OR notes LIKE ?)")
+        params.extend([pattern, pattern, pattern, pattern, pattern, pattern])
+
+    if order_id:
+        conditions.append("order_id LIKE ?")
+        params.append(f"%{str(order_id).strip()}%")
+
+    if customer_code:
+        conditions.append("customer_code LIKE ?")
+        params.append(f"%{str(customer_code).strip()}%")
+
+    if customer_name:
+        conditions.append("customer_name LIKE ?")
+        params.append(f"%{str(customer_name).strip()}%")
+
+    if service_name:
+        conditions.append("service_name LIKE ?")
+        params.append(f"%{str(service_name).strip()}%")
+
+    if received_by:
+        conditions.append("received_by LIKE ?")
+        params.append(f"%{str(received_by).strip()}%")
+
+    if notes:
+        conditions.append("notes LIKE ?")
+        params.append(f"%{str(notes).strip()}%")
+
     if unit is not None:
         conditions.append("[unit] = ?")
         params.append(normalize_unit(unit))
@@ -1086,9 +1274,31 @@ def search_triage_receipts(query, unit=None, sector=None):
         conditions.append("[sector] = ?")
         params.append(sector)
     where = f"WHERE {' AND '.join(conditions)}"
-    cursor.execute(f"SELECT * FROM triage_receipts {where} ORDER BY id DESC", params)
+    cursor.execute(f"SELECT * FROM triage_receipts {where}", params)
     rows = cursor.fetchall()
-    return dicts_from_rows(cursor, rows)
+    receipts = dicts_from_rows(cursor, rows)
+
+    parsed_date_from = _parse_any_datetime(date_from)
+    parsed_date_to = _parse_any_datetime(date_to)
+    filtered_receipts = []
+
+    for item in receipts:
+        received_dt = _parse_any_datetime(item.get('received_at'))
+        if parsed_date_from and (received_dt is None or received_dt.date() < parsed_date_from.date()):
+            continue
+        if parsed_date_to and (received_dt is None or received_dt.date() > parsed_date_to.date()):
+            continue
+        filtered_receipts.append(item)
+
+    filtered_receipts.sort(
+        key=lambda item: (
+            _parse_any_datetime(item.get('received_at')) or _parse_any_datetime(item.get('created_at')) or _parse_any_datetime('1970-01-01'),
+            int(str(item.get('id', 0) or 0)) if str(item.get('id', 0) or '0').isdigit() else 0,
+        ),
+        reverse=True,
+    )
+
+    return filtered_receipts
 
 
 def get_triage_receipts_by_order_ids(order_ids, unit=None, sector=None):
