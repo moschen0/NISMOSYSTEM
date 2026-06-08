@@ -218,10 +218,22 @@
                 </li>
                 {% endif %}
                 {% if can_access_triage %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('triage_receiving') }}">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="triageNavDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="bi bi-clipboard-check"></i> Triagem
                     </a>
+                    <ul class="dropdown-menu" aria-labelledby="triageNavDropdown">
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('triage_receiving') }}">
+                                <i class="bi bi-clipboard-check me-2"></i> Recebimento
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{{ url_for('triage_preview') }}">
+                                <i class="bi bi-grid-3x3-gap me-2"></i> Visualização Triagem
+                            </a>
+                        </li>
+                    </ul>
                 </li>
                 {% endif %}
                 {% if can_access_etiquetas %}

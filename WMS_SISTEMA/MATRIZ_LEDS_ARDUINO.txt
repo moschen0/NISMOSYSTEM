@@ -1,0 +1,301 @@
+================================================================================
+ DOCUMENTAÇÃO: INTEGRAÇÃO MATRIZ DE LEDS COM ARDUINO - WMS
+ Data: 05/06/2026
+================================================================================
+
+VISÃO GERAL
+-----------
+Este documento descreve como integrar uma matriz de LEDs conectada a um Arduino
+(ou ESP8266/ESP32) ao sistema WMS (Flask), de forma que a posição setada no
+sistema acenda o LED correspondente fisicamente no armazém.
+
+
+================================================================================
+ FLUXO DA SOLUÇÃO
+================================================================================
+
+  [Operador seta posição no WMS]
+          |
+          v
+  [WMS Flask guarda posição em memória]
+          |
+          v
+  [Arduino faz polling GET /api/led/current-position a cada 1s]
+          |
+          v
+  [Arduino recebe posição em JSON]
+          |
+          v
+  [Arduino consulta mapa posição → índice LED]
+          |
+          v
+  [Arduino acende o LED correspondente na matriz]
+
+
+================================================================================
+ PARTE 1 — SERVIDOR (web_app.py)
+================================================================================
+
+Adicionar as seguintes funções e rotas ao arquivo web_app.py:
+
+------------------------------------------------------------
+# Estado global da posição iluminada (adicionar no topo do arquivo,
+# próximo às outras variáveis globais)
+
+_led_target_position = {'position': None, 'ts': None}
+
+------------------------------------------------------------
+# Endpoint público para o Arduino consultar (sem login obrigatório)
+
+@app.route('/api/led/current-position')
+def api_led_current_position():
+    return jsonify({
+        'position': _led_target_position.get('position'),
+        'ts': _led_target_position.get('ts'),
+    })
+
+------------------------------------------------------------
+# Endpoint autenticado para o frontend setar a posição
+
+@app.route('/api/led/set-position', methods=['POST'])
+@login_required
+def api_led_set_position():
+    data = request.get_json(force=True)
+    pos = (data.get('position') or '').strip().upper()
+    _led_target_position['position'] = pos or None
+    _led_target_position['ts'] = datetime.now().isoformat()
+    return jsonify({'ok': True, 'position': _led_target_position['position']})
+
+------------------------------------------------------------
+# Endpoint para apagar o LED (limpar seleção)
+
+@app.route('/api/led/clear', methods=['POST'])
+@login_required
+def api_led_clear():
+    _led_target_position['position'] = None
+    _led_target_position['ts'] = datetime.now().isoformat()
+    return jsonify({'ok': True})
+
+------------------------------------------------------------
+
+NOTA DE SEGURANÇA:
+  - O endpoint GET /api/led/current-position é público intencionalmente,
+    pois o Arduino não gerencia sessões HTTP.
+  - Se necessário, proteger com uma chave de API simples via query param:
+    GET /api/led/current-position?key=CHAVE_SECRETA
+  - Os endpoints POST exigem login normalmente.
+
+
+================================================================================
+ PARTE 2 — ARQUIVO DE MAPEAMENTO (led_map.json)
+================================================================================
+
+Criar o arquivo led_map.json na pasta WMS_SISTEMA/ mapeando cada código de
+posição ao índice físico do LED na matriz.
+
+O formato de posição no WMS é:
+  {ZONA}-{MODULO}-{NIVEL}           ex: G-01-02
+  {ZONA}-{MODULO}-{NIVEL}-{COLUNA}  ex: G-01-02-03
+
+Exemplo de led_map.json:
+{
+  "G-01-01": {"row": 0, "col": 0, "index": 0},
+  "G-01-02": {"row": 1, "col": 0, "index": 1},
+  "G-01-03": {"row": 2, "col": 0, "index": 2},
+  "G-02-01": {"row": 0, "col": 1, "index": 8},
+  "G-02-02": {"row": 1, "col": 1, "index": 9},
+  "H-01-01": {"row": 0, "col": 4, "index": 32}
+}
+
+  - "index"  : índice linear do LED na cadeia (para NeoPixel/WS2812B)
+  - "row/col": coordenada na matriz (para MAX7219 ou controle manual)
+
+Este mapa deve ser ajustado conforme o layout físico real das prateleiras.
+
+
+================================================================================
+ PARTE 3 — FIRMWARE DO ARDUINO
+================================================================================
+
+OPÇÃO A: ESP8266 / ESP32 (RECOMENDADO — Wi-Fi nativo)
+------------------------------------------------------
+
+Hardware necessário:
+  - NodeMCU ESP8266 ou ESP32
+  - Matriz de LEDs WS2812B (NeoPixel) ou MAX7219
+
+Bibliotecas necessárias (instalar via Arduino IDE > Library Manager):
+  - ArduinoJson (versão 6.x)
+  - ESP8266HTTPClient ou HTTPClient (ESP32)
+  - Adafruit NeoPixel (para WS2812B) OU MD_MAX72XX (para MAX7219)
+
+------------------------------------------------------------
+Código base (ESP8266 + WS2812B):
+
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ArduinoJson.h>
+#include <Adafruit_NeoPixel.h>
+
+// ---- CONFIGURAÇÕES ----
+const char* WIFI_SSID     = "SEU_WIFI";
+const char* WIFI_PASSWORD = "SUA_SENHA";
+const char* WMS_URL       = "http://192.168.1.X:5000/api/led/current-position";
+const int   POLL_INTERVAL = 1000;  // ms
+const int   LED_PIN       = D4;    // pino de dados da fita
+const int   NUM_LEDS      = 64;    // total de LEDs na matriz
+// -----------------------
+
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// Mapa posição → índice LED (espelhar o led_map.json aqui)
+struct LedMap { const char* position; int index; };
+LedMap ledMap[] = {
+  {"G-01-01", 0},
+  {"G-01-02", 1},
+  {"G-01-03", 2},
+  {"G-02-01", 8},
+  {"G-02-02", 9},
+  // ... adicionar todas as posições
+  {nullptr, -1}  // sentinela
+};
+
+String lastPosition = "__INIT__";
+
+void setup() {
+  Serial.begin(115200);
+  strip.begin();
+  strip.show();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  Serial.println("WiFi conectado: " + WiFi.localIP().toString());
+}
+
+void loop() {
+  String pos = fetchPosition();
+  if (pos != lastPosition) {
+    applyLed(pos);
+    lastPosition = pos;
+  }
+  delay(POLL_INTERVAL);
+}
+
+String fetchPosition() {
+  if (WiFi.status() != WL_CONNECTED) return lastPosition;
+  WiFiClient client;
+  HTTPClient http;
+  http.begin(client, WMS_URL);
+  int code = http.GET();
+  if (code != 200) { http.end(); return lastPosition; }
+  String body = http.getString();
+  http.end();
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, body) != DeserializationError::Ok) return lastPosition;
+  const char* p = doc["position"];
+  return p ? String(p) : String("");
+}
+
+void applyLed(String position) {
+  strip.clear();
+  if (position.length() > 0) {
+    int idx = getLedIndex(position);
+    if (idx >= 0) strip.setPixelColor(idx, strip.Color(255, 140, 0)); // laranja
+  }
+  strip.show();
+}
+
+int getLedIndex(String position) {
+  for (int i = 0; ledMap[i].position != nullptr; i++) {
+    if (position.equalsIgnoreCase(ledMap[i].position))
+      return ledMap[i].index;
+  }
+  return -1;
+}
+
+------------------------------------------------------------
+
+OPÇÃO B: Arduino Uno + Ethernet Shield W5100
+--------------------------------------------
+Mesma lógica, substituindo:
+  ESP8266WiFi.h     → Ethernet.h
+  ESP8266HTTPClient → EthernetClient com requisição HTTP manual
+  (sem ArduinoJson automático — parsear JSON manualmente ou usar
+   a lib ArduinoJson normalmente)
+
+
+================================================================================
+ PARTE 4 — INTEGRAÇÃO NO FRONTEND (templates)
+================================================================================
+
+Em qualquer template que exibe uma posição sugerida (ex: order_form.html,
+position_detail.html), adicionar um botão que chama o endpoint via fetch:
+
+<button onclick="setLed('{{ position_code }}')">Iluminar LED</button>
+
+<script>
+function setLed(position) {
+  fetch('/api/led/set-position', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({position: position})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) alert('LED setado: ' + d.position);
+  });
+}
+
+function clearLed() {
+  fetch('/api/led/clear', {method: 'POST'})
+    .then(r => r.json())
+    .then(() => alert('LED apagado.'));
+}
+</script>
+
+
+================================================================================
+ PARTE 5 — HARDWARE RECOMENDADO
+================================================================================
+
+Componente              | Modelo sugerido          | Observação
+------------------------|--------------------------|---------------------------
+Microcontrolador        | NodeMCU ESP8266 ou ESP32 | Wi-Fi integrado
+Matriz de LEDs          | WS2812B 8x8 (64 LEDs)   | Endereçáveis individualmente
+Fonte de alimentação    | 5V / 3A mínimo           | LEDs consomem ~60mA cada
+Resistor dados          | 330 Ω (no pino de dados) | Protege o pino do MCU
+Capacitor               | 1000 µF 6.3V             | Estabiliza alimentação LEDs
+
+Alternativa para matriz grande (>8x8):
+  - Usar MAX7219 + LEDs comuns (controle SPI, menor consumo)
+  - Cascatear múltiplos MAX7219 para cobrir todo o armazém
+
+
+================================================================================
+ PARTE 6 — CHECKLIST DE IMPLEMENTAÇÃO
+================================================================================
+
+Servidor (WMS):
+  [ ] Adicionar variável global _led_target_position em web_app.py
+  [ ] Adicionar rota GET  /api/led/current-position
+  [ ] Adicionar rota POST /api/led/set-position
+  [ ] Adicionar rota POST /api/led/clear
+  [ ] Criar arquivo led_map.json com todas as posições do armazém
+
+Arduino/ESP:
+  [ ] Instalar bibliotecas: ArduinoJson, NeoPixel/MAX72XX
+  [ ] Configurar SSID, senha Wi-Fi e IP do servidor WMS
+  [ ] Espelhar o led_map.json no array ledMap[] do firmware
+  [ ] Testar polling: verificar resposta JSON no Monitor Serial
+  [ ] Montar hardware e testar acendimento
+
+Frontend:
+  [ ] Adicionar botão "Iluminar LED" nas páginas de posição
+  [ ] Adicionar botão "Apagar LED" para limpar seleção
+
+Produção:
+  [ ] Fixar IP estático no ESP8266/ESP32 (evitar mudança de IP por DHCP)
+  [ ] Usar led_map.json externo (lido pelo Arduino via SPIFFS) para
+      facilitar alterações sem recompilar o firmware
+
+
+================================================================================
+ FIM DO DOCUMENTO
+================================================================================

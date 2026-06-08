@@ -153,7 +153,10 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('lista')" data-view="lista"><i class="bi bi-list-ul me-2"></i>Lista</a></li>
+                    {% if not is_triage_sector %}
                     <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('prateleiras')" data-view="prateleiras"><i class="bi bi-grid-3x3-gap me-2"></i>Prateleiras</a></li>
+                    {% endif %}
+                    <li><a class="dropdown-item" href="{{ url_for('shelf_preview6') }}"><i class="bi bi-grid-3x3-gap me-2"></i>Prateleiras (6 cx)</a></li>
                 </ul>
             </div>
         </div>
@@ -576,8 +579,10 @@ function setView(view) {
     });
 }
 document.addEventListener('DOMContentLoaded', () => {
+    const isTriageSector = {{ 'true' if is_triage_sector else 'false' }};
     const saved = localStorage.getItem('wms_tema') || 'lista';
-    if (saved === 'prateleiras') setView('prateleiras');
+    // Triagem só aceita lista ou prateleiras(6cx) — nunca restaura 'prateleiras'
+    if (!isTriageSector && saved === 'prateleiras') setView('prateleiras');
     initBoxInfoTooltip();
 });
 

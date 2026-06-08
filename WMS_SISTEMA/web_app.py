@@ -277,6 +277,7 @@ def make_box_entry(order, thresholds):
     order_id = str(order.get('order_id', '') or '').strip()
     box_number = str(order.get('box', '') or '').strip()
     os_opto = str(order.get('os_opto', '') or '').strip()
+    triage_caixa = os_opto  # para triagem: os_opto guarda o número da caixa física
     created_by = str(order.get('created_by', '') or '').strip()
     created_at = str(order.get('timestamp') or order.get('date') or '').strip()
     age_days = get_order_age_days(order.get('timestamp'))
@@ -288,6 +289,7 @@ def make_box_entry(order, thresholds):
         'order_id': order_id,
         'box': box_number,
         'os_opto': os_opto,
+        'triage_caixa': triage_caixa,
         'created_by': created_by,
         'created_at': created_at,
     }
@@ -388,7 +390,7 @@ def load_permissions():
                 data = json.load(f)
                 return {p['id']: p for p in data.get('permissions', [])}
     except Exception as e:
-        logger.error(f"Erro ao carregar permissões: {e}")
+        wms_logger.error(f"Erro ao carregar permissões: {e}")
     
     # Padrão: áreas principais do sistema
     return {
@@ -482,7 +484,7 @@ def save_permissions(permissions_dict):
         os.replace(tmp_path, PERMISSIONS_PATH)
         return True
     except Exception as e:
-        logger.error(f"Erro ao salvar permissões: {e}")
+        wms_logger.error(f"Erro ao salvar permissões: {e}")
         return False
 
 
@@ -2195,18 +2197,12 @@ def add_permission():
         }
         
         if save_permissions(permissions):
-            audit_log(
-                action='CREATE_PERMISSION',
-                details=f'Permissão {perm_id} ({name}) criada',
-                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                unit=get_current_unit(),
-                sector=session.get('sector', DEFAULT_SECTOR)
-            )
+            wms_logger.info(f'PERMISSION CREATE | perm={perm_id} user={session.get("user")}')
             flash(f'Permissão "{name}" criada com sucesso!', 'success')
         else:
             flash('Erro ao salvar permissão', 'danger')
     except Exception as e:
-        logger.error(f"Erro ao criar permissão: {e}")
+        wms_logger.error(f"Erro ao criar permissão: {e}")
         flash(f'Erro: {str(e)}', 'danger')
     
     return redirect(url_for('list_cells'))
@@ -2240,18 +2236,12 @@ def edit_permission(perm_id):
         })
         
         if save_permissions(permissions):
-            audit_log(
-                action='EDIT_PERMISSION',
-                details=f'Permissão {perm_id} editada',
-                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                unit=get_current_unit(),
-                sector=session.get('sector', DEFAULT_SECTOR)
-            )
+            wms_logger.info(f'PERMISSION EDIT | perm={perm_id} user={session.get("user")}')
             flash(f'Permissão "{name}" atualizada com sucesso!', 'success')
         else:
             flash('Erro ao salvar permissão', 'danger')
     except Exception as e:
-        logger.error(f"Erro ao editar permissão: {e}")
+        wms_logger.error(f"Erro ao editar permissão: {e}")
         flash(f'Erro: {str(e)}', 'danger')
     
     return redirect(url_for('list_cells'))
@@ -2282,18 +2272,12 @@ def delete_permission(perm_id):
         del permissions[perm_id]
         
         if save_permissions(permissions):
-            audit_log(
-                action='DELETE_PERMISSION',
-                details=f'Permissão {perm_id} ({perm_name}) deletada',
-                timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                unit=get_current_unit(),
-                sector=session.get('sector', DEFAULT_SECTOR)
-            )
+            wms_logger.info(f'PERMISSION DELETE | perm={perm_id} user={session.get("user")}')
             flash(f'Permissão "{perm_name}" deletada com sucesso!', 'success')
         else:
             flash('Erro ao salvar permissões', 'danger')
     except Exception as e:
-        logger.error(f"Erro ao deletar permissão: {e}")
+        wms_logger.error(f"Erro ao deletar permissão: {e}")
         flash(f'Erro: {str(e)}', 'danger')
     
     return redirect(url_for('list_cells'))
@@ -2449,7 +2433,8 @@ def dashboard():
                              order_map=order_map,
                              total_orders=len(orders),
                              preview_zones=ordered_preview_zones_dash,
-                             time_thresholds=_thresholds_dash)
+                             time_thresholds=_thresholds_dash,
+                             is_triage_sector=str(sector or '').strip().upper() == TRIAGE_SECTOR)
     except Exception as e:
         flash(f'Erro ao carregar dashboard: {str(e)}', 'danger')
         print(f"ERRO NO DASHBOARD: {e}")
@@ -2584,6 +2569,258 @@ def shelf_preview():
         sector=sector or DEFAULT_SECTOR,
         time_thresholds=_thresholds_sp,
     )
+
+
+@app.route('/prototype/shelves6')
+@login_required
+def shelf_preview6():
+    """Visualização de prateleiras — idêntica ao shelf_preview mas com altura máxima de 6 caixas por slot."""
+    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.', redirect_endpoint=None)
+    if access_denied:
+        return access_denied
+
+    unit = get_current_unit()
+    sector = get_current_sector()
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
+    active_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
+    source_shelves = shelves if shelves else [
+        {'zone': 'A', 'module': '01', 'levels': 6, 'columns': 1, 'slots': 6},
+        {'zone': 'A', 'module': '02', 'levels': 6, 'columns': 3, 'slots': 6},
+        {'zone': 'A', 'module': '03', 'levels': 6, 'columns': 4, 'slots': 6},
+        {'zone': 'A', 'module': '04', 'levels': 6, 'columns': 2, 'slots': 6},
+        {'zone': 'A', 'module': '05', 'levels': 6, 'columns': 1, 'slots': 6},
+    ]
+
+    _thresholds_s6 = load_time_thresholds()
+    orders_by_position = {}
+    for order in active_orders:
+        position = order.get('position', '').strip().upper()
+        if not position:
+            continue
+        orders_by_position.setdefault(position, []).append(make_box_entry(order, _thresholds_s6))
+
+    demo_mode = not bool(active_orders)
+    demo_positions = {}
+
+    if demo_mode:
+        fill_pattern = [1.0, 1.0, 0.75, 0.5, 1.0, 0.75, 0.0, 1.0, 0.5, 0.75]
+        box_num = 1000
+        pos_idx = 0
+        for s in source_shelves:
+            z = str(s.get('zone', '')).strip().upper()
+            m = str(s.get('module', '')).strip().upper()
+            lv = int(s.get('levels', 1) or 1)
+            cl = int(s.get('columns', 1) or 1)
+            # vis_slots fixed at 6
+            vis_cols = 4 if cl == 1 else 1
+            for pos in get_shelf_positions(z, m, lv, cl):
+                ratio = fill_pattern[pos_idx % len(fill_pattern)]
+                count = round(6 * vis_cols * ratio)
+                if count > 0:
+                    demo_positions[pos] = [f'CX-{box_num + j}' for j in range(count)]
+                    box_num += count
+                pos_idx += 1
+
+    preview_zones = {}
+    for shelf in source_shelves:
+        zone    = str(shelf.get('zone', '')).strip().upper() or 'SEM ZONA'
+        module  = str(shelf.get('module', '')).strip().upper() or '01'
+        levels  = int(shelf.get('levels', 1) or 1)
+        columns = int(shelf.get('columns', 1) or 1)
+        slots   = int(shelf.get('slots', 6) or 6)
+
+        rows = []
+        shelf_display_count = 0
+        for level in range(levels, 0, -1):
+            cells = []
+            for col in range(1, columns + 1):
+                if columns == 1:
+                    position = f"{zone}-{module}-{level:02d}"
+                else:
+                    position = f"{zone}-{module}-{level:02d}-{col:02d}"
+
+                raw_boxes = orders_by_position.get(position, [])
+                if demo_mode and not raw_boxes:
+                    raw_boxes = [
+                        {
+                            'label': b, 'tier': 'normal', 'age_days': None,
+                            'order_id': '', 'box': b, 'created_by': 'Demo', 'created_at': ''
+                        }
+                        for b in demo_positions.get(position, [])
+                    ]
+                else:
+                    raw_boxes = list(reversed(raw_boxes))
+
+                shelf_display_count += min(len(raw_boxes), 6)
+                cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
+
+            rows.append({'level': level, 'cells': cells})
+
+        capacity = levels * columns * slots
+        preview_zones.setdefault(zone, []).append({
+            'zone': zone,
+            'module': module,
+            'levels': levels,
+            'columns': columns,
+            'has_modules': columns > 1,
+            'slots': slots,
+            'vis_slots': 6,          # fixo em 6
+            'rows': rows,
+            'position_count': levels * columns,
+            'occupied_count': shelf_display_count,
+            'capacity': capacity,
+            'occupancy_percent': min(100, int((shelf_display_count / capacity) * 100)) if capacity > 0 else 0,
+        })
+
+    ordered_preview_zones = [
+        {'zone': z, 'shelves': sorted(preview_zones[z], key=shelf_sort_key)}
+        for z in sorted(preview_zones.keys())
+    ]
+
+    return render_template(
+        'shelf_preview6.html',
+        preview_zones=ordered_preview_zones,
+        shelf_total=sum(len(item['shelves']) for item in ordered_preview_zones),
+        order_total=len(active_orders),
+        demo_mode=demo_mode,
+        unit=unit,
+        sector=sector or DEFAULT_SECTOR,
+        time_thresholds=_thresholds_s6,
+    )
+
+
+@app.route('/prototype/triage')
+@login_required
+def triage_preview():
+    """Visualização física das prateleiras da triagem (16 fileiras × 6 caixas de altura)."""
+    block = require_triage_access()
+    if block:
+        return block
+
+    # Constantes físicas da triagem: caixas por fileira e máximo de fileiras por andar
+    TRIAGE_VIS_SLOTS = 6   # altura máxima de caixas por fileira
+    TRIAGE_VIS_COLS  = 16  # máximo de fileiras por andar
+
+    unit = get_current_unit()
+    # Sempre carrega especificamente o setor TRIAGEM
+    triage_shelves = db_mdb.get_all_shelves(unit=unit, sector=TRIAGE_SECTOR)
+    active_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=TRIAGE_SECTOR)
+
+    # Demo: 2 módulos de triagem — 16 fileiras por andar, 6 caixas de altura
+    source_shelves = triage_shelves if triage_shelves else [
+        {'zone': 'T', 'module': '01', 'levels': 1, 'columns': 16, 'slots': 6},
+        {'zone': 'T', 'module': '02', 'levels': 1, 'columns': 16, 'slots': 6},
+    ]
+
+    _thresholds_tp = load_time_thresholds()
+    orders_by_position = {}
+    for order in active_orders:
+        position = order.get('position', '').strip().upper()
+        if not position:
+            continue
+        orders_by_position.setdefault(position, []).append(make_box_entry(order, _thresholds_tp))
+
+    demo_mode = not bool(active_orders)
+    demo_positions = {}
+
+    if demo_mode:
+        fill_pattern = [1.0, 0.83, 0.67, 0.5, 1.0, 0.0, 0.83, 0.5, 1.0, 0.67,
+                        0.5, 1.0, 0.33, 0.83, 0.67, 0.0]
+        box_num = 2000
+        for s in source_shelves:
+            z = str(s.get('zone', '')).strip().upper()
+            m = str(s.get('module', '')).strip().upper()
+            lv = int(s.get('levels', 1) or 1)
+            cl = int(s.get('columns', 1) or 1)
+            sl = int(s.get('slots', 6) or 6)
+            for pos_idx, pos in enumerate(get_shelf_positions(z, m, lv, cl)):
+                # Total de caixas na posição = total capacity para esta posição
+                count = sl
+                demo_positions[pos] = [f'{box_num + j}' for j in range(count)]
+                box_num += count
+
+    preview_zones = {}
+    for shelf in source_shelves:
+        zone    = str(shelf.get('zone', '')).strip().upper() or 'T'
+        module  = str(shelf.get('module', '')).strip().upper() or '01'
+        levels  = int(shelf.get('levels', 1) or 1)
+        columns = int(shelf.get('columns', 1) or 1)
+        slots   = int(shelf.get('slots', 6) or 6)
+
+        # ── Visual remapping ─────────────────────────────────────────────────
+        # Quando a prateleira tem coluna única com muitos slots (ex: columns=1, slots=96),
+        # reagrupamos visualmente em TRIAGE_VIS_COLS fileiras de TRIAGE_VIS_SLOTS caixas.
+        # columns > 1 já está configurado corretamente no banco.
+        if columns == 1:
+            vis_cols  = TRIAGE_VIS_COLS
+            vis_slots = TRIAGE_VIS_SLOTS
+        else:
+            vis_cols  = min(columns, TRIAGE_VIS_COLS)
+            vis_slots = TRIAGE_VIS_SLOTS
+
+        rows = []
+        shelf_display_count = 0
+        for level in range(levels, 0, -1):
+            cells = []
+            for col in range(1, columns + 1):
+                if columns == 1:
+                    position = f"{zone}-{module}-{level:02d}"
+                else:
+                    position = f"{zone}-{module}-{level:02d}-{col:02d}"
+
+                raw_boxes = orders_by_position.get(position, [])
+                if demo_mode and not raw_boxes:
+                    raw_boxes = [
+                        {
+                            'label': b,
+                            'tier': 'normal',
+                            'age_days': None,
+                            'order_id': '',
+                            'box': b,
+                            'created_by': 'Demo',
+                            'created_at': '',
+                        }
+                        for b in demo_positions.get(position, [])
+                    ]
+                else:
+                    raw_boxes = list(reversed(raw_boxes))  # mais antiga → fundo
+
+                shelf_display_count += min(len(raw_boxes), slots)
+                cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
+
+            rows.append({'level': level, 'cells': cells})
+
+        capacity = levels * columns * slots
+        preview_zones.setdefault(zone, []).append({
+            'zone': zone,
+            'module': module,
+            'levels': levels,
+            'columns': columns,       # real DB columns
+            'vis_cols': vis_cols,     # visual columns (max 16)
+            'vis_slots': vis_slots,   # visual height per column (max 6)
+            'has_modules': columns > 1,
+            'slots': slots,
+            'rows': rows,
+            'position_count': levels * columns,
+            'occupied_count': shelf_display_count,
+            'capacity': capacity,
+            'occupancy_percent': min(100, int((shelf_display_count / capacity) * 100)) if capacity > 0 else 0,
+        })
+
+    ordered_preview_zones = [
+        {'zone': z, 'shelves': sorted(preview_zones[z], key=shelf_sort_key)}
+        for z in sorted(preview_zones.keys())
+    ]
+
+    return render_template(
+        'triage_preview.html',
+        preview_zones=ordered_preview_zones,
+        order_total=len(active_orders),
+        demo_mode=demo_mode,
+        unit=unit,
+        time_thresholds=_thresholds_tp,
+    )
+
 
 @app.route('/zone/add', methods=['POST'])
 @login_required
@@ -3104,6 +3341,9 @@ def add_order():
     is_triage_sector = str(sector or '').strip().upper() == TRIAGE_SECTOR
     is_ar_sector = str(sector or '').strip().upper() == AR_SECTOR
     show_os_opto_field = is_ar_sector and can_access_feature('os_opto')
+    # Triage zones for this unit — needed when admin (sector=None) uses a triage zone
+    _triage_shelves_form = db_mdb.get_all_shelves(unit=unit, sector=TRIAGE_SECTOR)
+    triage_zones_for_unit = sorted({ts.get('zone', '').strip().upper() for ts in _triage_shelves_form if ts.get('zone', '').strip()})
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
@@ -3126,6 +3366,7 @@ def add_order():
         box = request.form.get('box', '').strip()
         zone = request.form.get('zone', '').strip().upper()
         os_opto = request.form.get('os_opto', '').strip().upper()
+        triage_caixa = request.form.get('triage_caixa', '').strip()
         bipador_mode = request.form.get('bipador_mode', '0') == '1'
         quick_mode = request.form.get('quick_mode', '0') == '1'
         
@@ -3151,6 +3392,15 @@ def add_order():
             if not is_valid_opto_os(os_opto):
                 flash('A OS OPTO deve começar com 9MA, 2BA ou 6VA.', 'danger')
                 return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+        elif is_triage_sector or zone in triage_zones_for_unit:
+            # Caixa física da triagem — armazenada em os_opto
+            if not triage_caixa:
+                flash('Número da Caixa é obrigatório para triagem.', 'danger')
+                return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+            if not is_valid_box_number(triage_caixa):
+                flash('Número da Caixa deve conter apenas dígitos, com no máximo 5 dígitos.', 'danger')
+                return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
+            os_opto = triage_caixa
         else:
             os_opto = ''
 
@@ -3275,7 +3525,8 @@ def add_order():
                          quick_mode=quick_mode_from_query,
                          is_triage_sector=is_triage_sector,
                          is_ar_sector=is_ar_sector,
-                         show_os_opto_field=show_os_opto_field)
+                         show_os_opto_field=show_os_opto_field,
+                         triage_zones=triage_zones_for_unit)
 
 @app.route('/position/<code>')
 @login_required

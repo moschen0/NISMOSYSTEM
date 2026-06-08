@@ -99,9 +99,18 @@
                     {% endif %}
 
                     <div class="mb-4">
-                        <label for="box" class="form-label"><i class="bi bi-box2"></i> {% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa *{% endif %}</label>
+                        <label for="box" class="form-label"><i class="bi bi-box2"></i> <span id="boxLabelText">{% if is_triage_sector %}Numero do Cliente *{% else %}Número da Caixa *{% endif %}</span></label>
                         <input type="text" class="form-control" id="box" name="box" placeholder="Ex: 12345" required autocomplete="off" inputmode="numeric" pattern="\d{1,5}" maxlength="5" title="Número da caixa é obrigatório e deve ter até 5 dígitos numéricos">
                         <small class="form-text text-muted">Obrigatório. Somente dígitos numéricos, máx. 5 dígitos</small>
+                    </div>
+
+                    <div class="mb-4" id="triageCaixaBlock" style="display:none">
+                        <label for="triage_caixa" class="form-label"><i class="bi bi-box-seam"></i> Caixa *</label>
+                        <input type="text" class="form-control" id="triage_caixa" name="triage_caixa"
+                               placeholder="Ex: 001" autocomplete="off"
+                               inputmode="numeric" pattern="\d{1,5}" maxlength="5"
+                               title="Número da caixa que aparece na visualização de triagem">
+                        <small class="form-text text-muted">Número da caixa física — aparece na visualização de triagem</small>
                     </div>
 
                     <button type="submit" class="btn btn-success w-100 mb-2">
@@ -115,6 +124,10 @@
         </div>
     </div>
 </div>
+
+<script id="wms-form-data" type="application/json">
+{"isTriageSector": {{ 'true' if is_triage_sector else 'false' }}, "triageZones": {{ triage_zones | tojson }}}
+</script>
 
 <script>
 const STORAGE_BIPADOR_MODE = 'wms_bipador_mode';
@@ -134,7 +147,26 @@ const bipadorModeInput = document.getElementById('bipadorModeInput');
 const changeZoneBtn = document.getElementById('changeZoneBtn');
 const quickModeInput = document.getElementById('quickModeInput');
 const bipadorFromUrlInput = document.getElementById('bipadorFromUrlInput');
-const isTriageSector = {{ 'true' if is_triage_sector else 'false' }};
+const _wmsFormData = JSON.parse(document.getElementById('wms-form-data').textContent);
+const isTriageSector = _wmsFormData.isTriageSector;
+const triageZones = _wmsFormData.triageZones;
+
+function isCurrentZoneTriage() {
+    return isTriageSector || triageZones.includes((zoneSelect && zoneSelect.value || '').trim().toUpperCase());
+}
+
+function updateTriageFields() {
+    const isTriage = isCurrentZoneTriage();
+    const block = document.getElementById('triageCaixaBlock');
+    const tc = document.getElementById('triage_caixa');
+    const lbl = document.getElementById('boxLabelText');
+    if (block) block.style.display = isTriage ? '' : 'none';
+    if (tc) {
+        tc.required = isTriage;
+        if (!isTriage) tc.value = '';
+    }
+    if (lbl) lbl.textContent = isTriage ? 'Numero do Cliente *' : 'Número da Caixa *';
+}
 
 let lockedZone = '';
 let allowZoneChange = false;
@@ -235,6 +267,7 @@ zoneSelect.addEventListener('change', function() {
         lockCurrentZone();
     }
 
+    updateTriageFields();
     loadBestPosition(zone);
 });
 
@@ -274,6 +307,10 @@ boxInput.addEventListener('keydown', function(e) {
         return;
     }
     e.preventDefault();
+    if (isCurrentZoneTriage()) {
+        const tc = document.getElementById('triage_caixa');
+        if (tc) { tc.focus(); tc.select(); return; }
+    }
     orderForm.requestSubmit();
 });
 
@@ -284,6 +321,19 @@ orderInput.addEventListener('input', function() {
 boxInput.addEventListener('input', function() {
     this.value = sanitizeNumericValue(this.value, 5);
 });
+
+(function() {
+    const tc = document.getElementById('triage_caixa');
+    if (!tc) return;
+    tc.addEventListener('keydown', function(e) {
+        if (!isBipadorEnabled() || e.key !== 'Enter') return;
+        e.preventDefault();
+        orderForm.requestSubmit();
+    });
+    tc.addEventListener('input', function() {
+        this.value = sanitizeNumericValue(this.value, 5);
+    });
+})();
 
 // Validar que zona foi selecionada antes de submeter
 orderForm.addEventListener('submit', function(e) {
@@ -316,6 +366,19 @@ orderForm.addEventListener('submit', function(e) {
         alert('Número da Caixa é obrigatório e deve conter apenas números (máx. 5 dígitos).');
         boxInput.focus();
         return false;
+    }
+
+    if (isCurrentZoneTriage()) {
+        const tc = document.getElementById('triage_caixa');
+        if (tc) {
+            const cv = tc.value.trim();
+            if (!cv || !/^\d{1,5}$/.test(cv)) {
+                e.preventDefault();
+                alert('Número da Caixa (visualização) é obrigatório e deve ter até 5 dígitos numéricos.');
+                tc.focus();
+                return false;
+            }
+        }
     }
 
     if (isBipadorEnabled() && !lockCurrentZone()) {
@@ -355,6 +418,9 @@ if (isBipadorEnabled() && savedZone && (!selectedZone || selectedZone !== savedZ
 if (zoneSelect.value) {
     loadBestPosition(zoneSelect.value);
 }
+
+// Show/hide Caixa field based on initial zone selection
+updateTriageFields();
 
 if (isBipadorEnabled() && zoneSelect.value) {
     lockCurrentZone();
