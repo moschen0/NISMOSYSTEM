@@ -1003,6 +1003,34 @@ def get_orders_by_position(position, unit=None, sector=None):
     return orders
 
 
+def get_orders_by_date(date_str, unit=None, sector=None):
+    """Retorna pedidos ativos adicionados na data fornecida.
+
+    O campo [date] é armazenado como 'dd/mm/yyyy HH:MM:SS', portanto a busca
+    usa LIKE 'dd/mm/yyyy%' para encontrar todos os registros do dia.
+    `date_str` deve estar no formato 'dd/mm/yyyy' (ex: '09/06/2026').
+    Retorna apenas pedidos com [status] = 'add' e ativo_inativo = 'ativo'.
+    """
+    if not date_str:
+        return []
+    conn = get_connection()
+    cursor = conn.cursor()
+    # usa LIKE porque o campo guarda data + hora ('dd/mm/yyyy HH:MM:SS')
+    like_prefix = str(date_str).strip().rstrip('%') + '%'
+    conditions = ["[date] LIKE ?", "[status] = 'add'", "ativo_inativo = 'ativo'"]
+    params = [like_prefix]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp]", params)
+    rows = cursor.fetchall()
+    return dicts_from_rows(cursor, rows)
+
+
 def get_active_orders_by_client_number(client_number, unit=None, sector=None, limit=20):
     """Retorna servicos ativos enderecados para um numero de cliente."""
     raw_value = str(client_number or '').strip().upper()

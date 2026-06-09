@@ -27,6 +27,9 @@
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTelegram" type="button"><i class="bi bi-telegram"></i> Telegram</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLimites" type="button"><i class="bi bi-clock-history"></i> Limites</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBackup" type="button"><i class="bi bi-archive"></i> Backup</button></li>
+            {% if is_admin %}
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabOpto" type="button"><i class="bi bi-table"></i> OPTO</button></li>
+            {% endif %}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLog" type="button"><i class="bi bi-terminal"></i> Log</button></li>
         </ul>
 
@@ -280,7 +283,7 @@
                                        value="{{ tier }}" id="tier_{{ tier }}"
                                        {% if tier in tg_cfg.notify_tiers %}checked{% endif %}>
                                 <label class="form-check-label" for="tier_{{ tier }}">
-                                    <span class="badge" style="background:{{ color }};{% if tier=='attention' %}color:#1a1a1a{% endif %}">{{ lbl }}</span>
+                                    <span class="badge" style="background:{{ color }}; {% if tier=='attention' %}color:#1a1a1a;{% endif %}">{{ lbl }}</span>
                                 </label>
                             </div>
                             {% endfor %}
@@ -431,7 +434,73 @@
                 <p class="text-muted small">Nenhum backup realizado ainda.</p>
                 {% endif %}
             </div>
+            {# ── TAB OPTO ─────────────────────────────────────────────── #}
+            {% if is_admin %}
+            <div class="tab-pane fade" id="tabOpto">
+                <h6 class="text-muted mb-3"><i class="bi bi-clock-history"></i> Agendamento de Planilhas OPTO</h6>
 
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="mb-3 d-flex align-items-center gap-3">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="optoEnabled"
+                                    {% if opto_cfg.enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-semibold" for="optoEnabled">Agendamento ativo</label>
+                            </div>
+                            <span class="text-muted small">Gera as planilhas automaticamente no horário configurado.</span>
+                        </div>
+
+                        <div class="row g-3 align-items-end mb-3">
+                            <div class="col-auto">
+                                <label class="form-label small mb-1">Hora</label>
+                                <input type="number" id="optoHour" class="form-control form-control-sm" style="width:80px"
+                                    min="0" max="23" value="{{ opto_cfg.hour }}">
+                            </div>
+                            <div class="col-auto">
+                                <label class="form-label small mb-1">Minuto</label>
+                                <input type="number" id="optoMinute" class="form-control form-control-sm" style="width:80px"
+                                    min="0" max="59" value="{{ opto_cfg.minute }}">
+                            </div>
+                            <div class="col-auto text-muted small pb-2">Padrão: 16:30</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">Empresas</label>
+                            <div class="d-flex gap-3">
+                                {% for prefix, label in [('2BA','MASTER'),('6VA','MATRIX'),('9MA','AMX')] %}
+                                <div class="form-check">
+                                    <input class="form-check-input opto-company" type="checkbox"
+                                        value="{{ prefix }}" id="optoCo{{ prefix }}"
+                                        {% if prefix in opto_cfg.companies %}checked{% endif %}>
+                                    <label class="form-check-label" for="optoCo{{ prefix }}">{{ prefix }} &ndash; {{ label }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn btn-primary btn-sm" id="btnSaveOpto">
+                            <i class="bi bi-floppy"></i> Salvar configuração
+                        </button>
+                        <span id="optoSaveMsg" class="small ms-2"></span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2"><i class="bi bi-play-circle"></i> Gerar manualmente</h6>
+                        <p class="text-muted small mb-3">
+                            Gera as planilhas agora para todos os pedidos adicionados <strong>hoje</strong>,
+                            separados por empresa conforme OS OPTO cadastrada no WMS.
+                        </p>
+                        <button type="button" class="btn btn-success btn-sm" id="btnGenerateOpto">
+                            <i class="bi bi-file-earmark-spreadsheet"></i> Gerar Agora
+                        </button>
+                        <span id="optoGenMsg" class="small ms-2"></span>
+                        <ul id="optoGenFiles" class="mt-2 mb-0 small list-unstyled"></ul>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             {# ── TAB LOG ──────────────────────────────────────────────── #}
             <div class="tab-pane fade" id="tabLog">
 
@@ -708,6 +777,63 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
     if (btn.dataset.bsTarget !== '#tabLog') {
         btn.addEventListener('shown.bs.tab', () => clearInterval(_logAutoInterval));
     }
+});
+
+// ── OPTO SCHEDULER ───────────────────────────────────────────────────────────
+function _optoMsg(el, msg, ok) {
+    el.textContent = msg;
+    el.className = 'small ms-2 ' + (ok ? 'text-success fw-bold' : 'text-danger');
+    setTimeout(() => { el.textContent = ''; el.className = 'small ms-2'; }, 5000);
+}
+
+document.getElementById('btnSaveOpto')?.addEventListener('click', function () {
+    const msg = document.getElementById('optoSaveMsg');
+    const fd  = new FormData();
+    fd.append('enabled', document.getElementById('optoEnabled').checked ? '1' : '0');
+    fd.append('hour',    document.getElementById('optoHour').value);
+    fd.append('minute',  document.getElementById('optoMinute').value);
+    document.querySelectorAll('.opto-company:checked').forEach(cb => fd.append('companies', cb.value));
+    fetch('{{ url_for("admin_opto_schedule") }}', {
+        method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(d => _optoMsg(msg, d.message, d.ok))
+    .catch(e => _optoMsg(msg, 'Erro: ' + e, false));
+});
+
+document.getElementById('btnGenerateOpto')?.addEventListener('click', function () {
+    const msg   = document.getElementById('optoGenMsg');
+    const files = document.getElementById('optoGenFiles');
+    msg.textContent = 'Gerando…'; msg.className = 'small ms-2 text-muted';
+    files.innerHTML = '';
+    fetch('{{ url_for("admin_opto_generate_now") }}', {
+        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(d => {
+        _optoMsg(msg, d.message || (d.error ? 'Erro: ' + d.error : '?'), d.ok);
+        if (d.ok && d.files && d.files.length) {
+            d.files.forEach(f => {
+                const li = document.createElement('li');
+                li.innerHTML = '<i class="bi bi-file-earmark-check text-success"></i> ' + f;
+                files.appendChild(li);
+            });
+        }
+        if (d.ok && d.errors && d.errors.length) {
+            const head = document.createElement('li');
+            head.className = 'mt-2 text-danger fw-semibold';
+            head.innerHTML = '<i class="bi bi-exclamation-triangle"></i> ' +
+                d.errors.length + ' pedido(s) com erro (ver pasta ERROS_INTEGRACAO):';
+            files.appendChild(head);
+            d.errors.forEach(e => {
+                const li = document.createElement('li');
+                li.className = 'text-danger small';
+                li.textContent = '• ' + e.order_id + ' (' + (e.os_opto || 'sem OS OPTO') + ') — ' + e.reason;
+                files.appendChild(li);
+            });
+        }
+    })
+    .catch(e => _optoMsg(msg, 'Erro: ' + e, false));
 });
 </script>
 {% endblock %}

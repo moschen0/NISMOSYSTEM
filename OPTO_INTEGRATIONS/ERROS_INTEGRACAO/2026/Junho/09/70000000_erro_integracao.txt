@@ -1,0 +1,16 @@
+ERRO DE INTEGRACAO OPTO -- 09/06/2026 15:18:45
+=======================================================
+OS WMS (order_id) : 70000000
+OS OPTO           : 2BA-7000
+Motivo            : TXT_NAO_ENCONTRADO
+
+Detalhes:
+  Arquivo '70000000.txt' não encontrado em \\192.168.1.210\siou\ImpOs\BkpImpOS
+
+Possiveis causas e acoes:
+  1. O arquivo .txt do SIOU ainda nao foi gerado para esta OS.
+     -> Verifique se a OS foi processada e impressa no SIOU.
+  2. O arquivo '70000000.txt' pode estar em subpasta diferente.
+     -> Caminho pesquisado: \\192.168.1.210\siou\ImpOs\BkpImpOS
+  3. Permissao de leitura no compartilhamento de rede negada.
+     -> Confirme acesso a \\192.168.1.210\siou\ImpOs\BkpImpOS

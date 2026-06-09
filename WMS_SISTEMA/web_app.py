@@ -79,6 +79,7 @@ SECTORS_PATH = os.path.join(DATA_BASE_DIR, 'sectors.json')
 TIME_THRESHOLDS_PATH    = os.path.join(DATA_BASE_DIR, 'time_thresholds.json')
 TELEGRAM_CONFIG_PATH   = os.path.join(DATA_BASE_DIR, 'telegram_config.json')
 TELEGRAM_NOTIFIED_PATH = os.path.join(DATA_BASE_DIR, 'telegram_notified.json')
+OPTO_SCHEDULER_PATH = os.path.join(DATA_BASE_DIR, 'opto_scheduler.json')
 DB_MODE_FILE           = os.path.join(DATA_BASE_DIR, 'db_mode.json')
 IP_ACL_PATH            = os.path.join(DATA_BASE_DIR, 'ip_acl.json')
 AUDIT_HISTORY_PATH     = os.path.join(DATA_BASE_DIR, 'conference_history.json')
@@ -753,6 +754,102 @@ def start_telegram_schedulers():
     t3.start()
     wms_logger.info('TELEGRAM | Schedulers de alertas, relatório diário e relatório de período iniciados')
     print('[TELEGRAM] Schedulers iniciados.')
+
+
+# ============================================================================
+# OPTO SCHEDULER
+# ============================================================================
+_OPTO_SCHEDULER_DEFAULTS = {
+    'enabled': False,
+    'hour': 16,
+    'minute': 30,
+    'companies': ['2BA', '6VA', '9MA'],
+}
+
+
+def load_opto_scheduler_config() -> dict:
+    """Carrega config do agendador OPTO; aplica defaults se ausentes."""
+    data = {}
+    if os.path.exists(OPTO_SCHEDULER_PATH):
+        try:
+            with open(OPTO_SCHEDULER_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    # mescla defaults → garante campos ausentes
+    return {k: data.get(k, v) for k, v in _OPTO_SCHEDULER_DEFAULTS.items()}
+
+
+def save_opto_scheduler_config(cfg: dict) -> None:
+    """Persiste config do agendador OPTO (escrita atômica)."""
+    safe = {k: cfg.get(k, v) for k, v in _OPTO_SCHEDULER_DEFAULTS.items()}
+    tmp = OPTO_SCHEDULER_PATH + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(safe, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, OPTO_SCHEDULER_PATH)
+
+
+def _import_integrador_opto():
+    """Importa integrador_opto adicionando OPTO_INTEGRATIONS ao sys.path."""
+    opto_dir = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'OPTO_INTEGRATIONS')
+    )
+    if opto_dir not in sys.path:
+        sys.path.insert(0, opto_dir)
+    import importlib
+    import integrador_opto as _m  # type: ignore
+    return importlib.reload(_m) if _m.__spec__ else _m
+
+
+def _opto_scheduler_worker():
+    """Worker que executa exportação OPTO programada no horário configurado.
+    Verifica a cada 60 s; dispara uma vez por dia quando hora:minuto bater."""
+    last_run_date = None
+    while True:
+        try:
+            cfg = load_opto_scheduler_config()
+            if cfg.get('enabled'):
+                target_h = int(cfg.get('hour', 16))
+                target_m = int(cfg.get('minute', 30))
+                companies = cfg.get('companies') or None
+                now = datetime.now()
+                today = now.date()
+                # dispara quando hora bate e minuto está na janela de 1 min
+                if (now.hour == target_h
+                        and target_m <= now.minute < target_m + 2
+                        and last_run_date != today):
+                    try:
+                        integrador_opto = _import_integrador_opto()
+                        integrador_opto.init_database()
+                        date_str = now.strftime('%d/%m/%Y')
+                        res = integrador_opto.generate_scheduled_export(
+                            companies=companies, date_str=date_str
+                        )
+                        files = res.get('files', {}) if isinstance(res, dict) else {}
+                        errors = res.get('errors', []) if isinstance(res, dict) else []
+                        wms_logger.info(
+                            f'OPTO SCHEDULER | {now:%H:%M} | Gerados {len(files)} arquivo(s) | '
+                            f'{len(errors)} erro(s): {list(files.keys())}'
+                        )
+                        last_run_date = today
+                    except Exception as exc:
+                        wms_logger.error(f'OPTO SCHEDULER | Erro ao gerar exportação: {exc}')
+                        last_run_date = today  # não tenta de novo no mesmo dia
+        except Exception as exc:
+            wms_logger.error(f'OPTO SCHEDULER | Erro no worker: {exc}')
+        time.sleep(60)
+
+
+def start_opto_scheduler():
+    """Inicia a thread do agendador OPTO em background."""
+    t = threading.Thread(target=_opto_scheduler_worker, daemon=True, name='opto-scheduler')
+    t.start()
+    cfg = load_opto_scheduler_config()
+    status = 'ativado' if cfg.get('enabled') else 'desativado'
+    wms_logger.info(
+        f'OPTO SCHEDULER | Iniciado (horario={cfg["hour"]:02d}:{cfg["minute"]:02d}, {status})'
+    )
+    print(f'[OPTO] Agendador iniciado ({cfg["hour"]:02d}:{cfg["minute"]:02d}, {status}).')
 
 
 def init_db_mode():
@@ -4528,6 +4625,7 @@ def settings():
     import telegram_notifier as tg
     db_mode = load_db_mode()
     active_users = get_active_users() if is_admin_user() else []
+    opto_cfg = load_opto_scheduler_config()
     return render_template('settings.html',
                            thresholds=thresholds,
                            backup_log=get_backup_log_tail(),
@@ -4540,7 +4638,8 @@ def settings():
                            db_path_active=db_mdb.get_db_path(),
                            active_users=active_users,
                            ip_acl=get_ip_acl(),
-                           maintenance_state=get_maintenance_state())
+                           maintenance_state=get_maintenance_state(),
+                           opto_cfg=opto_cfg)
 
 
 @app.route('/admin/set-db-mode', methods=['POST'])
@@ -4695,6 +4794,71 @@ def admin_backup():
     else:
         flash(f'Erro no backup: {msg}', 'danger')
     return redirect(url_for('settings'))
+
+
+@app.route('/admin/opto/schedule', methods=['POST'])
+@login_required
+def admin_opto_schedule():
+    """Salva configuração do agendador OPTO (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'}), 403
+    try:
+        enabled = request.form.get('enabled') == '1'
+        hour   = max(0, min(23, int(request.form.get('hour',   16))))
+        minute = max(0, min(59, int(request.form.get('minute', 30))))
+        companies = [c.strip().upper() for c in request.form.getlist('companies') if c.strip()]
+        if not companies:
+            companies = list(_OPTO_SCHEDULER_DEFAULTS['companies'])
+        cfg = {'enabled': enabled, 'hour': hour, 'minute': minute, 'companies': companies}
+        save_opto_scheduler_config(cfg)
+        status_lbl = 'ativado' if enabled else 'desativado'
+        wms_logger.warning(
+            f'OPTO SCHEDULER | Config alterada por {session.get("user")}: '
+            f'ativo={enabled}, horário={hour:02d}:{minute:02d}'
+        )
+        return jsonify({
+            'ok': True,
+            'message': f'Configurado para {hour:02d}:{minute:02d} ({status_lbl}).',
+            'cfg': cfg,
+        })
+    except (ValueError, TypeError) as exc:
+        return jsonify({'ok': False, 'message': f'Valores inválidos: {exc}'}), 400
+
+
+@app.route('/admin/opto/generate-now', methods=['POST'])
+@login_required
+def admin_opto_generate_now():
+    """Gera as planilhas OPTO imediatamente para hoje (somente admin)."""
+    if not is_admin_user():
+        return jsonify({'ok': False, 'message': 'Acesso restrito a administradores.'}), 403
+    try:
+        integrador_opto = _import_integrador_opto()
+        cfg = load_opto_scheduler_config()
+        companies = cfg.get('companies') or None
+        date_str = datetime.now().strftime('%d/%m/%Y')
+        integrador_opto.init_database()
+        res = integrador_opto.generate_scheduled_export(companies=companies, date_str=date_str)
+        files_map = res.get('files', {}) if isinstance(res, dict) else {}
+        errors = res.get('errors', []) if isinstance(res, dict) else []
+        files = [os.path.basename(p) for p in files_map]
+        n_ok = sum(files_map.values()) if files_map else 0
+        parts = []
+        if n_ok:
+            parts.append(f'{n_ok} pedido(s) em {len(files)} planilha(s)')
+        if errors:
+            parts.append(f'{len(errors)} com erro (ver ERROS_INTEGRACAO)')
+        msg = ' | '.join(parts) if parts else 'Nenhum pedido encontrado para hoje.'
+        wms_logger.info(
+            f'OPTO SCHEDULER | Geração manual por {session.get("user")}: '
+            f'{n_ok} ok, {len(errors)} erro(s)'
+        )
+        return jsonify({
+            'ok': True, 'message': msg, 'files': files,
+            'errors': errors, 'generated': files_map,
+        })
+    except Exception as exc:
+        wms_logger.error(f'OPTO SCHEDULER | Erro na geração manual: {exc}')
+        return jsonify({'ok': False, 'message': str(exc)}), 500
 
 
 @app.route('/audit', methods=['GET', 'POST'])
