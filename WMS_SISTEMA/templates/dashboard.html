@@ -243,9 +243,9 @@
             {% for zone_name, shelf_list in zones.items() %}
             <!-- Zona Expansível -->
             <div class="card mb-4">
-                <div class="zone-header text-decoration-none text-dark"
+                <div class="zone-header text-decoration-none"
                    data-zone="{{ zone_name }}"
-                   style="display: block; padding: 15px; background: linear-gradient(135deg, #ff9800 0%, #ff7f00 100%); color: white; cursor: pointer;"
+                   style="display: block; padding: 15px 20px; background: #1d1d1f; color: rgba(255,255,255,0.9); cursor: pointer;"
                    onclick="toggleZone(this);">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -366,12 +366,12 @@
                                    data-zone="{{ shelf.zone }}"
                                    data-module="{{ shelf.module }}"
                                    data-level="{{ level }}"
-                                   style="border-color: #ff9800; cursor: pointer; transition: background-color 0.2s;"
+                                   style="border-color: #0066cc; cursor: pointer; transition: background-color 0.2s;"
                                    onclick="event.preventDefault(); toggleLevelOrders(this);">
                                     <strong><i class="bi bi-layers"></i> Andar {{ level }} <i class="bi bi-chevron-down ms-2" style="transition: transform 0.3s;"></i></strong>
                                 </a>
                                 <div class="level-orders-container" style="display: none; margin-top: 10px;">
-                                    <div class="ps-3 border-start border-3" style="border-color: #ff9800;">
+                                    <div class="ps-3 border-start border-3" style="border-color: #0066cc;">
                                         <div class="spinner-border spinner-border-sm" role="status">
                                             <span class="visually-hidden">Carregando...</span>
                                         </div>
@@ -860,10 +860,10 @@ async function toggleLevelOrders(element) {
             let html = '';
             
             if (data.orders && data.orders.length > 0) {
-                html = '<div class="ps-3 border-start border-3" style="border-color: #ff9800;">';
+                html = '<div class="ps-3 border-start border-3" style="border-color: #0066cc;">';
                 data.orders.forEach(order => {
                     html += `
-                        <div class="mb-2 p-2 bg-white rounded border-start border-3" style="border-color: #ff9800;">
+                        <div class="mb-2 p-2 bg-white rounded border-start border-3" style="border-color: #0066cc;">
                             <div class="d-flex justify-content-between align-items-start">
                                 <div>
                                     <strong class="d-block">${order.order_id}</strong>
@@ -880,7 +880,7 @@ async function toggleLevelOrders(element) {
                 });
                 html += '</div>';
             } else {
-                html = '<div class="ps-3 border-start border-3 p-2 text-muted" style="border-color: #ff9800;"><i class="bi bi-info-circle"></i> Nenhum pedido neste andar</div>';
+                html = '<div class="ps-3 border-start border-3 p-2 text-muted" style="border-color: #0066cc;"><i class="bi bi-info-circle"></i> Nenhum pedido neste andar</div>';
             }
             
             container.innerHTML = html;

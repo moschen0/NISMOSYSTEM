@@ -44,9 +44,9 @@
     }
 
     .editor-preview {
-      background: linear-gradient(180deg, #d7d8db, #c6c8cd);
+      background: #ebebed;
       border-radius: 12px;
-      border: 1px solid rgba(30, 47, 67, 0.18);
+      border: 1px solid rgba(0,0,0,0.1);
       padding: 16px;
       display: grid;
       gap: 12px;
@@ -241,7 +241,7 @@
 
               <div class="editor-actions">
                 <button type="submit">Gerar Previa</button>
-                <button type="submit" formaction="{{ url_for('etiquetas.barcode_code128_pdf') }}" formmethod="post" style="background-color:#1a73d9;">Gerar PDF</button>
+                <button type="submit" formaction="{{ url_for('etiquetas.barcode_code128_pdf') }}" formmethod="post">Gerar PDF</button>
               </div>
             </div>
           </div>
