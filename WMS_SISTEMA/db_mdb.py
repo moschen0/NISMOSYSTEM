@@ -1386,60 +1386,35 @@ def get_next_triage_order_id(unit=None, sector=None, start_at=1):
 
 
 def get_triage_customer_name_by_code(customer_code, unit=None, sector=None):
-    """Busca o nome mais recente do cliente por codigo na base de triagem."""
-    code = str(customer_code or '').strip().upper()
+    """Busca o nome do cliente em etiq_clients pelo numero_cliente.
+
+    A fonte de verdade é a tabela etiq_clients (importada do catálogo de
+    clientes), não triage_receipts que é apenas um registro de pedidos recebidos.
+    Os parâmetros unit/sector são mantidos por compatibilidade de assinatura mas
+    não são usados na consulta, pois etiq_clients não é particionada por unidade.
+    """
+    code = str(customer_code or '').strip()
     if not code:
+        return ''
+
+    # numero_cliente é INTEGER na tabela; aceita código numérico com zeros à esquerda
+    code_stripped = code.lstrip('0') or '0'
+    if not code_stripped.isdigit():
         return ''
 
     conn = get_connection()
     cursor = conn.cursor()
-    def _run_lookup(use_unit, prefer_imported):
-        conditions = [
-            "customer_code = ?",
-            "customer_name IS NOT NULL",
-            "customer_name <> ''",
-        ]
-        params = [code]
-
-        if sector is not None:
-            conditions.append("[sector] = ?")
-            params.append(sector)
-        if use_unit and unit is not None:
-            conditions.append("[unit] = ?")
-            params.append(normalize_unit(unit))
-
-        where = f"WHERE {' AND '.join(conditions)}"
-        if prefer_imported:
-            cursor.execute(
-                f"SELECT TOP 1 customer_name FROM triage_receipts {where} AND notes LIKE ? ORDER BY id DESC",
-                params + ['Importado de CONTROLE CLIENTES COM ESTOJOS.xlsx%'],
-            )
-        else:
-            cursor.execute(
-                f"SELECT TOP 1 customer_name FROM triage_receipts {where} ORDER BY id DESC",
-                params,
-            )
-
+    try:
+        cursor.execute(
+            "SELECT TOP 1 nome_cliente FROM etiq_clients "
+            "WHERE numero_cliente = ? AND nome_cliente IS NOT NULL AND nome_cliente <> '' "
+            "ORDER BY id DESC",
+            (int(code_stripped),),
+        )
         row = cursor.fetchone()
         return str(row[0]).strip() if row and row[0] is not None else ''
-
-    # 1) Unidade atual + catalogo importado
-    name = _run_lookup(use_unit=True, prefer_imported=True)
-    if name:
-        return name
-
-    # 2) Unidade atual + qualquer registro
-    name = _run_lookup(use_unit=True, prefer_imported=False)
-    if name:
-        return name
-
-    # 3) Qualquer unidade + catalogo importado
-    name = _run_lookup(use_unit=False, prefer_imported=True)
-    if name:
-        return name
-
-    # 4) Qualquer unidade + qualquer registro
-    return _run_lookup(use_unit=False, prefer_imported=False)
+    except Exception:
+        return ''
 
 
 def datetime_now_str():
