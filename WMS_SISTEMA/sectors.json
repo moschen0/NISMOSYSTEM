@@ -25,6 +25,7 @@
       "audit",
       "audit_expected_orders",
       "search",
+      "search_cross_sector",
       "checkout",
       "triage",
       "etiquetas"

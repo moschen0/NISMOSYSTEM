@@ -431,6 +431,12 @@ def load_permissions():
             'description': 'Pesquisa de pedidos, posições e caixas',
             'icon': 'bi-search'
         },
+        'search_cross_sector': {
+            'id': 'search_cross_sector',
+            'name': 'Busca entre setores',
+            'description': 'Permite pesquisar pedidos e posições em todos os setores da unidade',
+            'icon': 'bi-diagram-3'
+        },
         'checkout': {
             'id': 'checkout',
             'name': 'Saída de Pedidos',
@@ -1114,6 +1120,13 @@ def can_access_feature(feature):
     if isinstance(session_permissions, list) and session_permissions:
         return feature in session_permissions
     return False
+
+
+def get_search_sector_scope():
+    """Retorna o setor usado na busca; None libera pesquisa em todos os setores."""
+    if can_access_feature('search_cross_sector'):
+        return None
+    return get_current_sector()
 
 
 def require_feature_access(feature, message=None, redirect_endpoint='dashboard'):
@@ -4377,7 +4390,7 @@ def search_orders():
     if access_denied:
         return access_denied
     unit = get_current_unit()
-    sector = get_current_sector()
+    sector = get_search_sector_scope()
     all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
     
     # Busca por query string
@@ -4427,39 +4440,54 @@ def search_autocomplete():
     if not query or len(query) < 2:
         return jsonify({'suggestions': []})
     
-    orders = db_mdb.get_all_orders(status_filter='add', unit=get_current_unit(), sector=get_current_sector())
+    sector = get_search_sector_scope()
+    orders = db_mdb.get_all_orders(status_filter='add', unit=get_current_unit(), sector=sector)
     
     suggestions = []
     seen = set()
+    cross_sector_search = sector is None
     
     for order in orders:
         order_id = order.get('order_id', '')
         position = order.get('position', '')
         box = order.get('box', '')
+        order_sector = str(order.get('sector', '') or '').strip().upper()
         
-        if order_id.upper().startswith(query) and order_id not in seen:
+        order_id_key = ('order_id', order_id, order_sector)
+        if order_id.upper().startswith(query) and order_id_key not in seen:
+            label = f"📦 Pedido: {order_id}"
+            if cross_sector_search and order_sector:
+                label += f" • Setor: {order_sector}"
             suggestions.append({
                 'value': order_id,
-                'label': f"📦 Pedido: {order_id}",
+                'label': label,
                 'type': 'order_id'
             })
-            seen.add(order_id)
+            seen.add(order_id_key)
         
-        if position.upper().startswith(query) and position not in seen:
+        position_key = ('position', position, order_sector)
+        if position.upper().startswith(query) and position_key not in seen:
+            label = f"📍 Posição: {position}"
+            if cross_sector_search and order_sector:
+                label += f" • Setor: {order_sector}"
             suggestions.append({
                 'value': position,
-                'label': f"📍 Posição: {position}",
+                'label': label,
                 'type': 'position'
             })
-            seen.add(position)
+            seen.add(position_key)
         
-        if box and box.upper().startswith(query) and box not in seen:
+        box_key = ('box', box, order_sector)
+        if box and box.upper().startswith(query) and box_key not in seen:
+            label = f"📦 Caixa: {box}"
+            if cross_sector_search and order_sector:
+                label += f" • Setor: {order_sector}"
             suggestions.append({
                 'value': box,
-                'label': f"📦 Caixa: {box}",
+                'label': label,
                 'type': 'box'
             })
-            seen.add(box)
+            seen.add(box_key)
     
     suggestions = suggestions[:10]
     

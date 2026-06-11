@@ -43,6 +43,13 @@
       "created_at": "2024-01-01T00:00:00"
     },
     {
+      "id": "search_cross_sector",
+      "name": "Busca entre setores",
+      "description": "Permite pesquisar pedidos e posições em todos os setores da unidade",
+      "icon": "bi-diagram-3",
+      "created_at": "2026-06-11T00:00:00"
+    },
+    {
       "id": "checkout",
       "name": "Saída de Pedidos",
       "description": "Registro de retirada de pedidos do estoque",
