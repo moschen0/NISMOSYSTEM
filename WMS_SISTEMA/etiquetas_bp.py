@@ -22,6 +22,7 @@ from flask import (
     url_for,
 )
 from reportlab.lib.units import mm
+from etiquetas_100x150 import draw_label_100x150_pdf
 
 import db_mdb
 
@@ -505,6 +506,171 @@ def fetch_clients_filtered(filter_color: str, filter_data: str) -> list[dict[str
                 continue
         filtered.append(client)
     return filtered
+
+
+# ---------------------------------------------------------------------------
+# Impressos/ — helper to persist every generated PDF
+# ---------------------------------------------------------------------------
+
+def _save_to_impressos(pdf_bytes: bytes, label: str) -> Path | None:
+    """Save *pdf_bytes* to _DATA_DIR/Impressos/<timestamp>_<label>.pdf.
+    Returns the path on success, None on failure (non-fatal).
+    """
+    try:
+        impressos_dir = _DATA_DIR / "Impressos"
+        impressos_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = impressos_dir / f"{ts}_{label}.pdf"
+        dest.write_bytes(pdf_bytes)
+        return dest
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 100x150 label routes
+# ---------------------------------------------------------------------------
+
+
+@etq_bp.route("/etiquetas/envio")
+def label_100x150_new():
+    """Direct access from topbar — empty form, auto-fills enviado_por from session."""
+    return render_template(
+        "etiq/label_print_100x150.html",
+        label_id=0,
+        id_master=request.args.get("id_master", ""),
+        enviado_por=session.get("user", ""),
+        os_id=request.args.get("os_id", ""),
+        endereco=request.args.get("endereco", ""),
+        tratamento=request.args.get("tratamento", ""),
+        caixa=request.args.get("caixa", ""),
+        od_esf=request.args.get("od_esf", ""),
+        od_cil=request.args.get("od_cil", ""),
+        od_eixo=request.args.get("od_eixo", ""),
+        od_ad=request.args.get("od_ad", ""),
+        oe_esf=request.args.get("oe_esf", ""),
+        oe_cil=request.args.get("oe_cil", ""),
+        oe_eixo=request.args.get("oe_eixo", ""),
+        oe_ad=request.args.get("oe_ad", ""),
+    )
+
+
+@etq_bp.route("/etiquetas/envio/pdf")
+def label_envio_pdf_quick():
+    """Quick PDF from query params (used by auto-print modal on dashboard)."""
+    rq = request.args
+    data = {
+        "id_master": rq.get("id_master", ""),
+        "os_id": rq.get("os_id", ""),
+        "endereco": rq.get("endereco", ""),
+        "tratamento": rq.get("tratamento", ""),
+        "caixa": rq.get("caixa", ""),
+        "enviado_por": rq.get("enviado_por") or session.get("user", ""),
+        "od_esf": rq.get("od_esf", ""),
+        "od_cil": rq.get("od_cil", ""),
+        "od_eixo": rq.get("od_eixo", ""),
+        "od_ad": rq.get("od_ad", ""),
+        "oe_esf": rq.get("oe_esf", ""),
+        "oe_cil": rq.get("oe_cil", ""),
+        "oe_eixo": rq.get("oe_eixo", ""),
+        "oe_ad": rq.get("oe_ad", ""),
+    }
+    buf = draw_label_100x150_pdf(data)
+    pdf_bytes = buf.getvalue()
+    os_id = rq.get("os_id") or rq.get("id_master") or "envio"
+    _save_to_impressos(pdf_bytes, f"envio_{os_id}")
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf", as_attachment=False,
+                     download_name=f"etiqueta_envio_{os_id}.pdf")
+
+
+@etq_bp.route("/etiquetas/print_100x150/<int:id>")
+def label_100x150_view(id: int):
+    """Preview page with form for all label fields."""
+    numero, _cor, _horario, entregador = fetch_client_label_base(id)
+    return render_template(
+        "etiq/label_print_100x150.html",
+        label_id=id,
+        id_master=numero or "",
+        enviado_por=entregador or session.get("user", ""),
+        os_id=request.args.get("os_id", ""),
+        endereco=request.args.get("endereco", ""),
+        tratamento=request.args.get("tratamento", ""),
+        caixa=request.args.get("caixa", ""),
+        od_esf=request.args.get("od_esf", ""),
+        od_cil=request.args.get("od_cil", ""),
+        od_eixo=request.args.get("od_eixo", ""),
+        od_ad=request.args.get("od_ad", ""),
+        oe_esf=request.args.get("oe_esf", ""),
+        oe_cil=request.args.get("oe_cil", ""),
+        oe_eixo=request.args.get("oe_eixo", ""),
+        oe_ad=request.args.get("oe_ad", ""),
+    )
+
+
+@etq_bp.route("/etiquetas/print_100x150/<int:id>/pdf")
+def label_100x150_pdf(id: int):
+    """Generate and return a 150x100mm landscape PDF, saving it to Impressos/."""
+    numero, _cor, _horario, entregador = fetch_client_label_base(id)
+    rq = request.args
+    data = {
+        "id_master": rq.get("id_master") or str(numero or ""),
+        "os_id": rq.get("os_id", ""),
+        "endereco": rq.get("endereco", ""),
+        "tratamento": rq.get("tratamento", ""),
+        "caixa": rq.get("caixa", ""),
+        "enviado_por": rq.get("enviado_por") or entregador or session.get("user", ""),
+        "od_esf": rq.get("od_esf", ""),
+        "od_cil": rq.get("od_cil", ""),
+        "od_eixo": rq.get("od_eixo", ""),
+        "od_ad": rq.get("od_ad", ""),
+        "oe_esf": rq.get("oe_esf", ""),
+        "oe_cil": rq.get("oe_cil", ""),
+        "oe_eixo": rq.get("oe_eixo", ""),
+        "oe_ad": rq.get("oe_ad", ""),
+    }
+    buf = draw_label_100x150_pdf(data)
+    pdf_bytes = buf.getvalue()
+    os_id = data.get("os_id") or data.get("id_master") or str(id)
+    _save_to_impressos(pdf_bytes, f"envio_{os_id}_id{id}")
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"etiqueta_{id}_paisagem.pdf",
+    )
+
+
+@etq_bp.route("/etiquetas/impressos")
+def impressos_list():
+    """List all saved PDFs in Impressos/ for reprinting."""
+    impressos_dir = _DATA_DIR / "Impressos"
+    files: list[dict] = []
+    if impressos_dir.exists():
+        for p in sorted(impressos_dir.glob("*.pdf"), reverse=True):
+            stat = p.stat()
+            files.append({
+                "name": p.name,
+                "size_kb": round(stat.st_size / 1024, 1),
+                "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%d/%m/%Y %H:%M:%S"),
+            })
+    return render_template("etiq/impressos_list.html", files=files)
+
+
+@etq_bp.route("/etiquetas/impressos/<path:filename>")
+def impressos_serve(filename: str):
+    """Serve a saved PDF from Impressos/ for view / reprint / download."""
+    impressos_dir = (_DATA_DIR / "Impressos").resolve()
+    # Security: ensure the resolved path is inside Impressos/ (prevent path traversal)
+    target = (impressos_dir / filename).resolve()
+    if impressos_dir not in target.parents and target != impressos_dir:
+        return "Acesso negado.", 403
+    if not target.exists() or not target.is_file():
+        return "Arquivo não encontrado.", 404
+    as_attachment = request.args.get("dl") == "1"
+    return send_file(str(target), mimetype="application/pdf",
+                     as_attachment=as_attachment, download_name=target.name)
 
 
 def delete_client(numero_cliente: int) -> None:
@@ -997,6 +1163,8 @@ def label_pdf(numero_cliente: int):
     draw_label_pdf(pdf, label_data, LABEL_SAFE_MARGIN_MM * mm, (LABEL_HEIGHT_MM - LABEL_SAFE_MARGIN_MM) * mm)
     pdf.showPage()
     pdf.save()
+    # ── save to Impressos/ ───────────────────────────────────────────────────
+    _save_to_impressos(pdf_buffer.getvalue(), f"cliente_{numero_cliente}")
     pdf_buffer.seek(0)
     return send_file(
         pdf_buffer,

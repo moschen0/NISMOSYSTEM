@@ -398,6 +398,11 @@ button,
   padding: 20px;
 }
 
+/* Styles for 100x150mm label preview */
+@media print {
+  @page { size: 100mm 150mm; margin: 0; }
+}
+
 .print-sheet {
   width: 80mm;
   height: 20mm;

@@ -112,6 +112,19 @@
                         <small class="form-text text-muted">Número da caixa física — aparece na visualização de triagem</small>
                     </div>
 
+                    <!-- ── Checkbox: imprimir etiqueta de envio ─────────── -->
+                    <div class="mb-3 p-3 rounded d-flex align-items-center gap-2"
+                         style="background:#f0f7ff;border:1px solid #b8d4f5;">
+                        <input class="form-check-input mt-0" type="checkbox"
+                               id="autoprintEnvioChk" name="autoprint_envio" value="1"
+                               style="width:20px;height:20px;cursor:pointer;accent-color:#1a73d9;">
+                        <label for="autoprintEnvioChk"
+                               class="form-check-label fw-semibold mb-0"
+                               style="cursor:pointer;font-size:.93rem;">
+                            📦 Imprimir etiqueta de envio a cada pedido endereçado
+                        </label>
+                    </div>
+
                     <button type="submit" class="btn btn-success w-100 mb-2">
                         <i class="bi bi-check-lg"></i> Adicionar Pedido
                     </button>
@@ -463,6 +476,98 @@ orderForm.addEventListener('submit', function() {
     setTimeout(() => {
         window.location.replace(cleanUrl + (cleanUrl.includes('?') ? '&' : '?') + '_r=' + Date.now());
     }, 700);
+})();
+
+// ── Checkbox estado persistido ────────────────────────────────────────────
+(function() {
+    const LS_KEY = 'wms_autoprint_envio';
+    const chk = document.getElementById('autoprintEnvioChk');
+    if (!chk) return;
+    // restore
+    if (localStorage.getItem(LS_KEY) === '1') chk.checked = true;
+    chk.addEventListener('change', () => localStorage.setItem(LS_KEY, chk.checked ? '1' : '0'));
+})();
+
+// ── Auto-open envio print modal on page load when print_envio param present ──
+(function() {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('print_envio') !== '1') return;
+
+    const osId     = p.get('pe_os_id')     || '';
+    const idMaster = p.get('pe_id_master') || '';
+    const endereco = p.get('pe_endereco')  || '';
+    const caixa    = p.get('pe_caixa')     || '';
+    const enviadoPor = '{{ session.get("user", "") }}';
+
+    // Strip print params from URL history (so refresh doesn't re-open modal)
+    ['print_envio','pe_os_id','pe_id_master','pe_endereco','pe_caixa'].forEach(k => p.delete(k));
+    history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p.toString() : ''));
+
+    // Build PDF URL
+    const pdfUrl = '/order/add/envio/pdf?' + new URLSearchParams({
+        os_id: osId, id_master: idMaster, endereco: endereco,
+        caixa: caixa, enviado_por: enviadoPor
+    }).toString();
+
+    // Build edit URL
+    const editUrl = '/order/add?bipador=1&quick=1&' + new URLSearchParams({
+        os_id: osId, id_master: idMaster, endereco: endereco,
+        caixa: caixa, enviado_por: enviadoPor
+    }).toString();
+
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'envio-print-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;' +
+                            'display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:24px 28px;max-width:540px;width:96%;
+                  box-shadow:0 24px 60px rgba(0,0,0,.25);display:grid;gap:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <h5 style="margin:0;font-size:1.05rem;">📦 Etiqueta de Envio — Pedido ${idMaster || osId}</h5>
+          <button id="envio-close" style="background:none;border:0;font-size:1.4rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.85rem;color:#3e4c5a;">
+          <span><b>OS OPTO:</b> ${osId}</span>
+          <span><b>ID Master:</b> ${idMaster}</span>
+          <span><b>Endereço:</b> ${endereco}</span>
+          <span><b>Caixa:</b> ${caixa}</span>
+        </div>
+        <iframe id="envio-pdf-frame" src="${pdfUrl}"
+          style="width:100%;height:280px;border:1px solid #d0d7de;border-radius:8px;"></iframe>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="envio-print-btn"
+            style="background:linear-gradient(120deg,#1a73d9,#0e57b4);color:#fff;border:0;
+                   border-radius:8px;padding:9px 18px;font:600 .9rem inherit;cursor:pointer;">
+            🖨 Imprimir
+          </button>
+          <a href="${editUrl}" target="_blank"
+            style="background:linear-gradient(120deg,#71818d,#8fa0ad);color:#fff;border:0;
+                   border-radius:8px;padding:9px 18px;font:600 .9rem inherit;cursor:pointer;
+                   text-decoration:none;display:inline-flex;align-items:center;">
+            ✏ Editar campos
+          </a>
+          <button id="envio-close2"
+            style="background:#e8edf2;border:0;border-radius:8px;padding:9px 16px;
+                   font:600 .88rem inherit;cursor:pointer;margin-left:auto;">
+            Fechar
+          </button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    function closeModal() { overlay.remove(); }
+    document.getElementById('envio-close').addEventListener('click', closeModal);
+    document.getElementById('envio-close2').addEventListener('click', closeModal);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); }, {once:true});
+
+    document.getElementById('envio-print-btn').addEventListener('click', () => {
+        const frame = document.getElementById('envio-pdf-frame');
+        try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+        catch(_) { window.open(pdfUrl, '_blank'); }
+    });
 })();
 </script>
 {% endblock %}

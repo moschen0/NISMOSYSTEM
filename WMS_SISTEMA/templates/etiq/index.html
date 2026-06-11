@@ -24,6 +24,8 @@
       <button type="button" id="open-add-client-btn" class="topbar-link">+ Adicionar Cliente</button>
       <a href="{{ url_for('etiquetas.index') }}" class="topbar-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">Criar</a>
       <a href="{{ url_for('etiquetas.barcode_code128') }}" class="topbar-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">Caixinhas</a>
+      <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="topbar-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">&#128230; Etiq. Envio</a>
+      <a href="{{ url_for('etiquetas.impressos_list') }}" class="topbar-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">&#128247; Reimprimir</a>
     </nav>
   </header>
 
@@ -361,6 +363,7 @@
         // silent
       }
     });
+
   </script>
 </body>
 </html>

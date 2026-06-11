@@ -801,6 +801,41 @@ def _import_integrador_opto():
     return importlib.reload(_m) if _m.__spec__ else _m
 
 
+def _build_envio_label_data(order_id: str, os_opto: str, position: str,
+                             box: str, user: str) -> dict:
+    """Monta payload da etiqueta de envio consultando o parser do OPTO.
+
+    Retorna dict parcial (sem campos dioptria/tratamento) se o .txt
+    não estiver disponível — não gera exceção.
+    """
+    base = {
+        "os_id": os_opto, "id_master": order_id, "endereco": position,
+        "caixa": box, "enviado_por": user, "tratamento": "",
+        "od_esf": "", "od_cil": "", "od_eixo": "", "od_ad": "",
+        "oe_esf": "", "oe_cil": "", "oe_eixo": "", "oe_ad": "",
+    }
+    try:
+        opto = _import_integrador_opto()
+        opto.init_database()
+        txt_path = opto.find_txt(order_id)
+        fields   = opto.parse_txt(txt_path)
+        row      = opto.build_row(fields)
+        base.update({
+            "tratamento": row[1]  if len(row) > 1  else "",
+            "od_esf":     row[10] if len(row) > 10 else "",
+            "od_cil":     row[11] if len(row) > 11 else "",
+            "od_eixo":    row[12] if len(row) > 12 else "",
+            "od_ad":      row[13] if len(row) > 13 else "",
+            "oe_esf":     row[14] if len(row) > 14 else "",
+            "oe_cil":     row[15] if len(row) > 15 else "",
+            "oe_eixo":    row[16] if len(row) > 16 else "",
+            "oe_ad":      row[17] if len(row) > 17 else "",
+        })
+    except Exception:
+        pass  # não-fatal: etiqueta ainda é gerada com dados disponíveis
+    return base
+
+
 def _opto_scheduler_worker():
     """Worker que executa exportação OPTO programada no horário configurado.
     Verifica a cada 60 s; dispara uma vez por dia quando hora:minuto bater."""
@@ -3445,7 +3480,7 @@ def add_order():
     position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
     quick_mode_from_query = request.args.get('quick', '0') == '1'
 
-    def redirect_add_order(zone_value='', bipador=False, quick=False, level_filled=False):
+    def redirect_add_order(zone_value='', bipador=False, quick=False, level_filled=False, print_params=None):
         """Redireciona para o formulario preservando contexto do modo bipador."""
         params = {}
         if zone_value:
@@ -3456,6 +3491,8 @@ def add_order():
             params['quick'] = '1'
         if level_filled:
             params['lf'] = '1'
+        if print_params:
+            params.update(print_params)
         return redirect(url_for('add_order', **params))
     
     if request.method == 'POST':
@@ -3586,12 +3623,25 @@ def add_order():
         
         flash(f'Pedido {order_id} adicionado à posição {position}', 'success')
         wms_logger.info(f'ORDER ADD | pedido={order_id} cx={box} pos={position} user={session.get("user")} unit={unit}')
+
+        # Build print_params if user asked for auto-print of the envio label
+        autoprint_envio = request.form.get('autoprint_envio', '0') == '1'
+        print_params = None
+        if autoprint_envio:
+            print_params = {
+                'print_envio': '1',
+                'pe_os_id':    os_opto,   # OS OPTO (e.g. 2BA-123456)
+                'pe_id_master': order_id, # 8-digit order ID
+                'pe_endereco': position,  # allocated position (e.g. P-03-03)
+                'pe_caixa':    box,       # box number
+            }
+
         if bipador_mode or quick_mode:
             # Detectar se o andar ficou cheio após este pedido
             slots = shelf_info.get('slots', 7) if shelf_info else 7
             new_count = position_counts.get(position, 0) + 1
             level_just_filled = new_count >= slots
-            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode, level_filled=level_just_filled)
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode, level_filled=level_just_filled, print_params=print_params)
         return redirect(url_for('position_detail', code=position))
     
     # GET - Preparar dados para form
@@ -3624,6 +3674,55 @@ def add_order():
                          is_ar_sector=is_ar_sector,
                          show_os_opto_field=show_os_opto_field,
                          triage_zones=triage_zones_for_unit)
+
+
+@app.route('/order/add/envio/pdf')
+@login_required
+def order_add_envio_pdf():
+    """Gera e serve a etiqueta de envio PDF enriquecida pelo parser do OPTO."""
+    import os as _os, sys as _sys
+    from io import BytesIO
+    from pathlib import Path
+
+    # Garante que o diretório do app está no path para importar o gerador
+    _etiq_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _etiq_dir not in _sys.path:
+        _sys.path.insert(0, _etiq_dir)
+    from etiquetas_100x150 import draw_label_100x150_pdf  # type: ignore
+
+    rq         = request.args
+    order_id   = rq.get("id_master",  "").strip()
+    os_opto    = rq.get("os_id",       "").strip()
+    position   = rq.get("endereco",    "").strip()
+    box        = rq.get("caixa",       "").strip()
+    user       = rq.get("enviado_por", "") or session.get("user", "")
+
+    # Monta payload enriquecido pelo parser do OPTO (fallback seguro)
+    data = _build_envio_label_data(order_id, os_opto, position, box, user)
+    # Permite sobrescrever campos via query string (edição manual)
+    for k in ("tratamento", "od_esf", "od_cil", "od_eixo", "od_ad",
+              "oe_esf", "oe_cil", "oe_eixo", "oe_ad"):
+        if rq.get(k, ""):
+            data[k] = rq.get(k)
+
+    buf = draw_label_100x150_pdf(data)
+    pdf_bytes = buf.getvalue()
+
+    # Salva em Impressos/ (não-fatal)
+    try:
+        from datetime import datetime as _dt
+        impressos = Path(DATA_BASE_DIR) / "Impressos"
+        impressos.mkdir(parents=True, exist_ok=True)
+        ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"{ts}_envio_{os_opto or order_id}.pdf"
+        (impressos / fname).write_bytes(pdf_bytes)
+    except Exception:
+        pass
+
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf", as_attachment=False,
+                     download_name=f"etiqueta_envio_{os_opto or order_id}.pdf")
+
 
 @app.route('/position/<code>')
 @login_required
