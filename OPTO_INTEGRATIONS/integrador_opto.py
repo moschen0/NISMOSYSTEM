@@ -195,16 +195,18 @@ assert len(COLUMN_SPEC) == len(OPTO_HEADERS), (
 # ---------------------------------------------------------------------------
 
 def init_database() -> None:
-    """Seleciona o banco WMS ativo. Por padrão usa PRODUÇÃO; se a variável de
-    ambiente WMS_MDB_PATH_TEST estiver definida, usa o banco de TESTE."""
+    """Valida que o módulo de banco do WMS está disponível para o integrador.
+
+    O banco ativo deve ser definido pelo processo chamador antes do uso desta
+    função. Em especial, o servidor de teste já faz `db_mdb.switch_database()`
+    no bootstrap. Evitar troca implícita aqui impede que uma chamada de geração
+    OPTO altere o modo global da aplicação em produção.
+    """
     if db_mdb is None:
         raise RuntimeError(
             "Módulo db_mdb do WMS não pôde ser importado "
             f"({_DB_IMPORT_ERROR}). Verifique a pasta WMS_SISTEMA e o pyodbc."
         )
-    test_path = os.environ.get("WMS_MDB_PATH_TEST", "").strip()
-    if test_path:
-        db_mdb.switch_database(db_mdb.DB_PATH_TEST)
 
 
 def fetch_os_opto(order_id: str) -> str:
