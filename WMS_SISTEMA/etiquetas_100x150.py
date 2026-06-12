@@ -15,6 +15,7 @@ Layout:
   │ [======Code128 Barcode=======]  ID MASTER: <id_master>        │  ← base
   └────────────────────────────────────────────────────────────────┘
 """
+from datetime import datetime
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.graphics.barcode import code128
@@ -83,6 +84,10 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
     oe_ad       = _s("oe_ad")
     caixa       = _s("caixa")
     enviado_por = _s("enviado_por", "entregador")
+    tipo_lente  = _s("tipo_lente")
+    foto        = _s("fotossensibilidade", "foto")
+    material    = _s("material")
+    data_imp    = _s("data_impressao") or datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # ── outer border ──────────────────────────────────────────────────────────
     c.setLineWidth(1.2)
@@ -108,6 +113,7 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
 
     c.setFont("Helvetica", 7.5)
     c.drawRightString(W - 3 * mm, TOP_Y + 16 * mm, f"Enviado por: {enviado_por}")
+    c.drawRightString(W - 3 * mm, TOP_Y + 11 * mm, f"Impresso em: {data_imp}")
 
     # ════════════════════════════════════════════════════════════════════════
     # BOTTOM BAND  y: 2 – 22 mm
@@ -139,9 +145,9 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
 
     # "ID MASTER" text to the right of the barcode box
     id_text_x = BC_X + BC_W + 2 * mm
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Helvetica-Bold", 11)
     c.drawString(id_text_x, BOT_Y - 6 * mm, "ID MASTER")
-    c.setFont("Helvetica", 9)
+    c.setFont("Helvetica", 11)
     c.drawString(id_text_x, BOT_Y - 12 * mm, id_master)
 
     # ════════════════════════════════════════════════════════════════════════
@@ -177,21 +183,32 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
     c.setFont("Helvetica", 7)
     c.drawString(19 * mm, 60 * mm, "Tratamento Opto:")
     if tratamento:
-        c.setFont("Helvetica", 14)
-        # Word-wrap: max ~35 chars per line
-        _words = tratamento.split()
-        _lines, _cur = [], ""
-        for _w in _words:
-            if len(_cur) + len(_w) + 1 <= 35:
-                _cur = (_cur + " " + _w).strip()
+        c.setFont("Helvetica", 13)
+        palavras = tratamento.split()
+        linhas = []
+        atual = ""
+        for palavra in palavras:
+            candidato = (atual + " " + palavra).strip()
+            if len(candidato) <= 35:
+                atual = candidato
             else:
-                if _cur:
-                    _lines.append(_cur)
-                _cur = _w
-        if _cur:
-            _lines.append(_cur)
-        for _li, _line in enumerate(_lines[:3]):
-            c.drawString(19 * mm, 53 * mm - _li * 5 * mm, _line)
+                if atual:
+                    linhas.append(atual)
+                atual = palavra
+        if atual:
+            linhas.append(atual)
+        for indice, linha in enumerate(linhas[:3]):
+            c.drawString(19 * mm, 53 * mm - indice * 5 * mm, linha)
+
+    c.setFont("Helvetica-Bold", 8.5)
+    c.drawString(19 * mm, 37 * mm, "Dados OPTO:")
+    c.setFont("Helvetica", 8.8)
+    c.drawString(19 * mm, 33 * mm, f"Tipo de Lente: {tipo_lente or '-'}")
+    c.drawString(19 * mm, 29 * mm, f"Fotossensibilidade: {foto or '-'}")
+    c.drawString(19 * mm, 25 * mm, f"Material: {material or '-'}")
+
+    c.setFont("Helvetica", 10)
+    c.drawRightString(W - 3 * mm, BOT_Y - 7 * mm, endereco)
 
     # ════════════════════════════════════════════════════════════════════════
     # RIGHT GRID  x: 88 – 148 mm  (dioptria OD / OE  +  CAIXA)
@@ -227,8 +244,23 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
                 c.drawCentredString(bx + (COL_W - 1 * mm) / 2, ry + 2 * mm, val)
 
     # CAIXA
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(G_X + 1 * mm, BOT_Y + 3 * mm, f"CAIXA: {caixa}" if caixa else "CAIXA")
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(G_X + 1 * mm, BOT_Y + 3 * mm, "CX:")
+    c.setFont("Helvetica", 12)
+    c.drawString(G_X + 10 * mm, BOT_Y + 3 * mm, caixa or "")
+
+    if caixa:
+        try:
+            cx_bc = code128.Code128(
+                caixa,
+                barHeight=6 * mm,
+                barWidth=0.6,
+                humanReadable=False,
+            )
+            cx_bc.drawOn(c, G_X + 20 * mm, BOT_Y + 1.8 * mm)
+        except Exception:
+            c.setFont("Helvetica-Bold", 8)
+            c.drawString(G_X + 27 * mm, BOT_Y + 3 * mm, caixa)
 
     c.showPage()
     c.save()

@@ -559,11 +559,15 @@ def label_100x150_new():
 def label_envio_pdf_quick():
     """Quick PDF from query params (used by auto-print modal on dashboard)."""
     rq = request.args
+    from datetime import datetime as _dt
     data = {
         "id_master": rq.get("id_master", ""),
         "os_id": rq.get("os_id", ""),
         "endereco": rq.get("endereco", ""),
         "tratamento": rq.get("tratamento", ""),
+        "tipo_lente": rq.get("tipo_lente", ""),
+        "fotossensibilidade": rq.get("fotossensibilidade", ""),
+        "material": rq.get("material", ""),
         "caixa": rq.get("caixa", ""),
         "enviado_por": rq.get("enviado_por") or session.get("user", ""),
         "od_esf": rq.get("od_esf", ""),
@@ -574,6 +578,7 @@ def label_envio_pdf_quick():
         "oe_cil": rq.get("oe_cil", ""),
         "oe_eixo": rq.get("oe_eixo", ""),
         "oe_ad": rq.get("oe_ad", ""),
+        "data_impressao": _dt.now().strftime("%d/%m/%Y %H:%M"),
     }
     buf = draw_label_100x150_pdf(data)
     pdf_bytes = buf.getvalue()
@@ -596,6 +601,9 @@ def label_100x150_view(id: int):
         os_id=request.args.get("os_id", ""),
         endereco=request.args.get("endereco", ""),
         tratamento=request.args.get("tratamento", ""),
+        tipo_lente=request.args.get("tipo_lente", ""),
+        fotossensibilidade=request.args.get("fotossensibilidade", ""),
+        material=request.args.get("material", ""),
         caixa=request.args.get("caixa", ""),
         od_esf=request.args.get("od_esf", ""),
         od_cil=request.args.get("od_cil", ""),
@@ -613,11 +621,15 @@ def label_100x150_pdf(id: int):
     """Generate and return a 150x100mm landscape PDF, saving it to Impressos/."""
     numero, _cor, _horario, entregador = fetch_client_label_base(id)
     rq = request.args
+    from datetime import datetime as _dt
     data = {
         "id_master": rq.get("id_master") or str(numero or ""),
         "os_id": rq.get("os_id", ""),
         "endereco": rq.get("endereco", ""),
         "tratamento": rq.get("tratamento", ""),
+        "tipo_lente": rq.get("tipo_lente", ""),
+        "fotossensibilidade": rq.get("fotossensibilidade", ""),
+        "material": rq.get("material", ""),
         "caixa": rq.get("caixa", ""),
         "enviado_por": rq.get("enviado_por") or entregador or session.get("user", ""),
         "od_esf": rq.get("od_esf", ""),
@@ -628,6 +640,7 @@ def label_100x150_pdf(id: int):
         "oe_cil": rq.get("oe_cil", ""),
         "oe_eixo": rq.get("oe_eixo", ""),
         "oe_ad": rq.get("oe_ad", ""),
+        "data_impressao": _dt.now().strftime("%d/%m/%Y %H:%M"),
     }
     buf = draw_label_100x150_pdf(data)
     pdf_bytes = buf.getvalue()
