@@ -434,6 +434,62 @@
         }
         .wms-toast-close:hover { color: white; }
 
+        /* Konami easter egg */
+        .konami-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(10, 10, 12, 0.68);
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .22s ease;
+        }
+        .konami-overlay.is-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .konami-card {
+            position: relative;
+            max-width: min(92vw, 560px);
+            transform: translateY(14px) scale(0.96);
+            opacity: 0;
+            transition: transform .24s ease, opacity .24s ease;
+        }
+        .konami-overlay.is-visible .konami-card {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        .konami-card img {
+            display: block;
+            width: 100%;
+            height: auto;
+            image-rendering: auto;
+            filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.35));
+        }
+        .konami-hint {
+            position: absolute;
+            left: 50%;
+            bottom: -42px;
+            transform: translateX(-50%);
+            padding: 7px 12px;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.92);
+            color: var(--c-ink);
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            white-space: nowrap;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+        @media (max-width: 575.98px) {
+            .konami-hint { bottom: -38px; font-size: 0.75rem; }
+        }
+
         /* ── Scrollbar ──────────────────────────────── */
         ::-webkit-scrollbar { width: 7px; height: 7px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -641,6 +697,13 @@
     </div>
 </main>
 
+<div id="konamiOverlay" class="konami-overlay" aria-hidden="true" role="dialog" aria-label="Easter egg Konami">
+    <div class="konami-card">
+        <img src="{{ url_for('static', filename='81297eff9522409c8fa6aff08c28412b.jpg') }}" alt="Foto da cabra do código Konami">
+        <div class="konami-hint">Konami Code ativado</div>
+    </div>
+</div>
+
 {% block global_flash_messages %}
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
@@ -706,6 +769,71 @@
         else if (key === 'o') { e.preventDefault(); window.location.href = "{{ url_for('checkout_order') }}"; }
         else if (key === 'd') { e.preventDefault(); window.location.href = "{{ url_for('dashboard') }}"; }
     });
+
+    // Konami Code
+    (function() {
+        var konamiSequence = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
+        var konamiBuffer = [];
+        var konamiOverlay = document.getElementById('konamiOverlay');
+        var konamiHideTimer = null;
+
+        function isEditableTarget(target) {
+            if (!target) return false;
+            var tag = (target.tagName || '').toUpperCase();
+            return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+        }
+
+        function hideKonamiOverlay() {
+            if (!konamiOverlay) return;
+            konamiOverlay.classList.remove('is-visible');
+            konamiOverlay.setAttribute('aria-hidden', 'true');
+            if (konamiHideTimer) {
+                clearTimeout(konamiHideTimer);
+                konamiHideTimer = null;
+            }
+        }
+
+        function showKonamiOverlay() {
+            if (!konamiOverlay) return;
+            konamiOverlay.classList.add('is-visible');
+            konamiOverlay.setAttribute('aria-hidden', 'false');
+            if (konamiHideTimer) {
+                clearTimeout(konamiHideTimer);
+            }
+            konamiHideTimer = setTimeout(hideKonamiOverlay, 4500);
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.altKey || e.ctrlKey || e.metaKey) return;
+            if (isEditableTarget(e.target)) return;
+
+            var key = (e.key || '').toLowerCase();
+            konamiBuffer.push(key);
+            if (konamiBuffer.length > konamiSequence.length) {
+                konamiBuffer.shift();
+            }
+
+            var matches = konamiSequence.every(function(step, index) {
+                return konamiBuffer[index] === step;
+            });
+
+            if (matches) {
+                e.preventDefault();
+                konamiBuffer = [];
+                showKonamiOverlay();
+            }
+        });
+
+        if (konamiOverlay) {
+            konamiOverlay.addEventListener('click', hideKonamiOverlay);
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                hideKonamiOverlay();
+            }
+        });
+    })();
 </script>
 {% block scripts %}{% endblock %}
 </body>
