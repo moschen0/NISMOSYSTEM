@@ -797,9 +797,13 @@ def save_opto_scheduler_config(cfg: dict) -> None:
 
 def _import_integrador_opto():
     """Importa integrador_opto adicionando OPTO_INTEGRATIONS ao sys.path."""
-    opto_dir = os.path.normpath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'OPTO_INTEGRATIONS')
-    )
+    if getattr(sys, 'frozen', False):
+        # Rodando como EXE: OPTO_INTEGRATIONS fica ao lado do executável
+        opto_dir = os.path.join(os.path.dirname(sys.executable), 'OPTO_INTEGRATIONS')
+    else:
+        opto_dir = os.path.normpath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'OPTO_INTEGRATIONS')
+        )
     if opto_dir not in sys.path:
         sys.path.insert(0, opto_dir)
     import importlib

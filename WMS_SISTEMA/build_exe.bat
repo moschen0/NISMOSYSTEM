@@ -74,6 +74,20 @@ echo [INFO] Compilando EXE...
     --hidden-import waitress ^
     --hidden-import telegram_notifier ^
     --hidden-import dotenv ^
+    --hidden-import reportlab.graphics.barcode.code128 ^
+    --hidden-import reportlab.graphics.barcode.code39 ^
+    --hidden-import reportlab.graphics.barcode.code93 ^
+    --hidden-import reportlab.graphics.barcode.common ^
+    --hidden-import reportlab.graphics.barcode.dmtx ^
+    --hidden-import reportlab.graphics.barcode.eanbc ^
+    --hidden-import reportlab.graphics.barcode.ecc200datamatrix ^
+    --hidden-import reportlab.graphics.barcode.fourstate ^
+    --hidden-import reportlab.graphics.barcode.lto ^
+    --hidden-import reportlab.graphics.barcode.qr ^
+    --hidden-import reportlab.graphics.barcode.qrencoder ^
+    --hidden-import reportlab.graphics.barcode.usps ^
+    --hidden-import reportlab.graphics.barcode.usps4s ^
+    --hidden-import reportlab.graphics.barcode.widgets ^
     run_production.py
 
 rem PyInstaller retorna 1 mesmo com sucesso em alguns ambientes — valida pelo EXE
@@ -115,6 +129,15 @@ if exist "..\WMS_BD\wms_database.mdb" (
     echo [OK] wms_database.mdb copiado.
 ) else (
     echo [AVISO] Banco local nao encontrado em ..\WMS_BD\wms_database.mdb.
+)
+
+rem ── Copia OPTO_INTEGRATIONS (necessario para etiquetas de envio) ──────────
+if exist "..\OPTO_INTEGRATIONS" (
+    if not exist "dist\WMS_Server\OPTO_INTEGRATIONS" mkdir "dist\WMS_Server\OPTO_INTEGRATIONS"
+    xcopy "..\OPTO_INTEGRATIONS" "dist\WMS_Server\OPTO_INTEGRATIONS" /E /I /Y /EXCLUDE:build_exe_exclude.txt >nul 2>&1
+    echo [OK] OPTO_INTEGRATIONS copiado.
+) else (
+    echo [AVISO] Pasta OPTO_INTEGRATIONS nao encontrada em ..\OPTO_INTEGRATIONS.
 )
 
 rem ── Copia .env ──────────────────────────────────────────────
