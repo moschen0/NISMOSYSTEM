@@ -826,8 +826,12 @@ def _build_envio_label_data(order_id: str, os_opto: str, position: str,
         txt_path = opto.find_txt(order_id)
         fields   = opto.parse_txt(txt_path)
         row      = opto.build_row(fields)
+        from datetime import datetime as _dt
         base.update({
             "tratamento": row[1]  if len(row) > 1  else "",
+            "tipo_lente": row[4] if len(row) > 4 else "",
+            "fotossensibilidade": row[6] if len(row) > 6 else "",
+            "material": row[8] if len(row) > 8 else "",
             "od_esf":     row[10] if len(row) > 10 else "",
             "od_cil":     row[11] if len(row) > 11 else "",
             "od_eixo":    row[12] if len(row) > 12 else "",
@@ -836,6 +840,7 @@ def _build_envio_label_data(order_id: str, os_opto: str, position: str,
             "oe_cil":     row[15] if len(row) > 15 else "",
             "oe_eixo":    row[16] if len(row) > 16 else "",
             "oe_ad":      row[17] if len(row) > 17 else "",
+            "data_impressao": _dt.now().strftime("%d/%m/%Y %H:%M"),
         })
     except Exception:
         pass  # não-fatal: etiqueta ainda é gerada com dados disponíveis
@@ -3713,7 +3718,8 @@ def order_add_envio_pdf():
     # Monta payload enriquecido pelo parser do OPTO (fallback seguro)
     data = _build_envio_label_data(order_id, os_opto, position, box, user)
     # Permite sobrescrever campos via query string (edição manual)
-    for k in ("tratamento", "od_esf", "od_cil", "od_eixo", "od_ad",
+    for k in ("tratamento", "tipo_lente", "fotossensibilidade", "material",
+              "od_esf", "od_cil", "od_eixo", "od_ad",
               "oe_esf", "oe_cil", "oe_eixo", "oe_ad"):
         if rq.get(k, ""):
             data[k] = rq.get(k)
