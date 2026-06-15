@@ -16,11 +16,11 @@ confirmations_bp = Blueprint('confirmations', __name__, url_prefix='')
 
 
 def login_required(f):
-    """Decorator para proteger rotas que precisam de autentic\\ção"""
+    """Decorator para proteger rotas que precisam de autenticação"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
-            if request.path.startswith('/api/'):\
+            if request.path.startswith('/api/'):
                 return jsonify({'error': 'Unauthorized'}), 401
             return redirect(url_for('login'))
         return f(*args, **kwargs)

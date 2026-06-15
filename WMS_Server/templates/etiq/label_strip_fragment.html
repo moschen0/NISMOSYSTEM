@@ -1,0 +1,45 @@
+<main class="label-card strip-label{% if label_size == '50x30' %} strip-label-50x30{% endif %}">
+  <section class="strip-right">
+    <div class="strip-topline">
+      <div class="strip-item strip-item-horario">
+        <span class="strip-highlight strip-highlight-time">{{ label.horario_roteiro }}</span>
+      </div>
+      <div class="strip-item strip-item-cor">
+        <span class="strip-highlight strip-highlight-color">{{ label.cor_roteiro }}</span>
+      </div>
+    </div>
+
+    <div class="strip-bottomline">
+      <div class="strip-meta-block">
+        <div class="strip-item strip-item-cli">
+          <span class="strip-meta"><b>CLI:</b> {{ label.numero_cliente }}</span>
+        </div>
+        <div class="strip-item strip-item-rot">
+          <span class="strip-meta"><b>ROT:</b> {{ label.cor_roteiro }}</span>
+        </div>
+        {% if label.entregador %}
+        <div class="strip-item strip-item-ent">
+          <span class="strip-meta strip-entregador"><b>ENT:</b> {{ label.entregador }}</span>
+        </div>
+        {% endif %}
+        <div class="strip-item strip-item-dt">
+          <span class="strip-meta"><b>DT:</b> {{ label.data_impressao }}</span>
+        </div>
+      </div>
+
+      <span
+        class="strip-color-chip"
+        title="{{ label.cor_roteiro }}"
+        style="background: {{ label.cor_hex or '#7a0012' }};"
+      ></span>
+    </div>
+  </section>
+
+  <section class="strip-left">
+    {% if label.os_id is defined %}
+    <svg id="{{ barcode_id }}"></svg>
+    <img id="{{ barcode_id }}-qr" class="qr-img" style="display:none;" alt="">
+    <strong class="barcode-number">{{ label.os_id }}</strong>
+    {% endif %}
+  </section>
+</main>

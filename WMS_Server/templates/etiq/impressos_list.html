@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Reimprimir Etiquetas{% endblock %}
+
+{% block content %}
+<style>
+  .imp-shell { max-width: 860px; margin: 28px auto; font-family: "Space Grotesk", sans-serif; }
+  .imp-card  { background:#fff; border:1px solid #d0d7de; border-radius:14px; padding:24px;
+               box-shadow:0 4px 16px rgba(0,0,0,.08); }
+  .imp-card h2 { margin:0 0 18px; font-size:1.2rem; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  thead th { background:#f6f8fa; text-align:left; padding:9px 12px; border-bottom:2px solid #d0d7de;
+             font-weight:700; color:#3e4c5a; }
+  tbody tr:nth-child(even) { background:#f9fafb; }
+  tbody td { padding:8px 12px; border-bottom:1px solid #e6eaef; vertical-align:middle; }
+  .btn-sm { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border-radius:7px;
+            font:.85rem/1 inherit; font-weight:600; cursor:pointer; border:0; text-decoration:none; color:#fff; }
+  .btn-view   { background:linear-gradient(120deg,#1a73d9,#0e57b4); }
+  .btn-dl     { background:linear-gradient(120deg,#219653,#1b7f46); }
+  .btn-print  { background:linear-gradient(120deg,#d8344b,#b02034); }
+  .empty-msg  { text-align:center; color:#5a6472; padding:32px; }
+  .back-link  { display:inline-flex; align-items:center; gap:6px; color:#1a73d9;
+                text-decoration:none; font-weight:600; margin-bottom:14px; }
+  .back-link:hover { text-decoration:underline; }
+</style>
+
+<div class="imp-shell">
+  <a class="back-link" href="{{ url_for('etiquetas.index') }}">&#8592; Voltar ao Dashboard</a>
+  <div class="imp-card">
+    <h2>&#128247; Etiquetas Salvas — Reimprimir</h2>
+
+    {% if files %}
+    <table>
+      <thead>
+        <tr>
+          <th>Arquivo</th>
+          <th>Tamanho</th>
+          <th>Data / Hora</th>
+          <th style="width:200px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in files %}
+        <tr>
+          <td style="font-family:'IBM Plex Mono',monospace;font-size:.82rem;">{{ f.name }}</td>
+          <td>{{ f.size_kb }} KB</td>
+          <td>{{ f.mtime }}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn-sm btn-view"
+               href="{{ url_for('etiquetas.impressos_serve', filename=f.name) }}"
+               target="_blank">&#128065; Ver</a>
+            <a class="btn-sm btn-dl"
+               href="{{ url_for('etiquetas.impressos_serve', filename=f.name) }}?dl=1"
+               download="{{ f.name }}">&#8681; Baixar</a>
+            <button class="btn-sm btn-print"
+                    onclick="printImpresso('{{ url_for('etiquetas.impressos_serve', filename=f.name) }}')">
+              &#128424; Imprimir
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-msg">Nenhuma etiqueta salva ainda. As etiquetas geradas aparecerão aqui automaticamente.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- hidden iframe for silent print -->
+<iframe id="print-frame" style="display:none;" title="print frame"></iframe>
+
+<script>
+function printImpresso(url) {
+  const frame = document.getElementById('print-frame');
+  frame.src = url;
+  frame.onload = function() {
+    try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+    catch(_) { window.open(url, '_blank'); }
+    frame.onload = null;
+  };
+}
+</script>
+{% endblock %}

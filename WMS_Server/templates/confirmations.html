@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-5">
+  <div class="row">
+    <!-- Card Principal: Conferência -->
+    <div class="col-lg-7">
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0">
+            <i class="bi bi-check2-circle"></i> Conferência de OS
+          </h5>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-4">
+            Digite o número da OS nos dois campos abaixo para confirmar
+          </p>
+
+          <!-- Formulário de Conferência -->
+          <form id="form-conferencia" onsubmit="return false;">
+            <div class="row mb-3">
+              <div class="col-md-5">
+                <label class="form-label fw-bold">OS</label>
+                <input type="text" id="field-a" class="form-control form-control-lg text-center font-monospace"
+                  placeholder="000000" maxlength="20" inputmode="numeric"
+                  oninput="this.value=this.value.replace(/\D/g,'')"
+                  onkeydown="if(event.key==='Enter') document.getElementById('field-b').focus()"
+                  autofocus>
+                <small class="text-muted">Número principal</small>
+              </div>
+
+              <div class="col-md-2 d-flex align-items-end justify-content-center mb-3">
+                <span class="badge bg-secondary" style="font-size: 1.5rem; padding: 10px;">⇌</span>
+              </div>
+
+              <div class="col-md-5">
+                <label class="form-label fw-bold">OS Certificado</label>
+                <input type="text" id="field-b" class="form-control form-control-lg text-center font-monospace"
+                  placeholder="000000" maxlength="20" inputmode="numeric"
+                  oninput="this.value=this.value.replace(/\D/g,'').replace(/^00/,'')"
+                  onkeydown="if(event.key==='Enter') document.getElementById('btnConferir').click()">
+                <small class="text-muted">Confirmação</small>
+              </div>
+            </div>
+
+            <button type="button" id="btnConferir" class="btn btn-primary btn-lg w-100 mb-3" onclick="Confirmations.doComparar()">
+              <span style="font-size: 18px;">⇌</span> Conferir OS
+            </button>
+
+            <!-- Badge de Resultado -->
+            <div id="result-badge" class="alert" role="alert" style="display: none;">
+              <div id="result-message"></div>
+            </div>
+          </form>
+
+          <!-- Atalhos de teclado -->
+          <div class="alert alert-info small" role="alert">
+            <strong>💡 Dicas:</strong>
+            <ul class="mb-0 mt-2">
+              <li>Pressione <kbd>Enter</kbd> no primeiro campo para ir ao segundo</li>
+              <li>Pressione <kbd>Enter</kbd> no segundo campo para conferir</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Histórico e Stats -->
+    <div class="col-lg-5">
+      <!-- Card de Estatísticas -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-success text-white">
+          <h6 class="mb-0"><i class="bi bi-graph-up"></i> Estatísticas</h6>
+        </div>
+        <div class="card-body">
+          <div class="row text-center">
+            <div class="col-6 border-end">
+              <div class="stat-number" id="stat-total">0</div>
+              <div class="stat-label text-muted small">Conferências</div>
+            </div>
+            <div class="col-6">
+              <div class="stat-number text-success" id="stat-ok">0</div>
+              <div class="stat-label text-muted small">OK</div>
+            </div>
+          </div>
+          <div class="row text-center mt-3 pt-3 border-top">
+            <div class="col-6 border-end">
+              <div class="stat-number text-danger" id="stat-error">0</div>
+              <div class="stat-label text-muted small">Divergentes</div>
+            </div>
+            <div class="col-6">
+              <div class="stat-number" id="stat-accuracy">0%</div>
+              <div class="stat-label text-muted small">Taxa Acerto</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card: Histórico da Sessão -->
+      <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between">
+          <h6 class="mb-0"><i class="bi bi-clock-history"></i> Histórico</h6>
+        </div>
+        <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+          <div id="history-list" class="list-group list-group-flush">
+            <div class="text-center text-muted p-4 small">
+              <i class="bi bi-inbox"></i> Nenhuma conferência realizada ainda
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de Erro (Divergência) -->
+<div class="modal fade" id="modalErro" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h6 class="modal-title">
+          <i class="bi bi-exclamation-circle"></i> Divergência Detectada
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">
+          <strong>OS Referência:</strong> <span id="modal-os-a"></span>
+        </p>
+        <p class="mb-3">
+          <strong>OS Confirmação:</strong> <span id="modal-os-b"></span>
+        </p>
+        <p class="text-muted">
+          Por favor, confira os valores e tente novamente.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger" data-bs-dismiss="modal" onclick="Confirmations.fecharModalErro()">
+          <i class="bi bi-check"></i> Entendido
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Estilos customizados -->
+<style>
+  #field-a, #field-b {
+    border: 3px solid #dee2e6;
+    transition: all 0.3s ease;
+  }
+
+  #field-a:focus, #field-b:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+
+  #field-a.match, #field-b.match {
+    border-color: #198754;
+    background-color: #f0fdf4;
+  }
+
+  #field-a.mismatch, #field-b.mismatch {
+    border-color: #dc3545;
+    background-color: #fef2f2;
+    animation: shake 0.5s;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-10px); }
+    75% { transform: translateX(10px); }
+  }
+
+  #result-badge.alert-success {
+    background-color: #f0fdf4;
+    border-color: #86efac;
+    color: #166534;
+  }
+
+  #result-badge.alert-danger {
+    background-color: #fef2f2;
+    border-color: #fca5a5;
+    color: #991b1b;
+  }
+
+  .stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #212529;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+  }
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 15px;
+    border-bottom: 1px solid #e9ecef;
+    transition: background-color 0.2s;
+  }
+
+  .history-item:hover {
+    background-color: #f8f9fa;
+  }
+
+  .history-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .history-os {
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+  }
+
+  .history-meta {
+    font-size: 0.875rem;
+    color: #6c757d;
+  }
+
+  .history-time {
+    font-size: 0.75rem;
+    color: #adb5bd;
+  }
+
+  .badge-resultado {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    border-radius: 12px;
+  }
+
+  .badge-ok {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  .badge-erro {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+</style>
+
+<!-- Script de Lógica -->
+<script src="{{ url_for('static', filename='js/confirmations.js') }}"></script>
+
+<script>
+  // Inicializa ao carregar a página
+  document.addEventListener('DOMContentLoaded', function() {
+    Confirmations.init('{{ username }}', '{{ sector }}');
+  });
+
+  // Atalhos de teclado
+  document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'e') {
+      e.preventDefault();
+      Confirmations.exportarRegistros();
+    }
+  });
+</script>
+{% endblock %}

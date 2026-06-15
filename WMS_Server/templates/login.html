@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Login — WMS{% endblock %}
+
+{% block head %}
+<style>
+    /* Login: ocupa tela cheia e centraliza */
+    body { background: var(--c-parchment); }
+    .container-content {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        margin: 0;
+        max-width: none;
+        display: flex;
+        justify-content: center;
+    }
+    .container-fluid {
+        padding-left: 0;
+        padding-right: 0;
+    }
+    main {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 52px 16px 24px;
+    }
+
+    /* Wrapper dois painéis */
+    .login-wrap {
+        display: flex;
+        width: 100%;
+        max-width: 860px;
+        min-height: 520px;
+        border-radius: 26px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05), 0 24px 64px rgba(0,0,0,0.12);
+    }
+
+    /* Painel esquerdo — branding */
+    .login-brand {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 44px 40px;
+        background: #161617;
+        flex: 0 0 300px;
+        position: relative;
+        overflow: hidden;
+    }
+    .login-brand::before {
+        content: '';
+        position: absolute;
+        top: -80px; left: -80px;
+        width: 340px; height: 340px;
+        background: radial-gradient(circle, rgba(0,102,204,0.22) 0%, transparent 65%);
+        pointer-events: none;
+    }
+    .login-brand-logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .login-brand-logo img { height: 32px; object-fit: contain; }
+    .login-brand-logo span {
+        color: rgba(255,255,255,0.9);
+        font-size: 1.05rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+    }
+    .login-brand-body h2 {
+        color: white;
+        font-size: 1.55rem;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin-bottom: 10px;
+    }
+    .login-brand-body p {
+        color: rgba(255,255,255,0.5);
+        font-size: 0.82rem;
+        line-height: 1.55;
+        margin: 0;
+    }
+    .login-brand-footer {
+        color: rgba(255,255,255,0.28);
+        font-size: 0.72rem;
+    }
+
+    /* Painel direito — formulário */
+    .login-form-panel {
+        flex: 1;
+        background: var(--c-canvas);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 44px 44px 36px;
+    }
+    .login-form-panel h3 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        margin-bottom: 4px;
+    }
+    .login-form-panel .login-subtitle {
+        font-size: 0.82rem;
+        color: var(--c-muted);
+        margin-bottom: 28px;
+    }
+    .login-form-panel .form-control,
+    .login-form-panel .form-select {
+        border-radius: 12px;
+        background: var(--c-parchment);
+        border-color: var(--c-divider);
+        font-size: 0.9375rem;
+    }
+    .login-form-panel .form-control:focus,
+    .login-form-panel .form-select:focus {
+        background: white;
+        border-color: var(--c-blue-focus);
+        box-shadow: 0 0 0 3px rgba(0,113,227,0.12);
+    }
+    .login-form-panel .btn-primary {
+        padding: 0.65rem 1.25rem;
+        font-size: 0.9375rem;
+        font-weight: 500;
+    }
+    .login-footer-note {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--c-divider);
+        font-size: 0.75rem;
+        color: var(--c-muted-light);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    /* Mobile: empilha os painéis */
+    @media (max-width: 640px) {
+        main { padding-top: 52px; align-items: flex-start; }
+        .login-wrap { flex-direction: column; max-width: 420px; min-height: auto; border-radius: 20px; }
+        .login-brand { flex: none; padding: 28px 28px 24px; }
+        .login-brand::before { display: none; }
+        .login-brand-body { display: none; }
+        .login-form-panel { padding: 28px 28px 24px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-wrap">
+
+    <!-- Painel de branding -->
+    <div class="login-brand">
+        <div class="login-brand-logo">
+            <img src="{{ url_for('get_logo') }}" alt="Logo WMS">
+            <span>WMS</span>
+        </div>
+        <div class="login-brand-body">
+            <h2>Gestão de armazém<br>sem complicação.</h2>
+            <p>Rastreabilidade, triagem e controle de estoque integrados em um só lugar.</p>
+        </div>
+        <div class="login-brand-footer">
+            <i class="bi bi-shield-check me-1"></i> Acesso criptografado
+        </div>
+    </div>
+
+    <!-- Painel do formulário -->
+    <div class="login-form-panel">
+        <h3>Entrar na conta</h3>
+        <p class="login-subtitle">Preencha suas credenciais de acesso.</p>
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="mb-3">
+                <label for="unit" class="form-label">Unidade</label>
+                <select class="form-select" id="unit" name="unit" required>
+                    {% for unit_name in (available_units if available_units is defined else all_units) %}
+                    <option value="{{ unit_name }}" {% if (selected_unit or default_unit) == unit_name %}selected{% endif %}>{{ unit_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="username" class="form-label">Usuário</label>
+                <input type="text" class="form-control" id="username" name="username"
+                       placeholder="Seu usuário" required autofocus>
+            </div>
+
+            <div class="mb-4">
+                <label for="password" class="form-label">Senha</label>
+                <input type="password" class="form-control" id="password" name="password"
+                       placeholder="Sua senha" required>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill">
+                    Entrar
+                </button>
+                <a href="{{ url_for('about') }}" class="btn btn-outline-secondary" title="Ajuda">
+                    <i class="bi bi-question-circle"></i>
+                </a>
+            </div>
+        </form>
+
+        <div class="login-footer-note">
+            <i class="bi bi-lock"></i> Sessão protegida &mdash; dados não armazenados no navegador.
+        </div>
+    </div>
+
+</div>
+{% endblock %}

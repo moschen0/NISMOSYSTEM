@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Etiqueta Envio 150×100 mm{% endblock %}
+
+{% block content %}
+<style>
+  /* ── page print rule ────────────────────────────────────────── */
+  @media print {
+    @page { size: 150mm 100mm landscape; margin: 0; }
+    body * { visibility: hidden; }
+    #pdfEmbed, #pdfEmbed * { visibility: visible; }
+    #pdfEmbed { position: fixed; inset: 0; width: 150mm; height: 100mm; border: none; }
+  }
+
+  /* ── screen layout ──────────────────────────────────────────── */
+  .etiq150-shell {
+    max-width: 900px;
+    margin: 28px auto;
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .etiq150-card {
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  }
+  .etiq150-card h2 { margin: 0 0 18px; font-size: 1.25rem; }
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px 14px;
+  }
+  .field-grid label { display: flex; flex-direction: column; font-size: .88rem; font-weight: 600; gap: 4px; }
+  .field-grid input {
+    border: 1px solid #c6cdd5;
+    border-radius: 8px;
+    padding: 7px 10px;
+    font: inherit;
+    transition: border-color .15s;
+  }
+  .field-grid input:focus { outline: none; border-color: #1a73d9; box-shadow: 0 0 0 3px rgba(26,115,217,.15); }
+  .section-title {
+    grid-column: 1 / -1;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: #5a6472;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e6eaef;
+    padding-bottom: 4px;
+    margin-top: 6px;
+  }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .btn-primary {
+    background: linear-gradient(120deg, #1a73d9, #0e57b4);
+    color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 20px; font: 600 .95rem inherit; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn-secondary {
+    background: linear-gradient(120deg, #71818d, #8fa0ad);
+    color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 20px; font: 600 .95rem inherit; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn-primary:hover  { filter: brightness(1.08); }
+  .btn-secondary:hover{ filter: brightness(1.08); }
+  .preview-area { margin-top: 22px; }
+  .preview-area h3 { margin: 0 0 10px; font-size: 1rem; }
+  #pdfEmbed {
+    width: 100%;
+    height: 520px;
+    border: 1px solid #d0d7de;
+    border-radius: 10px;
+  }
+  .printer-modal-bg {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.45); z-index: 9000;
+    align-items: center; justify-content: center;
+  }
+  .printer-modal-bg.active { display: flex; }
+  .printer-modal {
+    background: #fff; border-radius: 14px;
+    padding: 28px 32px; max-width: 420px; width: 92%;
+    box-shadow: 0 24px 48px rgba(0,0,0,.22);
+  }
+  .printer-modal h3 { margin: 0 0 12px; }
+  .printer-modal p  { margin: 0 0 16px; color: #3e4c5a; font-size: .93rem; line-height: 1.5; }
+  .printer-modal ol { margin: 0 0 18px; padding-left: 20px; color: #3e4c5a; font-size: .91rem; line-height: 1.7; }
+  .printer-modal .close-btn {
+    background: #e8edf2; border: 0; border-radius: 8px;
+    padding: 9px 18px; font: 600 .9rem inherit; cursor: pointer;
+  }
+</style>
+
+<div class="etiq150-shell">
+  <div class="etiq150-card">
+    <h2>&#128230; Etiqueta de Envio — 150 × 100 mm (Paisagem)</h2>
+
+    <!-- ── FORM ─────────────────────────────────────────────────────────── -->
+    <form id="labelForm" method="GET" target="pdfEmbed">
+      <div class="field-grid">
+
+        <span class="section-title">Identificação</span>
+
+        <label>OS OPTO
+          <input type="text" name="os_id" value="{{ os_id }}" placeholder="2BA-123456">
+        </label>
+        <label>ID Master
+          <input type="text" name="id_master" value="{{ id_master }}" placeholder="10102736">
+        </label>
+        <label>Endereçamento
+          <input type="text" name="endereco" value="{{ endereco }}" placeholder="P-01-01">
+        </label>
+        <label>Caixa
+          <input type="text" name="caixa" value="{{ caixa }}" placeholder="CX-001">
+        </label>
+        <label>Enviado Por
+          <input type="text" name="enviado_por" value="{{ enviado_por }}" placeholder="{{ session.get('user','') if session else '' }}">
+        </label>
+
+        <span class="section-title">Tratamento OPTO</span>
+
+        <label style="grid-column: 1 / -1">Descrição do Tratamento
+          <input type="text" name="tratamento" value="{{ tratamento }}" placeholder="Ex.: Grau alto / bifocal">
+        </label>
+
+        <span class="section-title">Dioptria OD (Olho Direito)</span>
+
+        <label>Esf. OD<input type="text" name="od_esf"  value="{{ od_esf }}"  placeholder="+0.00"></label>
+        <label>Cil. OD<input type="text" name="od_cil"  value="{{ od_cil }}"  placeholder="-0.00"></label>
+        <label>Eixo OD<input type="text" name="od_eixo" value="{{ od_eixo }}" placeholder="90"></label>
+        <label>Ad. OD <input type="text" name="od_ad"   value="{{ od_ad }}"   placeholder="+1.00"></label>
+
+        <span class="section-title">Dioptria OE (Olho Esquerdo)</span>
+
+        <label>Esf. OE<input type="text" name="oe_esf"  value="{{ oe_esf }}"  placeholder="+0.00"></label>
+        <label>Cil. OE<input type="text" name="oe_cil"  value="{{ oe_cil }}"  placeholder="-0.00"></label>
+        <label>Eixo OE<input type="text" name="oe_eixo" value="{{ oe_eixo }}" placeholder="90"></label>
+        <label>Ad. OE <input type="text" name="oe_ad"   value="{{ oe_ad }}"   placeholder="+1.00"></label>
+
+      </div><!-- /field-grid -->
+
+      <!-- hidden: pass client id to PDF route -->
+      <input type="hidden" name="_ts" value="">
+
+      <div class="btn-row">
+        <button type="submit" class="btn-primary" id="previewBtn">
+          &#128065; Atualizar Preview
+        </button>
+        <button type="button" class="btn-primary" id="printBtn">
+          &#128424; Imprimir Etiqueta
+        </button>
+        <button type="button" class="btn-secondary" id="configBtn">
+          &#9881; Configurar Impressora
+        </button>
+      </div>
+    </form>
+
+    <!-- ── PDF PREVIEW ──────────────────────────────────────────────────── -->
+    <div class="preview-area">
+      <h3>Preview da Etiqueta</h3>
+      <iframe
+        id="pdfEmbed"
+        name="pdfEmbed"
+        src="{{ url_for('etiquetas.label_100x150_pdf', id=label_id) }}"
+        title="Preview da etiqueta PDF">
+      </iframe>
+    </div>
+  </div>
+</div>
+
+<!-- ── Printer config modal ─────────────────────────────────────────────── -->
+<div class="printer-modal-bg" id="printerModal">
+  <div class="printer-modal">
+    <h3>&#9881; Configurar Impressora</h3>
+    <p>Para selecionar a impressora padrão para esta etiqueta (150 × 100 mm / paisagem):</p>
+    <ol>
+      <li>Clique em <strong>"Abrir diálogo de impressão"</strong> abaixo.</li>
+      <li>No diálogo, escolha a impressora desejada.</li>
+      <li>Em <em>Mais configurações</em> → defina o papel como <strong>100 × 150 mm</strong> e orientação <strong>Paisagem</strong>.</li>
+      <li>Clique em Cancelar para salvar a seleção sem imprimir agora.</li>
+    </ol>
+    <div style="display:flex;gap:10px">
+      <button class="btn-primary" id="openPrintDlgBtn">&#128424; Abrir diálogo de impressão</button>
+      <button class="close-btn" id="closeModalBtn">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const form      = document.getElementById('labelForm');
+  const embed     = document.getElementById('pdfEmbed');
+  const printBtn  = document.getElementById('printBtn');
+  const configBtn = document.getElementById('configBtn');
+  const modal     = document.getElementById('printerModal');
+  const closeBtn  = document.getElementById('closeModalBtn');
+  const openDlgBtn= document.getElementById('openPrintDlgBtn');
+  const tsInput   = form.querySelector('input[name="_ts"]');
+
+  // Build PDF URL from current form values
+  function buildPdfUrl() {
+    const base = "{{ url_for('etiquetas.label_100x150_pdf', id=label_id) }}";
+    const fd   = new FormData(form);
+    const params = new URLSearchParams();
+    fd.forEach((v, k) => { if (k !== '_ts' && v) params.set(k, v); });
+    return base + (params.toString() ? '?' + params.toString() : '');
+  }
+
+  // Update iframe src when user submits form (Atualizar Preview)
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    tsInput.value = Date.now();
+    embed.src = buildPdfUrl();
+  });
+
+  // Imprimir Etiqueta → open browser print dialog on the PDF iframe
+  printBtn.addEventListener('click', function () {
+    embed.src = buildPdfUrl();         // ensure latest values
+    embed.onload = function () {
+      try {
+        embed.contentWindow.focus();
+        embed.contentWindow.print();
+      } catch (_) {
+        // cross-origin PDF: fall back to window.print()
+        window.print();
+      }
+      embed.onload = null;
+    };
+  });
+
+  // Configurar Impressora → show modal with instructions
+  configBtn.addEventListener('click', () => modal.classList.add('active'));
+  closeBtn.addEventListener('click',  () => modal.classList.remove('active'));
+  modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
+
+  openDlgBtn.addEventListener('click', function () {
+    modal.classList.remove('active');
+    embed.src = buildPdfUrl();
+    embed.onload = function () {
+      try {
+        embed.contentWindow.focus();
+        embed.contentWindow.print();
+      } catch (_) { window.print(); }
+      embed.onload = null;
+    };
+  });
+})();
+</script>
+{% endblock %}

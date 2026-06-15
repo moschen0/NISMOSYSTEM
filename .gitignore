@@ -1,38 +1,24 @@
-# Banco de dados e dados locais
-*.mdb
+# Banco de dados
+# *.mdb
 *.laccdb
 *.db
-*.xlsx
-*.pdf
-wms_data.json
-gitignore
+# wms_data.json
 
 # Credenciais e configurações locais
 VFTVCAInterpreter.ini
 .env
 *.env
-WMS_SISTEMA/.env
-telegram_config.json
+WMS_SITEMA/.env
 
 # Build e distribuição
-WMS_Server/
-WMS_SISTEMA/build*/
-WMS_SISTEMA/dist*/
-WMS_SISTEMA/_internal/
-WMS_SISTEMA/backup/
+# WMS_Server/
+WMS_SITEMA/build_v4/
+WMS_SITEMA/dist_v4/
+WMS_SITEMA/_internal/
+WMS_SITEMA/backup/
 *.spec
 build/
 dist/
-
-# Arquivos gerados pela aplicação
-WMS_SISTEMA/Impressos/
-*.log
-*.tmp
-warn-*.txt
-xref-*.html
-*.toc
-*.pyz
-localpycs/
 
 # Python
 __pycache__/
@@ -49,3 +35,14 @@ env/
 *.exe
 *.ico
 *.png
+
+# Logs e temporários
+*.log
+*.tmp
+warn-*.txt
+xref-*.html
+*.toc
+*.pyz
+localpycs/
+
+TELEGRAM_API_KEY = 8501677677:AAH4XLcQBavnuq0xSykJKbdgVsLrA-Orktw

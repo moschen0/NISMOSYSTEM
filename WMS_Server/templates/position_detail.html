@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Posição {{ code }} - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1><i class="bi bi-geo"></i> Detalhes da Posição</h1>
+        <h2 class="text-primary">{{ code }}</h2>
+    </div>
+</div>
+
+{% if orders %}
+<div class="table-responsive mb-4">
+    <table class="table table-hover">
+        <thead class="table-light">
+            <tr>
+                <th><i class="bi bi-box"></i> ID do Pedido</th>
+                <th><i class="bi bi-building"></i> OS OPTO</th>
+                <th><i class="bi bi-box2"></i> Caixa</th>
+                <th><i class="bi bi-tools"></i> Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><code>{{ order.order_id }}</code></td>
+                <td>{{ order.os_opto or '-' }}</td>
+                <td>{{ order.box or '-' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('remove_order') }}" style="display: inline;">
+                        <input type="hidden" name="position" value="{{ code }}">
+                        <input type="hidden" name="order_id" value="{{ order.order_id }}">
+                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Tem certeza que deseja remover este pedido?')">
+                            <i class="bi bi-trash"></i> Remover
+                        </button>
+                    </form>
+                    
+                    {% if current_user and current_user.lower() == 'admin' %}
+                    <form method="POST" action="{{ url_for('move_order') }}" style="display: inline;">
+                        <input type="hidden" name="position" value="{{ code }}">
+                        <input type="hidden" name="order_id" value="{{ order.order_id }}">
+                        <input type="hidden" name="box" value="{{ order.box }}">
+                        <select name="destination" class="form-select form-select-sm" style="display: inline-block; width: auto;" required>
+                            <option value="">-- Mover para --</option>
+                            {% for pos in all_positions %}
+                                {% if pos != code %}
+                                    <option value="{{ pos }}">{{ pos }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-warning">
+                            <i class="bi bi-arrow-left-right"></i> Mover
+                        </button>
+                    </form>
+                    {% else %}
+                    <span class="text-muted small"><i class="bi bi-lock"></i> Apenas admin pode mover</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Nenhum pedido nesta posição. 
+    <a href="{{ url_for('add_order') }}">Adicionar novo pedido?</a>
+</div>
+{% endif %}
+
+<div class="mt-4">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
+        <i class="bi bi-arrow-left"></i> Voltar ao Dashboard
+    </a>
+    <a href="{{ url_for('add_order') }}" class="btn btn-success">
+        <i class="bi bi-plus-circle"></i> Novo Pedido
+    </a>
+</div>
+{% endblock %}
