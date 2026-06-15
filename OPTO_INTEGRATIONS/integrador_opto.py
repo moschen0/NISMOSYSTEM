@@ -10,6 +10,8 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
 from parser_siou import PATH_OS_SIOU
+# Caminho alternativo para arquivos AgeView
+ AGEVIEW_SIOU_PATH = Path(r"\\192.168.1.210\SIOU\ImpOs\AgeViewBKP")
 
 # ---------------------------------------------------------------------------
 # Integração com o banco WMS (para buscar a "OS OPTO" pelo ID do serviço)
@@ -131,6 +133,19 @@ def _load_db_trat() -> dict[str, str]:
 BD_PROD: dict[str, dict[str, str]] = _load_bd_prod()
 DB_TRAT: dict[str, str] = _load_db_trat()
 
+# Códigos AgeView que indicam busca em diretório alternativo
+AGEVIEW_CODES = {"0001", "0002", "0003"}
+
+
+def _is_ageview_product(fields: dict[int, str]) -> bool:
+    """Retorna True se o campo 35 contiver qualquer código AgeView.
+
+    O campo pode ser um valor simples ou lista separada por ponto-e-vírgula.
+    """
+    raw = fields.get(35, "") or ""
+    parts = [p.strip() for p in raw.split(";") if p.strip()]
+    return any(p in AGEVIEW_CODES for p in parts)
+
 # ---------------------------------------------------------------------------
 # Cabeçalhos da planilha de importação do OPTO (ordem fixa)
 # ---------------------------------------------------------------------------
@@ -247,13 +262,27 @@ def build_output_path(prefix: str) -> Path:
 
 
 def find_txt(os_id: str) -> Path:
-    """Localiza {os_id}.txt em PATH_OS_SIOU (busca recursiva)."""
+    """Localiza {os_id}.txt em PATH_OS_SIOU (busca recursiva).
+
+    Pode receber uma sobrescrita global via variável `PATH_OS_SIOU` importada
+    de `parser_siou.py`. Use `find_txt_in_base` internamente para permitir
+    buscas em diretórios alternativos (ex: AgeViewBKP).
+    """
     base = Path(PATH_OS_SIOU)
     matches = list(base.rglob(f"{os_id}.txt"))
     if not matches:
         raise FileNotFoundError(
             f"Arquivo '{os_id}.txt' não encontrado em {PATH_OS_SIOU}"
         )
+    return matches[0]
+
+
+def find_txt_in_base(os_id: str, base_path: Path) -> Path:
+    """Localiza {os_id}.txt em `base_path` (busca recursiva)."""
+    base = Path(base_path)
+    matches = list(base.rglob(f"{os_id}.txt"))
+    if not matches:
+        raise FileNotFoundError(f"Arquivo '{os_id}.txt' não encontrado em {base}")
     return matches[0]
 
 
@@ -480,6 +509,16 @@ def generate_scheduled_export(companies: list[str] = None, date_str: str = None)
         # Validacao 3: build_row (inclui lookup de tratamento no DB_TRAT)
         try:
             fields = parse_txt(txt_path)
+            # Se for produto AgeView, tentar buscar o .txt no diretório alternativo
+            if _is_ageview_product(fields):
+                try:
+                    alt_txt = find_txt_in_base(order_id, AGEVIEW_SIOU_PATH)
+                    fields = parse_txt(alt_txt)
+                    txt_path = alt_txt
+                except FileNotFoundError:
+                    # mantém o .txt original se não achar no alternativo
+                    pass
+
             row = build_row(fields)
             row[0] = os_opto
             # Substitui o marcador 'POSITION' pela posição/endereço vindo do WMS
@@ -624,6 +663,15 @@ def main() -> None:
             prefix = extract_prefix(os_opto)
             if prefix not in COMPANY_MAP:
                 prefix = SEM_OPTO_PREFIX
+            # Se for produto AgeView, tentar buscar o .txt no diretório alternativo
+            if _is_ageview_product(fields):
+                try:
+                    alt_txt = find_txt_in_base(os_id, AGEVIEW_SIOU_PATH)
+                    fields = parse_txt(alt_txt)
+                    txt_path = alt_txt
+                except FileNotFoundError:
+                    pass
+
             row = build_row(fields)
             row[0] = os_opto          # Coluna A = OS OPTO cadastrada no WMS
             # Preenche a última coluna com a posição/endereço do WMS (se disponível)

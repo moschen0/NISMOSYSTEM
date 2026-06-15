@@ -829,6 +829,17 @@ def _build_envio_label_data(order_id: str, os_opto: str, position: str,
         opto.init_database()
         txt_path = opto.find_txt(order_id)
         fields   = opto.parse_txt(txt_path)
+        # Se for produto AgeView, tentar buscar o .txt no diretório alternativo
+        try:
+            if getattr(opto, '_is_ageview_product', None) and opto._is_ageview_product(fields):
+                try:
+                    alt_txt = opto.find_txt_in_base(order_id, opto.AGEVIEW_SIOU_PATH)
+                    fields = opto.parse_txt(alt_txt)
+                    txt_path = alt_txt
+                except FileNotFoundError:
+                    pass
+        except Exception:
+            pass
         row      = opto.build_row(fields)
         from datetime import datetime as _dt
         base.update({
