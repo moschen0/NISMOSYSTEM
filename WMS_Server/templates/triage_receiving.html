@@ -135,6 +135,25 @@
         font-weight: 500;
     }
 
+    .triage-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .triage-row-actions .btn {
+        white-space: nowrap;
+    }
+
+    .triage-edit-banner {
+        background: #fff7e8;
+        border: 1px solid #ffd59b;
+        border-radius: 14px;
+        padding: 0.85rem 1rem;
+        color: #7a4a00;
+        font-weight: 600;
+    }
+
     #activeServicesWarning {
         border: 1px solid #ffb8c4;
         background: linear-gradient(90deg, #ffe8ee 0%, #ffdbe6 100%);
@@ -270,30 +289,45 @@
         <p class="triage-subtitle">Substitui o preenchimento em planilha e grava direto no banco de dados.</p>
     </div>
 
+    {% if edit_receipt %}
+    <div class="triage-edit-banner mb-3">
+        <i class="bi bi-pencil-square me-1"></i>
+        Editando o recebimento do pedido {{ edit_receipt.order_id or '-' }}.
+    </div>
+    {% endif %}
+
 <div class="row g-4">
     <div class="col-lg-12">
         <div class="card h-100 triage-form-card">
             <div class="card-header text-white">
-                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Novo Recebimento</h5>
+                <h5 class="mb-0"><i class="bi {% if edit_receipt %}bi-pencil-square{% else %}bi-plus-circle{% endif %}"></i> {% if edit_receipt %}Editar Recebimento{% else %}Novo Recebimento{% endif %}</h5>
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('triage_receiving') }}" class="triage-form">
-                    <input type="hidden" name="form_action" value="add">
+                    <input type="hidden" name="form_action" value="{{ 'update' if edit_receipt else 'add' }}">
+                    {% if edit_receipt %}
+                    <input type="hidden" name="receipt_id" value="{{ edit_receipt.id }}">
+                    {% endif %}
 
                     <div class="mb-3">
                         <label for="order_id" class="form-label">Pedido (sequencial)</label>
-                        <input type="text" class="form-control" id="order_id" name="order_id" value="{{ next_order_id }}" readonly>
+                        <input type="text" class="form-control" id="order_id" name="order_id" value="{{ edit_receipt.order_id if edit_receipt else next_order_id }}" readonly>
                     </div>
 
                     <div class="mb-3">
                         <label for="customer_code" class="form-label">Codigo Cliente *</label>
-                        <input type="text" class="form-control" id="customer_code" name="customer_code" required autocomplete="off">
+                        <input type="text" class="form-control" id="customer_code" name="customer_code" value="{{ edit_receipt.customer_code if edit_receipt else '' }}" required autocomplete="off">
                     </div>
 
                     <div class="mb-3">
                         <label for="customer_name" class="form-label">Nome Cliente *</label>
-                        <input type="text" class="form-control" id="customer_name" name="customer_name" required autocomplete="off" readonly>
+                        <input type="text" class="form-control" id="customer_name" name="customer_name" value="{{ edit_receipt.customer_name if edit_receipt else '' }}" required autocomplete="off" readonly>
                         <small class="text-muted">Preenchido automaticamente pelo sistema conforme o codigo informado.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="service_name" class="form-label">Serviço</label>
+                        <input type="text" class="form-control" id="service_name" name="service_name" value="{{ edit_receipt.service_name if edit_receipt else '' }}" autocomplete="off" placeholder="Descricao do serviço recebido">
                     </div>
 
                     <div id="activeServicesWarning" class="mb-3" style="display:none;"></div>
@@ -301,22 +335,29 @@
                     <div class="row g-2">
                         <div class="col-md-4">
                             <label for="quantity" class="form-label">Quantidade *</label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" value="1" required>
+                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" value="{{ edit_receipt.quantity if edit_receipt else 1 }}" required>
                         </div>
                         <div class="col-md-8">
                             <label for="received_at" class="form-label">Data Recebimento *</label>
-                            <input type="datetime-local" class="form-control" id="received_at" name="received_at" value="{{ now_iso }}" required>
+                            <input type="datetime-local" class="form-control" id="received_at" name="received_at" value="{{ edit_received_at if edit_receipt else now_iso }}" required>
                         </div>
                     </div>
 
                     <div class="mt-3 mb-4">
                         <label for="notes" class="form-label">Observacao</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                        <textarea class="form-control" id="notes" name="notes" rows="3">{{ edit_receipt.notes if edit_receipt else '' }}</textarea>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100 triage-submit-btn">
-                        <i class="bi bi-save"></i> Salvar Recebimento
-                    </button>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary triage-submit-btn">
+                            <i class="bi bi-save"></i> {% if edit_receipt %}Atualizar Recebimento{% else %}Salvar Recebimento{% endif %}
+                        </button>
+                        {% if edit_receipt %}
+                        <a href="{{ url_for('triage_receiving') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Cancelar edição
+                        </a>
+                        {% endif %}
+                    </div>
                 </form>
             </div>
         </div>
@@ -376,6 +417,7 @@
                                 <th><i class="bi bi-calendar-check"></i> Recebido em</th>
                                 <th><i class="bi bi-person-check"></i> Recebido por</th>
                                 <th><i class="bi bi-chat-left-text"></i> Observacao</th>
+                                <th><i class="bi bi-pencil-square"></i> Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -389,11 +431,22 @@
                                 <td><small class="text-muted">{{ item.received_at or '-' }}</small></td>
                                 <td>{{ item.received_by or '-' }}</td>
                                 <td>{{ item.notes or '-' }}</td>
+                                <td>
+                                    <div class="triage-row-actions">
+                                        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('triage_receiving', edit_id=item.id, q=query, order_id=filters.order_id, customer_code=filters.customer_code, customer_name=filters.customer_name, service_name=filters.service_name, received_by=filters.received_by, notes=filters.notes, date_from=filters.date_from, date_to=filters.date_to) }}">
+                                            <i class="bi bi-pencil"></i> Editar
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="submitTriageReceiptDelete({{ item.id }}, {{ item.order_id|tojson }})">
+                                            <i class="bi bi-trash"></i> Apagar
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                <form id="triageDeleteForm" method="POST" class="d-none"></form>
                 {% else %}
                 <div class="alert alert-info mb-0">
                     <i class="bi bi-info-circle"></i>
@@ -431,6 +484,7 @@ const triageActiveServicesWarning = document.getElementById('activeServicesWarni
 const triageActiveServicesModalEl = document.getElementById('triageActiveServicesModal');
 const triageActiveServicesModalText = document.getElementById('triageActiveServicesModalText');
 const triageActiveServicesConfirmBtn = document.getElementById('triageActiveServicesConfirmBtn');
+const triageEditMode = {{ 'true' if edit_receipt else 'false' }};
 let triageActiveServicesCount = 0;
 let triageActiveServicesPreview = '';
 let triageBypassWarningOnSubmit = false;
@@ -534,15 +588,13 @@ async function fillCustomerNameByCode() {
         if (response.ok && data && Number(data.count || 0) > 0 && triageActiveServicesWarning) {
             triageActiveServicesCount = Number(data.count || 0);
             const items = Array.isArray(data.items) ? data.items : [];
-            const preview = items.slice(0, 4).map((item) => {
+            const preview = items.map((item) => {
                 const os = (item.order_id || 'SEM_OS').trim() || 'SEM_OS';
                 const pos = (item.position || 'SEM_POSICAO').trim() || 'SEM_POSICAO';
                 return `${os} em ${pos}`;
             }).join('; ');
-            const moreCount = Math.max(0, triageActiveServicesCount - 4);
-            const moreText = moreCount > 0 ? ` e mais ${moreCount}` : '';
-            triageActiveServicesPreview = `${preview}${moreText}`;
-            triageActiveServicesWarning.innerHTML = `<strong>Aviso:</strong> este cliente possui servicos prontos na prateleira: ${preview}${moreText}.`;
+            triageActiveServicesPreview = preview;
+            triageActiveServicesWarning.innerHTML = `<strong>Aviso:</strong> este cliente possui servicos prontos na prateleira: ${preview}.`;
             triageActiveServicesWarning.style.display = 'block';
         } else {
             triageAcknowledgedCode = '';
@@ -572,7 +624,7 @@ if (triageForm) {
             await fillCustomerNameByCode();
 
              if (triageActiveServicesCount <= 0) {
-                if (!triageOrderIdInput.value) {
+                if (!triageEditMode && !triageOrderIdInput.value) {
                     await fillNextOrderId();
                 }
                 triageForm.submit();
@@ -601,7 +653,7 @@ if (triageForm) {
             triageBypassWarningOnSubmit = false;
         }
 
-        if (!triageOrderIdInput.value) {
+        if (!triageEditMode && !triageOrderIdInput.value) {
             event.preventDefault();
             await fillNextOrderId();
             triageForm.submit();
@@ -609,6 +661,32 @@ if (triageForm) {
     });
 }
 
-fillNextOrderId();
+function submitTriageReceiptDelete(receiptId, orderId) {
+    if (!receiptId) {
+        return;
+    }
+
+    const label = orderId ? `o pedido ${orderId}` : 'este recebimento';
+    if (!window.confirm(`Apagar ${label}? Esta ação não pode ser desfeita.`)) {
+        return;
+    }
+
+    const form = document.getElementById('triageDeleteForm');
+    if (!form) {
+        return;
+    }
+
+    form.action = "{{ url_for('triage_receiving_delete', receipt_id=0) }}".replace('/0/delete', `/${receiptId}/delete`);
+    form.innerHTML = '';
+    form.submit();
+}
+
+if (triageEditMode) {
+    if (triageCustomerCodeInput && triageCustomerCodeInput.value.trim()) {
+        fillCustomerNameByCode();
+    }
+} else {
+    fillNextOrderId();
+}
 </script>
 {% endblock %}
