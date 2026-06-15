@@ -1208,6 +1208,114 @@ def get_triage_receipt_by_order_id(order_id, unit=None, sector=None):
     return dict_from_row(cursor, row)
 
 
+def get_triage_receipt_by_id(receipt_id, unit=None, sector=None):
+    """Retorna recebimento de triagem pelo ID interno."""
+    if receipt_id in (None, ''):
+        return None
+
+    try:
+        receipt_id = int(str(receipt_id).strip())
+    except Exception:
+        return None
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["id = ?"]
+    params = [receipt_id]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT TOP 1 * FROM triage_receipts {where} ORDER BY id DESC", params)
+    row = cursor.fetchone()
+    return dict_from_row(cursor, row)
+
+
+def update_triage_receipt_by_id(
+    receipt_id,
+    order_id,
+    customer_code,
+    customer_name,
+    service_name,
+    quantity,
+    received_at,
+    received_by,
+    notes='',
+    status='received',
+    unit=DEFAULT_UNIT,
+    sector='TRIAGEM'
+):
+    """Atualiza um recebimento de triagem existente."""
+    if receipt_id in (None, ''):
+        return {'id': None, 'updated': False}
+
+    try:
+        receipt_id = int(str(receipt_id).strip())
+    except Exception:
+        return {'id': None, 'updated': False}
+
+    unit = normalize_unit(unit)
+    sector = sector or 'TRIAGEM'
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime_now_str()
+
+    cursor.execute(
+        """
+        UPDATE triage_receipts
+        SET order_id = ?, customer_code = ?, customer_name = ?, service_name = ?, quantity = ?,
+            received_at = ?, received_by = ?, notes = ?, [status] = ?, updated_at = ?
+        WHERE id = ? AND [unit] = ? AND [sector] = ?
+        """,
+        (
+            str(order_id or '').strip().upper(),
+            str(customer_code or '').strip().upper(),
+            str(customer_name or '').strip(),
+            str(service_name or '').strip(),
+            int(quantity or 1),
+            received_at,
+            received_by,
+            notes,
+            status,
+            now_str,
+            receipt_id,
+            unit,
+            sector,
+        )
+    )
+    conn.commit()
+    return {'id': receipt_id, 'updated': True}
+
+
+def delete_triage_receipt_by_id(receipt_id, unit=None, sector=None):
+    """Remove um recebimento de triagem pelo ID interno."""
+    if receipt_id in (None, ''):
+        return False
+
+    try:
+        receipt_id = int(str(receipt_id).strip())
+    except Exception:
+        return False
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["id = ?"]
+    params = [receipt_id]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"DELETE FROM triage_receipts {where}", params)
+    conn.commit()
+    return True
+
+
 def upsert_triage_receipt(
     order_id,
     customer_code,
