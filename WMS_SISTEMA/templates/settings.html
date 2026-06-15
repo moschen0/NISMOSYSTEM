@@ -2,838 +2,132 @@
 
 {% block title %}Configurações - WMS{% endblock %}
 
-{% block head %}
-<style>
-    #cfgTabs .nav-link { color: #495057 !important; }
-    #cfgTabs .nav-link.active { color: #0d6efd !important; font-weight: 600; }
-    #cfgTabs .nav-link:hover { color: #0d6efd !important; }
-</style>
-{% endblock %}
-
 {% block content %}
 <div class="row">
-    <div class="col-lg-8 mx-auto">
+    <div class="col-lg-7 mx-auto">
 
-        <div class="d-flex align-items-center justify-content-between mb-4">
-            <h2 class="mb-0"><i class="bi bi-gear"></i> Configurações</h2>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-arrow-left"></i> Voltar
-            </a>
-        </div>
+        <h2 class="mb-4"><i class="bi bi-gear"></i> Configurações</h2>
 
-        <!-- Tabs -->
-        <ul class="nav nav-tabs mb-4" id="cfgTabs" role="tablist">
-            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBanco" type="button"><i class="bi bi-database-gear"></i> Banco</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTelegram" type="button"><i class="bi bi-telegram"></i> Telegram</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLimites" type="button"><i class="bi bi-clock-history"></i> Limites</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBackup" type="button"><i class="bi bi-archive"></i> Backup</button></li>
-            {% if is_admin %}
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabOpto" type="button"><i class="bi bi-table"></i> OPTO</button></li>
-            {% endif %}
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLog" type="button"><i class="bi bi-terminal"></i> Log</button></li>
-        </ul>
-
-        <div class="tab-content">
-
-            {# ── TAB BANCO ────────────────────────────────────────────── #}
-            <div class="tab-pane fade show active" id="tabBanco">
-
-                <div class="d-flex align-items-center gap-3 mb-4">
-                    {% if db_mode == 'production' %}
-                    <span class="badge fs-6 bg-success"><i class="bi bi-database-fill"></i> Produção</span>
-                    {% else %}
-                    <span class="badge fs-6 bg-warning text-dark"><i class="bi bi-database-fill"></i> Teste</span>
-                    {% endif %}
-                    <code class="small text-muted">{{ db_path_active }}</code>
-                </div>
-
-                <div class="d-flex gap-3 align-items-center mb-3">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="db_mode_radio" id="dbModeProd"
-                               value="production" {% if db_mode == 'production' %}checked{% endif %}>
-                        <label class="form-check-label" for="dbModeProd">
-                            <i class="bi bi-database-fill text-success"></i> Produção
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="db_mode_radio" id="dbModeTest"
-                               value="test" {% if db_mode == 'test' %}checked{% endif %}>
-                        <label class="form-check-label" for="dbModeTest">
-                            <i class="bi bi-database-fill text-warning"></i> Teste
-                        </label>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="btnApplyDbMode">
-                        <i class="bi bi-arrow-repeat"></i> Aplicar
-                    </button>
-                    <span id="dbModeResult" class="small"></span>
-                </div>
-
-                {% if db_mode == 'test' %}
-                <div class="alert alert-warning py-2 small mb-3">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    Sistema operando no banco de <strong>TESTE</strong> — afeta todos os usuários.
-                </div>
-                {% endif %}
-
-                <hr>
-                <p class="fw-semibold mb-2">
-                    <i class="bi bi-people-fill"></i> Sessões ativas
-                    <span class="badge bg-secondary ms-1" id="activeUserCount">{{ active_users|length }}</span>
-                </p>
-                {% if active_users %}
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0" style="font-size:0.83em;">
-                        <thead class="table-light">
-                            <tr><th>Usuário</th><th>Unidade</th><th>IP</th><th>Visto</th><th>Ações IP</th></tr>
-                        </thead>
-                        <tbody>
-                        {% for u in active_users %}
-                        <tr class="{% if u.user|lower == 'admin' %}table-danger{% endif %}">
-                            <td class="fw-semibold">{{ u.user }}</td>
-                            <td>{{ u.unit }}</td>
-                            <td class="font-monospace">{{ u.ip }}</td>
-                            <td>{{ u.last_seen.strftime('%H:%M:%S') }}</td>
-                            <td>
-                                {% if u.user|lower != 'admin' %}
-                                <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-danger btn-ip-action"
-                                            data-ip="{{ u.ip|e }}" data-list="blacklist"
-                                            title="Bloquear IP {{ u.ip }}">
-                                        <i class="bi bi-ban"></i> Block
-                                    </button>
-                                    <button class="btn btn-outline-success btn-ip-action"
-                                            data-ip="{{ u.ip|e }}" data-list="whitelist"
-                                            title="Liberar IP {{ u.ip }}">
-                                        <i class="bi bi-shield-check"></i> Allow
-                                    </button>
-                                </div>
-                                {% else %}
-                                <span class="text-muted small">—</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-muted small mb-0">Nenhuma sessão ativa no momento.</p>
-                {% endif %}
-
-                <hr>
-
-                {# ── IP ACL ─────────────────────────────────────────── #}
-                <p class="fw-semibold mb-2">
-                    <i class="bi bi-shield-lock-fill"></i> Controle de Acesso por IP
-                </p>
-
-                <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
-                    <input type="text" id="ipAclInput" class="form-control form-control-sm font-monospace"
-                           style="max-width:180px" placeholder="Ex: 192.168.1.10" maxlength="15">
-                    <button class="btn btn-sm btn-danger" id="btnAddBlacklist">
-                        <i class="bi bi-ban"></i> Blacklist
-                    </button>
-                    <button class="btn btn-sm btn-success" id="btnAddWhitelist">
-                        <i class="bi bi-shield-check"></i> Whitelist
-                    </button>
-                    <span id="ipAclResult" class="small"></span>
-                </div>
-
-                <div class="row g-3 mb-3" id="aclLists">
-                    <div class="col-md-6">
-                        <div class="card border-danger" style="font-size:0.82em;">
-                            <div class="card-header bg-danger text-white py-1 fw-semibold">
-                                <i class="bi bi-ban"></i> Blacklist
-                                <span class="badge bg-light text-danger ms-1" id="blacklistCount">{{ ip_acl.blacklist|length }}</span>
-                            </div>
-                            <ul class="list-group list-group-flush" id="blacklistItems" style="max-height:140px;overflow-y:auto">
-                                {% for ip in ip_acl.blacklist %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
-                                    <code>{{ ip }}</code>
-                                    <button class="btn btn-xs btn-outline-secondary btn-remove-ip"
-                                            data-ip="{{ ip|e }}" data-list="blacklist"
-                                            style="font-size:.7rem;padding:1px 6px" title="Remover">
-                                        <i class="bi bi-x-lg"></i>
-                                    </button>
-                                </li>
-                                {% else %}
-                                <li class="list-group-item text-muted small py-1 px-2" id="blacklistEmpty">Nenhum IP bloqueado</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card border-success" style="font-size:0.82em;">
-                            <div class="card-header bg-success text-white py-1 fw-semibold">
-                                <i class="bi bi-shield-check"></i> Whitelist
-                                <span class="badge bg-light text-success ms-1" id="whitelistCount">{{ ip_acl.whitelist|length }}</span>
-                            </div>
-                            <ul class="list-group list-group-flush" id="whitelistItems" style="max-height:140px;overflow-y:auto">
-                                {% for ip in ip_acl.whitelist %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
-                                    <code>{{ ip }}</code>
-                                    <button class="btn btn-xs btn-outline-secondary btn-remove-ip"
-                                            data-ip="{{ ip|e }}" data-list="whitelist"
-                                            style="font-size:.7rem;padding:1px 6px" title="Remover">
-                                        <i class="bi bi-x-lg"></i>
-                                    </button>
-                                </li>
-                                {% else %}
-                                <li class="list-group-item text-muted small py-1 px-2" id="whitelistEmpty">Nenhum IP autorizado</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="whitelistModeSwitch"
-                           {% if ip_acl.whitelist_mode %}checked{% endif %}>
-                    <label class="form-check-label small" for="whitelistModeSwitch">
-                        <strong>Modo Whitelist exclusivo</strong> — apenas IPs na whitelist podem acessar
-                    </label>
-                </div>
-                <p class="text-muted small mb-3">
-                    <i class="bi bi-info-circle"></i>
-                    O admin nunca é bloqueado por IP. Na blacklist, o usuário vê uma página 403.
-                </p>
-
-                <hr>
-
-                {# ── Modo Manutenção ─────────────────────────────────── #}
-                <p class="fw-semibold mb-2">
-                    <i class="bi bi-tools"></i> Modo Manutenção
-                    {% if maintenance_state.active %}
-                    <span class="badge bg-warning text-dark ms-1" id="maintBadge">ATIVO</span>
-                    {% else %}
-                    <span class="badge bg-secondary ms-1" id="maintBadge">INATIVO</span>
-                    {% endif %}
-                </p>
-
-                <div class="card border-warning mb-3" style="font-size:0.85em;">
-                    <div class="card-body py-2 px-3">
-                        <div class="row g-2 align-items-end">
-                            <div class="col-sm-4">
-                                <label class="form-label mb-1 small">Duração (min)</label>
-                                <input type="number" id="maintMinutes" class="form-control form-control-sm"
-                                       value="30" min="1" max="480">
-                            </div>
-                            <div class="col-sm-8">
-                                <label class="form-label mb-1 small">Mensagem ao usuário</label>
-                                <input type="text" id="maintMessage" class="form-control form-control-sm"
-                                       value="{{ maintenance_state.message|e }}"
-                                       placeholder="Sistema em manutenção. Aguarde.">
-                            </div>
-                        </div>
-                        {% if maintenance_state.active and maintenance_state.until %}
-                        <div class="mt-2 small text-warning">
-                            <i class="bi bi-clock"></i>
-                            Ativo até <strong>{{ maintenance_state.until.strftime('%H:%M:%S') }}</strong>
-                        </div>
-                        {% endif %}
-                        <div class="mt-2 d-flex gap-2 align-items-center">
-                            <button class="btn btn-sm btn-warning" id="btnMaintStart">
-                                <i class="bi bi-play-fill"></i> Ativar Manutenção
-                            </button>
-                            <button class="btn btn-sm btn-success" id="btnMaintStop">
-                                <i class="bi bi-stop-fill"></i> Encerrar Manutenção
-                            </button>
-                            <span id="maintResult" class="small"></span>
-                        </div>
-                        <p class="text-muted small mt-2 mb-0">
-                            <i class="bi bi-exclamation-triangle"></i>
-                            Todos os usuários (exceto admin) serão desconectados e redirecionados para a página de manutenção.
-                        </p>
-                    </div>
-                </div>
-
+        <!-- ── Controle de tempo de permanência ──────────────────────── -->
+        <div class="card mb-4" style="border-left: 5px solid #667eea;">
+            <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Controle de Tempo de Permanência</h5>
             </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Define os limiares (em dias) que determinam a cor exibida em cada caixa nas visualizações
+                    de prateleiras. Os valores devem ser crescentes.
+                </p>
 
-            {# ── TAB TELEGRAM ─────────────────────────────────────────── #}
-            <div class="tab-pane fade" id="tabTelegram">
-
-                <div class="d-flex align-items-center gap-2 mb-3">
-                    {% if tg_configured %}
-                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Bot configurado</span>
-                    <button type="button" class="btn btn-outline-success btn-sm" id="btnTestTelegram">
-                        <i class="bi bi-send"></i> Testar
-                    </button>
-                    <span id="testTgResult" class="small"></span>
-                    {% else %}
-                    <div class="alert alert-warning py-2 small mb-0">
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                        Configure <code>TELEGRAM_BOT_TOKEN</code> e <code>TELEGRAM_CHAT_ID</code> no <code>.env</code> e reinicie.
-                    </div>
-                    {% endif %}
+                <!-- Prévia das cores -->
+                <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+                    <strong style="font-size:13px;">Prévia:</strong>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#166534;font-size:12px;">
+                        Verde &mdash; &lt; {{ thresholds.green_days }}d (Normal)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold" style="background:#FFDE21;color:#1a1a1a;font-size:12px;">
+                        Amarelo &mdash; {{ thresholds.green_days }}&ndash;{{ thresholds.yellow_days }}d (Atenção)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#991b1b;font-size:12px;">
+                        Vermelho &mdash; {{ thresholds.yellow_days }}&ndash;{{ thresholds.red_days }}d (Urgente)
+                    </span>
+                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#0a0a0a;border:1px solid #555;font-size:12px;">
+                        Preto &mdash; &ge; {{ thresholds.red_days }}d (Crítico)
+                    </span>
                 </div>
 
                 <form method="POST" action="{{ url_for('settings') }}">
-                    <input type="hidden" name="form_type" value="telegram">
-
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="notifyStatusAlerts"
-                                   name="notify_status_alerts" {% if tg_cfg.notify_status_alerts %}checked{% endif %}>
-                            <label class="form-check-label" for="notifyStatusAlerts">Alertas de status (verificado a cada hora)</label>
-                        </div>
-                        <div class="ms-4 mt-1 d-flex gap-3 flex-wrap">
-                            {% for tier, lbl, color in [('attention','Atenção','#FFDE21'), ('urgent','Urgente','#991b1b'), ('critical','Crítico','#0a0a0a')] %}
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="notify_tiers"
-                                       value="{{ tier }}" id="tier_{{ tier }}"
-                                       {% if tier in tg_cfg.notify_tiers %}checked{% endif %}>
-                                <label class="form-check-label" for="tier_{{ tier }}">
-                                    <span class="badge" style="background:{{ color }}; {% if tier=='attention' %}color:#1a1a1a;{% endif %}">{{ lbl }}</span>
-                                </label>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <hr class="my-3">
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check form-switch mb-2">
-                                <input class="form-check-input" type="checkbox" id="notifyDailyReport"
-                                       name="notify_daily_report" {% if tg_cfg.notify_daily_report %}checked{% endif %}>
-                                <label class="form-check-label" for="notifyDailyReport">Resumo diário</label>
-                            </div>
-                            <div class="input-group" style="max-width:140px;">
-                                <input type="number" class="form-control" name="daily_report_hour"
-                                       value="{{ tg_cfg.daily_report_hour }}" min="0" max="23">
-                                <span class="input-group-text">h</span>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check form-switch mb-2">
-                                <input class="form-check-input" type="checkbox" id="scheduledReportEnabled"
-                                       name="scheduled_report_enabled" {% if tg_cfg.scheduled_report_enabled %}checked{% endif %}>
-                                <label class="form-check-label" for="scheduledReportEnabled">Relatório de período (CSV)</label>
-                            </div>
-                            <div class="input-group" style="max-width:140px;">
-                                <input type="number" class="form-control" name="scheduled_report_hour"
-                                       value="{{ tg_cfg.scheduled_report_hour }}" min="0" max="23">
-                                <span class="input-group-text">h</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mb-3 align-items-end">
-                        <div class="col-auto">
-                            <label class="form-label small text-muted">Modo do período:</label>
-                            <select class="form-select form-select-sm" name="scheduled_report_mode" id="scheduledReportMode" onchange="updatePeriodPreview()">
-                                <option value="month_to_date" {% if tg_cfg.scheduled_report_mode == 'month_to_date' %}selected{% endif %}>Início do mês → hoje</option>
-                                <option value="full_month"    {% if tg_cfg.scheduled_report_mode == 'full_month'    %}selected{% endif %}>Mês completo</option>
-                                <option value="custom_days"   {% if tg_cfg.scheduled_report_mode == 'custom_days'   %}selected{% endif %}>Personalizado</option>
-                            </select>
-                        </div>
-                        <div class="col-auto">
-                            <label class="form-label small text-muted">Dia inicial:</label>
-                            <input type="number" class="form-control form-control-sm" name="scheduled_report_start_day"
-                                   id="scheduledStartDay" value="{{ tg_cfg.scheduled_report_start_day }}" min="1" max="28"
-                                   oninput="updatePeriodPreview()" style="width:80px;">
-                        </div>
-                        <div class="col-auto" id="endDayCol">
-                            <label class="form-label small text-muted">Dia final:</label>
-                            <input type="number" class="form-control form-control-sm" name="scheduled_report_end_day"
-                                   id="scheduledEndDay" value="{{ tg_cfg.scheduled_report_end_day }}" min="0" max="31"
-                                   placeholder="0=último" oninput="updatePeriodPreview()" style="width:80px;">
-                        </div>
-                    </div>
-                    <div id="periodPreview" class="small text-primary mb-3"></div>
-
-                    <div class="d-flex gap-2 flex-wrap align-items-center">
-                        <button type="submit" class="btn btn-primary btn-sm">
-                            <i class="bi bi-floppy"></i> Salvar
-                        </button>
-                        {% if tg_configured %}
-                        <button type="button" class="btn btn-outline-info btn-sm" id="btnSendDailyReport">
-                            <i class="bi bi-bar-chart-line"></i> Enviar resumo agora
-                        </button>
-                        <span id="dailyReportResult" class="small"></span>
-                        {% endif %}
-                    </div>
-                </form>
-
-                {% if tg_configured %}
-                <hr class="my-3">
-                <p class="fw-semibold small mb-2"><i class="bi bi-send"></i> Relatório de período manual</p>
-                <div class="d-flex gap-2 align-items-end flex-wrap">
-                    <div>
-                        <label class="form-label small text-muted mb-1">De:</label>
-                        <input type="date" class="form-control form-control-sm" id="manualDateFrom" style="width:150px;">
-                    </div>
-                    <div>
-                        <label class="form-label small text-muted mb-1">Até:</label>
-                        <input type="date" class="form-control form-control-sm" id="manualDateTo" style="width:150px;">
-                    </div>
-                    <button type="button" class="btn btn-primary btn-sm" id="btnSendPeriodReport">
-                        <i class="bi bi-telegram"></i> Enviar CSV
-                    </button>
-                    <span id="periodReportResult" class="small"></span>
-                </div>
-                {% endif %}
-            </div>
-
-            {# ── TAB LIMITES ──────────────────────────────────────────── #}
-            <div class="tab-pane fade" id="tabLimites">
-
-                <div class="d-flex flex-wrap gap-2 mb-4">
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#166534;font-size:12px;">Verde &lt; {{ thresholds.green_days }}d</span>
-                    <span class="px-3 py-1 rounded fw-bold" style="background:#FFDE21;color:#1a1a1a;font-size:12px;">Amarelo {{ thresholds.green_days }}–{{ thresholds.yellow_days }}d</span>
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#991b1b;font-size:12px;">Vermelho {{ thresholds.yellow_days }}–{{ thresholds.red_days }}d</span>
-                    <span class="px-3 py-1 rounded fw-bold text-white" style="background:#0a0a0a;border:1px solid #555;font-size:12px;">Preto ≥ {{ thresholds.red_days }}d</span>
-                </div>
-
-                <form method="POST" action="{{ url_for('settings') }}">
-                    <input type="hidden" name="form_type" value="thresholds">
-                    <div class="row g-3 mb-3">
-                        <div class="col-4">
-                            <label class="form-label small fw-semibold"><span class="badge" style="background:#166534;">Verde</span> Normal (dias)</label>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#166534;">Verde</span>
+                                Limite Normal (dias)
+                            </label>
                             <input type="number" class="form-control" name="green_days"
                                    value="{{ thresholds.green_days }}" min="1" max="30" required>
+                            <div class="form-text">0 a &lt; N dias → <strong>Normal</strong></div>
                         </div>
-                        <div class="col-4">
-                            <label class="form-label small fw-semibold"><span class="badge" style="background:#FFDE21;color:#1a1a1a;">Amarelo</span> Atenção (dias)</label>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#FFDE21;color:#1a1a1a;">Amarelo</span>
+                                Limite Atenção (dias)
+                            </label>
                             <input type="number" class="form-control" name="yellow_days"
                                    value="{{ thresholds.yellow_days }}" min="1" max="60" required>
+                            <div class="form-text">N a &lt; M dias → <strong>Atenção</strong></div>
                         </div>
-                        <div class="col-4">
-                            <label class="form-label small fw-semibold"><span class="badge" style="background:#991b1b;">Vermelho</span> Urgente (dias)</label>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">
+                                <span class="badge" style="background:#991b1b;">Vermelho</span>
+                                Limite Urgente (dias)
+                            </label>
                             <input type="number" class="form-control" name="red_days"
                                    value="{{ thresholds.red_days }}" min="1" max="90" required>
+                            <div class="form-text">M a &lt; R dias → <strong>Urgente</strong> / ≥ R → <strong>Crítico</strong></div>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm">
-                        <i class="bi bi-floppy"></i> Salvar Limites
-                    </button>
+
+                    <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:13px;">
+                        <i class="bi bi-info-circle"></i>
+                        Os limiares devem ser crescentes: <code>Verde &lt; Amarelo &lt; Vermelho</code>.
+                        Exemplo padrão: <strong>3 / 4 / 6</strong>.
+                    </div>
+
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-floppy"></i> Salvar Configurações
+                        </button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Voltar
+                        </a>
+                    </div>
                 </form>
             </div>
+        </div>
 
-            {# ── TAB BACKUP ───────────────────────────────────────────── #}
-            <div class="tab-pane fade" id="tabBackup">
-
-                <p class="text-muted small mb-3">
-                    <i class="bi bi-hdd-network"></i> Destino: <code>{{ backup_dir }}</code><br>
-                    <i class="bi bi-clock"></i> Automático diariamente às <strong>02:00</strong>.
+        <!-- ── Backup do Banco de Dados ─────────────────────────────── -->
+        <div class="card mb-4" style="border-left: 5px solid #198754;">
+            <div class="card-header" style="background: linear-gradient(135deg, #198754 0%, #146c43 100%); color: white;">
+                <h5 class="mb-0"><i class="bi bi-archive"></i> Backup do Banco de Dados</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    <i class="bi bi-hdd-network"></i> Destino:
+                    <code>{{ backup_dir }}</code><br>
+                    <i class="bi bi-clock"></i> Backup automático executado diariamente às <strong>02:00</strong>.
                 </p>
 
+                {% if is_admin %}
                 <form method="POST" action="{{ url_for('admin_backup') }}"
-                      onsubmit="return confirm('Fazer backup agora?');">
-                    <button type="submit" class="btn btn-success btn-sm mb-3">
+                      onsubmit="return confirm('Fazer backup do banco agora?');">
+                    <button type="submit" class="btn btn-success">
                         <i class="bi bi-cloud-upload"></i> Fazer Backup Agora
                     </button>
                 </form>
+                {% else %}
+                <div class="alert alert-secondary py-2 mb-0" style="font-size:0.875rem;">
+                    <i class="bi bi-lock"></i> Backup manual disponível somente para administradores.
+                </div>
+                {% endif %}
 
                 {% if backup_log %}
+                <hr class="my-3">
+                <p class="text-muted mb-1 small">
+                    <i class="bi bi-journal-text"></i> Últimas entradas do log
+                    <code style="font-size:10px;">({{ backup_dir }}\backup.log)</code>:
+                </p>
                 <pre class="rounded p-2 mb-0"
-                     style="background:#1a1a1a;color:#d4edda;font-size:11px;max-height:220px;overflow-y:auto;white-space:pre-wrap;">{% for line in backup_log %}{{ line }}
+                     style="background:#1a1a1a; color:#d4edda; font-size:11px; max-height:200px; overflow-y:auto; white-space:pre-wrap;">{% for line in backup_log %}{{ line }}
 {% endfor %}</pre>
                 {% else %}
-                <p class="text-muted small">Nenhum backup realizado ainda.</p>
+                <div class="alert alert-info mt-3 mb-0 py-2" style="font-size:0.875rem;">
+                    <i class="bi bi-info-circle"></i> Nenhum backup realizado ainda.
+                    O log será criado automaticamente após o primeiro backup.
+                </div>
                 {% endif %}
             </div>
-            {# ── TAB OPTO ─────────────────────────────────────────────── #}
-            {% if is_admin %}
-            <div class="tab-pane fade" id="tabOpto">
-                <h6 class="text-muted mb-3"><i class="bi bi-clock-history"></i> Agendamento de Planilhas OPTO</h6>
-
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <div class="mb-3 d-flex align-items-center gap-3">
-                            <div class="form-check form-switch mb-0">
-                                <input class="form-check-input" type="checkbox" id="optoEnabled"
-                                    {% if opto_cfg.enabled %}checked{% endif %}>
-                                <label class="form-check-label fw-semibold" for="optoEnabled">Agendamento ativo</label>
-                            </div>
-                            <span class="text-muted small">Gera as planilhas automaticamente no horário configurado.</span>
-                        </div>
-
-                        <div class="row g-3 align-items-end mb-3">
-                            <div class="col-auto">
-                                <label class="form-label small mb-1">Hora</label>
-                                <input type="number" id="optoHour" class="form-control form-control-sm" style="width:80px"
-                                    min="0" max="23" value="{{ opto_cfg.hour }}">
-                            </div>
-                            <div class="col-auto">
-                                <label class="form-label small mb-1">Minuto</label>
-                                <input type="number" id="optoMinute" class="form-control form-control-sm" style="width:80px"
-                                    min="0" max="59" value="{{ opto_cfg.minute }}">
-                            </div>
-                            <div class="col-auto text-muted small pb-2">Padrão: 16:30</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label small mb-1">Empresas</label>
-                            <div class="d-flex gap-3">
-                                {% for prefix, label in [('2BA','MASTER'),('6VA','MATRIX'),('9MA','AMX')] %}
-                                <div class="form-check">
-                                    <input class="form-check-input opto-company" type="checkbox"
-                                        value="{{ prefix }}" id="optoCo{{ prefix }}"
-                                        {% if prefix in opto_cfg.companies %}checked{% endif %}>
-                                    <label class="form-check-label" for="optoCo{{ prefix }}">{{ prefix }} &ndash; {{ label }}</label>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-
-                        <button type="button" class="btn btn-primary btn-sm" id="btnSaveOpto">
-                            <i class="bi bi-floppy"></i> Salvar configuração
-                        </button>
-                        <span id="optoSaveMsg" class="small ms-2"></span>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-body">
-                        <h6 class="card-title mb-2"><i class="bi bi-play-circle"></i> Gerar manualmente</h6>
-                        <p class="text-muted small mb-3">
-                            Gera as planilhas agora para todos os pedidos adicionados <strong>hoje</strong>,
-                            separados por empresa conforme OS OPTO cadastrada no WMS.
-                        </p>
-                        <button type="button" class="btn btn-success btn-sm" id="btnGenerateOpto">
-                            <i class="bi bi-file-earmark-spreadsheet"></i> Gerar Agora
-                        </button>
-                        <span id="optoGenMsg" class="small ms-2"></span>
-                        <ul id="optoGenFiles" class="mt-2 mb-0 small list-unstyled"></ul>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {# ── TAB LOG ──────────────────────────────────────────────── #}
-            <div class="tab-pane fade" id="tabLog">
-
-                <div class="d-flex align-items-center gap-2 mb-2">
-                    <span class="text-muted small"><i class="bi bi-terminal"></i> WMS.log (tempo real)</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="btnRefreshLog">
-                        <i class="bi bi-arrow-clockwise"></i> Atualizar
-                    </button>
-                    <div class="form-check form-switch mb-0 ms-2">
-                        <input class="form-check-input" type="checkbox" id="autoRefreshLog" checked>
-                        <label class="form-check-label small" for="autoRefreshLog">Auto (5s)</label>
-                    </div>
-                </div>
-                <pre id="logContainer"
-                     style="background:#1a1a1a;color:#d4edda;font-size:11px;height:420px;overflow-y:auto;white-space:pre-wrap;border-radius:6px;padding:10px;">Carregando…</pre>
-            </div>
-
-        </div>{# /tab-content #}
+        </div>
 
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-// ── IP ACL ────────────────────────────────────────────────────────────────
-function _aclFetch(url, formData, resultEl) {
-    resultEl.textContent = 'Aguarde…'; resultEl.className = 'small text-muted';
-    fetch(url, { method: 'POST', body: formData, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
-        .then(d => {
-            resultEl.textContent = d.message;
-            resultEl.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
-            if (d.ok && d.acl) _refreshAclLists(d.acl);
-        })
-        .catch(e => { resultEl.textContent = 'Erro: ' + e; resultEl.className = 'small text-danger'; });
-}
-
-function _ipRow(ip, list) {
-    const li = document.createElement('li');
-    li.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2';
-    li.dataset.ip = ip; li.dataset.list = list;
-    li.innerHTML = `<code>${ip}</code>
-        <button class="btn btn-outline-secondary btn-remove-ip"
-                data-ip="${ip}" data-list="${list}"
-                style="font-size:.7rem;padding:1px 6px" title="Remover">
-            <i class="bi bi-x-lg"></i>
-        </button>`;
-    return li;
-}
-
-function _refreshAclLists(acl) {
-    const bList = document.getElementById('blacklistItems');
-    const wList = document.getElementById('whitelistItems');
-    if (bList) {
-        bList.innerHTML = '';
-        if (acl.blacklist.length) {
-            acl.blacklist.forEach(ip => bList.appendChild(_ipRow(ip, 'blacklist')));
-        } else {
-            bList.innerHTML = '<li class="list-group-item text-muted small py-1 px-2">Nenhum IP bloqueado</li>';
-        }
-        document.getElementById('blacklistCount').textContent = acl.blacklist.length;
-    }
-    if (wList) {
-        wList.innerHTML = '';
-        if (acl.whitelist.length) {
-            acl.whitelist.forEach(ip => wList.appendChild(_ipRow(ip, 'whitelist')));
-        } else {
-            wList.innerHTML = '<li class="list-group-item text-muted small py-1 px-2">Nenhum IP autorizado</li>';
-        }
-        document.getElementById('whitelistCount').textContent = acl.whitelist.length;
-    }
-}
-
-function _aclAddIp(list) {
-    const ip = (document.getElementById('ipAclInput').value || '').trim();
-    const result = document.getElementById('ipAclResult');
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-        result.textContent = 'IP inválido.'; result.className = 'small text-danger'; return;
-    }
-    const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
-    _aclFetch('{{ url_for("admin_ip_add") }}', fd, result);
-}
-
-document.getElementById('btnAddBlacklist')?.addEventListener('click', () => _aclAddIp('blacklist'));
-document.getElementById('btnAddWhitelist')?.addEventListener('click', () => _aclAddIp('whitelist'));
-
-// Botões de adicionar IP a partir das sessões ativas
-document.addEventListener('click', function (e) {
-    const addBtn = e.target.closest('.btn-ip-action');
-    if (addBtn) {
-        const ip   = addBtn.dataset.ip;
-        const list = addBtn.dataset.list;
-        const label = list === 'blacklist' ? 'bloquear' : 'autorizar';
-        if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} o IP ${ip} (${list})?`)) return;
-        const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
-        _aclFetch('{{ url_for("admin_ip_add") }}', fd, document.getElementById('ipAclResult'));
-    }
-
-    const rmBtn = e.target.closest('.btn-remove-ip');
-    if (rmBtn) {
-        const ip   = rmBtn.dataset.ip;
-        const list = rmBtn.dataset.list;
-        if (!confirm(`Remover ${ip} da ${list}?`)) return;
-        const fd = new FormData(); fd.append('ip', ip); fd.append('list', list);
-        _aclFetch('{{ url_for("admin_ip_remove") }}', fd, document.getElementById('ipAclResult'));
-    }
-});
-
-// Modo whitelist exclusivo
-document.getElementById('whitelistModeSwitch')?.addEventListener('change', function () {
-    const fd = new FormData(); fd.append('enabled', this.checked ? 'true' : 'false');
-    fetch('{{ url_for("admin_ip_whitelist_mode") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
-        .then(d => {
-            const el = document.getElementById('ipAclResult');
-            el.textContent = d.message;
-            el.className = 'small ' + (d.ok ? 'text-success' : 'text-danger');
-        });
-});
-
-// ── Manutenção ───────────────────────────────────────────────────────────
-function _maintFetch(action) {
-    const result = document.getElementById('maintResult');
-    const fd = new FormData();
-    fd.append('action', action);
-    if (action === 'start') {
-        fd.append('minutes', document.getElementById('maintMinutes').value || '30');
-        fd.append('message', document.getElementById('maintMessage').value || '');
-    }
-    result.textContent = 'Aguarde…'; result.className = 'small text-muted';
-    fetch('{{ url_for("admin_maintenance") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
-        .then(d => {
-            result.textContent = d.message;
-            result.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
-            if (d.ok && d.state) {
-                const badge = document.getElementById('maintBadge');
-                if (badge) {
-                    badge.textContent = d.state.active ? 'ATIVO' : 'INATIVO';
-                    badge.className   = d.state.active
-                        ? 'badge bg-warning text-dark ms-1'
-                        : 'badge bg-secondary ms-1';
-                }
-            }
-        })
-        .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small text-danger'; });
-}
-
-document.getElementById('btnMaintStart')?.addEventListener('click', function () {
-    const min = parseInt(document.getElementById('maintMinutes').value) || 30;
-    const msg = document.getElementById('maintMessage').value || 'Sistema em manutenção. Aguarde.';
-    if (!confirm(`Ativar modo manutenção por ${min} min?\nTodos os usuários serão desconectados.\n\nMensagem: "${msg}"`)) return;
-    _maintFetch('start');
-});
-
-document.getElementById('btnMaintStop')?.addEventListener('click', function () {
-    if (!confirm('Encerrar modo manutenção e liberar acesso?')) return;
-    _maintFetch('stop');
-});
-
-// ── Banco ─────────────────────────────────────────────────────────────────
-const btnApplyDbMode = document.getElementById('btnApplyDbMode');
-if (btnApplyDbMode) {
-    btnApplyDbMode.addEventListener('click', function () {
-        const mode = document.querySelector('input[name="db_mode_radio"]:checked')?.value;
-        if (!mode) return;
-        const label = mode === 'production' ? 'Produção' : 'Teste';
-        const n = parseInt(document.getElementById('activeUserCount')?.textContent || '0');
-        const warn = n > 1 ? `\n⚠️ ${n} usuário(s) ativo(s) serão afetados.` : '';
-        if (!confirm(`Trocar para o banco de ${label}?${warn}`)) return;
-        const result = document.getElementById('dbModeResult');
-        result.textContent = 'Aplicando…'; result.className = 'small text-muted';
-        const fd = new FormData(); fd.append('mode', mode);
-        fetch('{{ url_for("admin_set_db_mode") }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(r => r.json())
-            .then(d => {
-                result.textContent = d.message;
-                result.className = 'small ' + (d.ok ? 'text-success fw-bold' : 'text-danger');
-                if (d.ok) setTimeout(() => location.reload(), 1200);
-            })
-            .catch(e => { result.textContent = 'Erro: ' + e; result.className = 'small text-danger'; });
-    });
-}
-
-// ── Telegram helpers ───────────────────────────────────────────────────────
-function _tgFetch(url, resultEl, loadingText, extraData) {
-    resultEl.textContent = loadingText || 'Aguarde…'; resultEl.className = 'ms-2 small text-muted';
-    const fd = new FormData();
-    if (extraData) Object.entries(extraData).forEach(([k, v]) => fd.append(k, v));
-    fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
-        .then(d => { resultEl.textContent = d.message; resultEl.className = 'ms-2 small ' + (d.ok ? 'text-success' : 'text-danger'); })
-        .catch(e => { resultEl.textContent = 'Erro: ' + e; resultEl.className = 'ms-2 small text-danger'; });
-}
-
-const btnTest = document.getElementById('btnTestTelegram');
-if (btnTest) btnTest.addEventListener('click', () => _tgFetch('{{ url_for("telegram_test") }}', document.getElementById('testTgResult'), 'Enviando…'));
-
-const btnDaily = document.getElementById('btnSendDailyReport');
-if (btnDaily) btnDaily.addEventListener('click', () => _tgFetch('{{ url_for("telegram_send_daily_report_manual") }}', document.getElementById('dailyReportResult'), 'Enviando…'));
-
-const btnPeriod = document.getElementById('btnSendPeriodReport');
-if (btnPeriod) {
-    btnPeriod.addEventListener('click', function () {
-        const df = document.getElementById('manualDateFrom').value;
-        const dt = document.getElementById('manualDateTo').value;
-        const el = document.getElementById('periodReportResult');
-        if (!df || !dt) { el.textContent = 'Informe as duas datas.'; el.className = 'small text-danger'; return; }
-        _tgFetch('{{ url_for("telegram_send_period_report") }}', el, 'Gerando CSV…', { date_from: df, date_to: dt });
-    });
-}
-
-// ── Período preview ────────────────────────────────────────────────────────
-function updatePeriodPreview() {
-    const mode = document.getElementById('scheduledReportMode')?.value || 'month_to_date';
-    const startDay = parseInt(document.getElementById('scheduledStartDay')?.value) || 1;
-    const endDay   = parseInt(document.getElementById('scheduledEndDay')?.value)   || 0;
-    const endCol   = document.getElementById('endDayCol');
-    const preview  = document.getElementById('periodPreview');
-    if (!preview) return;
-    if (endCol) { endCol.style.opacity = mode === 'custom_days' ? '1' : '0.4'; endCol.style.pointerEvents = mode === 'custom_days' ? '' : 'none'; }
-    const now = new Date();
-    const lastDay  = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
-    const monthStr = now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-    const s = Math.min(startDay, lastDay);
-    let label = '';
-    if      (mode === 'month_to_date') label = `Dia ${s} → ${now.getDate()} (hoje) de ${monthStr}`;
-    else if (mode === 'full_month')    label = `Dia ${s} → ${lastDay} de ${monthStr}`;
-    else                               label = `Dia ${s} → ${endDay <= 0 || endDay > lastDay ? lastDay : endDay} de ${monthStr}`;
-    preview.textContent = '📅 ' + label;
-}
-updatePeriodPreview();
-
-(function setDefaultDates() {
-    const now = new Date();
-    const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
-    const from = document.getElementById('manualDateFrom'), to = document.getElementById('manualDateTo');
-    if (from && !from.value) from.value = `${y}-${m}-01`;
-    if (to   && !to.value)   to.value   = `${y}-${m}-${d}`;
-})();
-
-// ── Log viewer ─────────────────────────────────────────────────────────────
-let _logAutoInterval = null;
-
-function loadLog() {
-    fetch('{{ url_for("admin_log_tail") }}?n=80')
-        .then(r => r.json())
-        .then(d => {
-            const el = document.getElementById('logContainer');
-            if (!el) return;
-            el.textContent = d.lines.join('\n') || '(log vazio)';
-            el.scrollTop = el.scrollHeight;
-        })
-        .catch(() => {});
-}
-
-document.getElementById('btnRefreshLog')?.addEventListener('click', loadLog);
-
-document.getElementById('autoRefreshLog')?.addEventListener('change', function () {
-    if (this.checked) { _logAutoInterval = setInterval(loadLog, 5000); }
-    else              { clearInterval(_logAutoInterval); }
-});
-
-document.querySelector('[data-bs-target="#tabLog"]')?.addEventListener('shown.bs.tab', function () {
-    loadLog();
-    if (document.getElementById('autoRefreshLog')?.checked) {
-        clearInterval(_logAutoInterval);
-        _logAutoInterval = setInterval(loadLog, 5000);
-    }
-});
-
-document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-    if (btn.dataset.bsTarget !== '#tabLog') {
-        btn.addEventListener('shown.bs.tab', () => clearInterval(_logAutoInterval));
-    }
-});
-
-// ── OPTO SCHEDULER ───────────────────────────────────────────────────────────
-function _optoMsg(el, msg, ok) {
-    el.textContent = msg;
-    el.className = 'small ms-2 ' + (ok ? 'text-success fw-bold' : 'text-danger');
-    setTimeout(() => { el.textContent = ''; el.className = 'small ms-2'; }, 5000);
-}
-
-document.getElementById('btnSaveOpto')?.addEventListener('click', function () {
-    const msg = document.getElementById('optoSaveMsg');
-    const fd  = new FormData();
-    fd.append('enabled', document.getElementById('optoEnabled').checked ? '1' : '0');
-    fd.append('hour',    document.getElementById('optoHour').value);
-    fd.append('minute',  document.getElementById('optoMinute').value);
-    document.querySelectorAll('.opto-company:checked').forEach(cb => fd.append('companies', cb.value));
-    fetch('{{ url_for("admin_opto_schedule") }}', {
-        method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(r => r.json())
-    .then(d => _optoMsg(msg, d.message, d.ok))
-    .catch(e => _optoMsg(msg, 'Erro: ' + e, false));
-});
-
-document.getElementById('btnGenerateOpto')?.addEventListener('click', function () {
-    const msg   = document.getElementById('optoGenMsg');
-    const files = document.getElementById('optoGenFiles');
-    msg.textContent = 'Gerando…'; msg.className = 'small ms-2 text-muted';
-    files.innerHTML = '';
-    fetch('{{ url_for("admin_opto_generate_now") }}', {
-        method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(r => r.json())
-    .then(d => {
-        _optoMsg(msg, d.message || (d.error ? 'Erro: ' + d.error : '?'), d.ok);
-        if (d.ok && d.files && d.files.length) {
-            d.files.forEach(f => {
-                const li = document.createElement('li');
-                li.innerHTML = '<i class="bi bi-file-earmark-check text-success"></i> ' + f;
-                files.appendChild(li);
-            });
-        }
-        if (d.ok && d.errors && d.errors.length) {
-            const head = document.createElement('li');
-            head.className = 'mt-2 text-danger fw-semibold';
-            head.innerHTML = '<i class="bi bi-exclamation-triangle"></i> ' +
-                d.errors.length + ' pedido(s) com erro (ver pasta ERROS_INTEGRACAO):';
-            files.appendChild(head);
-            d.errors.forEach(e => {
-                const li = document.createElement('li');
-                li.className = 'text-danger small';
-                li.textContent = '• ' + e.order_id + ' (' + (e.os_opto || 'sem OS OPTO') + ') — ' + e.reason;
-                files.appendChild(li);
-            });
-        }
-    })
-    .catch(e => _optoMsg(msg, 'Erro: ' + e, false));
-});
-</script>
 {% endblock %}
