@@ -3,7 +3,7 @@ WMS - Servidor de TESTE local (porta 5001)
 NUNCA altere o banco de produção.
 
 Usa o banco de teste definido em WMS_MDB_PATH_TEST no .env:
-  \\192.168.1.210\apps master\DATABASE WMS\BD TEST\wms_database_test.mdb
+    \\192.168.1.210\\apps master\\DATABASE WMS\\BD TEST\\wms_database_test.mdb
 """
 import os
 import sys
@@ -48,11 +48,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 import web_app
 
-# Mantém o estado de modo do banco isolado do ambiente de produção.
-web_app.DB_MODE_FILE = os.path.join(SCRIPT_DIR, 'db_mode_test.json')
-web_app.save_db_mode('test')
-
-from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers, start_opto_scheduler
+from web_app import app, start_daily_backup_scheduler
 
 # ---------------------------------------------------------------------------
 # 5. Inicializa e verifica conexão com o banco de TESTE
@@ -80,11 +76,9 @@ print("Pressione CTRL+C para parar\n")
 print("=" * 60)
 
 # ---------------------------------------------------------------------------
-# 6. Inicia schedulers em background (backup + Telegram)
+# 6. Inicia scheduler em background (backup)
 # ---------------------------------------------------------------------------
 start_daily_backup_scheduler()
-start_telegram_schedulers()
-start_opto_scheduler()
 
 # ---------------------------------------------------------------------------
 # 7. Inicia o servidor Flask em modo debug (apenas local, porta 5001)
