@@ -3783,24 +3783,59 @@ def triage_receiving():
 
     unit = get_current_unit()
     current_user = session.get('user', 'Sistema')
+    query_string = request.args.to_dict(flat=True)
+    query_string.pop('edit_id', None)
+    return_to = url_for('triage_receiving', **query_string) if query_string else url_for('triage_receiving')
+
+    def format_datetime_local(value):
+        text = str(value or '').strip()
+        if not text:
+            return ''
+
+        for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y %H:%M:%S'):
+            try:
+                return datetime.strptime(text, fmt).strftime('%Y-%m-%dT%H:%M')
+            except ValueError:
+                pass
+
+        try:
+            return datetime.fromisoformat(text.replace('Z', '+00:00')).strftime('%Y-%m-%dT%H:%M')
+        except ValueError:
+            return text
+
+    editing_receipt = None
+    edit_id = request.args.get('edit_id', '').strip()
+    if edit_id:
+        editing_receipt = db_mdb.get_triage_receipt_by_id(edit_id, unit=unit, sector=TRIAGE_SECTOR)
+        if not editing_receipt:
+            flash('Recebimento nao encontrado para edicao.', 'danger')
+            return redirect(return_to)
+
+    form_order_id_value = str(editing_receipt.get('order_id', '')).strip() if editing_receipt else ''
+    form_customer_code_value = str(editing_receipt.get('customer_code', '')).strip() if editing_receipt else ''
+    form_customer_name_value = str(editing_receipt.get('customer_name', '')).strip() if editing_receipt else ''
+    form_quantity_value = int(editing_receipt.get('quantity') or 1) if editing_receipt else 1
+    form_received_at_value = format_datetime_local(editing_receipt.get('received_at')) if editing_receipt else ''
+    form_notes_value = str(editing_receipt.get('notes', '')).strip() if editing_receipt else ''
 
     if request.method == 'POST':
         form_action = request.form.get('form_action', 'add').strip().lower()
+        post_return_to = request.form.get('return_to', '').strip() or return_to
 
         if form_action == 'import':
             file_obj = request.files.get('import_file')
             if not file_obj or not file_obj.filename:
                 flash('Selecione uma planilha para importar.', 'warning')
-                return redirect(url_for('triage_receiving'))
+                return redirect(post_return_to)
 
             if not file_obj.filename.lower().endswith('.xlsx'):
                 flash('Formato invalido. Envie arquivo .xlsx.', 'danger')
-                return redirect(url_for('triage_receiving'))
+                return redirect(post_return_to)
 
             rows, parse_errors = parse_triage_excel_rows(file_obj)
             if parse_errors and not rows:
                 flash(parse_errors[0], 'danger')
-                return redirect(url_for('triage_receiving'))
+                return redirect(post_return_to)
 
             inserted = 0
             updated = 0
@@ -3838,7 +3873,98 @@ def triage_receiving():
             flash(f'Importacao concluida. Inseridos: {inserted}. Atualizados: {updated}.', 'success')
             if parse_errors:
                 flash(f'Linhas ignoradas por erro: {len(parse_errors)}.', 'warning')
-            return redirect(url_for('triage_receiving'))
+            return redirect(post_return_to)
+
+        if form_action == 'delete':
+            receipt_id = request.form.get('receipt_id', '').strip()
+            if not receipt_id:
+                flash('Selecione um recebimento para excluir.', 'warning')
+                return redirect(post_return_to)
+
+            existing_receipt = db_mdb.get_triage_receipt_by_id(receipt_id, unit=unit, sector=TRIAGE_SECTOR)
+            if not existing_receipt:
+                flash('Recebimento nao encontrado para exclusao.', 'danger')
+                return redirect(post_return_to)
+
+            delete_result = db_mdb.delete_triage_receipt_by_id(receipt_id, unit=unit, sector=TRIAGE_SECTOR)
+            if delete_result.get('deleted'):
+                db_mdb.add_movement(
+                    username=current_user,
+                    action='triage_receipt_delete',
+                    order_id=str(existing_receipt.get('order_id', '')).strip(),
+                    details=f"Exclusao de recebimento triagem | Cliente {existing_receipt.get('customer_code', '')}",
+                    timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    unit=unit,
+                    sector=TRIAGE_SECTOR,
+                )
+                flash('Recebimento excluido com sucesso.', 'success')
+            else:
+                flash('Nao foi possivel excluir o recebimento.', 'danger')
+            return redirect(post_return_to)
+
+        if form_action == 'edit':
+            receipt_id = request.form.get('receipt_id', '').strip()
+            if not receipt_id:
+                flash('Selecione um recebimento para editar.', 'warning')
+                return redirect(post_return_to)
+
+            existing_receipt = db_mdb.get_triage_receipt_by_id(receipt_id, unit=unit, sector=TRIAGE_SECTOR)
+            if not existing_receipt:
+                flash('Recebimento nao encontrado para edicao.', 'danger')
+                return redirect(post_return_to)
+
+            order_id = request.form.get('order_id', '').strip().upper()
+            customer_code = request.form.get('customer_code', '').strip().upper()
+            customer_name = request.form.get('customer_name', '').strip()
+            quantity = parse_int(request.form.get('quantity', '').strip(), default=1)
+            received_at = request.form.get('received_at', '').strip()
+            notes = request.form.get('notes', '').strip()
+
+            if not customer_code or not received_at:
+                flash('Preencha todos os campos obrigatorios da triagem.', 'danger')
+                return redirect(post_return_to)
+
+            customer_name_db = db_mdb.get_triage_customer_name_by_code(
+                customer_code=customer_code,
+                unit=unit,
+                sector=TRIAGE_SECTOR,
+            )
+            customer_name = customer_name_db or customer_name
+
+            if not customer_name:
+                flash('Codigo do cliente nao encontrado na base. Cadastre/importe o cliente primeiro.', 'danger')
+                return redirect(post_return_to)
+
+            result = db_mdb.update_triage_receipt_by_id(
+                receipt_id=receipt_id,
+                order_id=order_id or existing_receipt.get('order_id', ''),
+                customer_code=customer_code,
+                customer_name=customer_name,
+                service_name=existing_receipt.get('service_name', ''),
+                quantity=quantity,
+                received_at=received_at,
+                received_by=existing_receipt.get('received_by') or current_user,
+                notes=notes,
+                status='received',
+                unit=unit,
+                sector=TRIAGE_SECTOR,
+            )
+
+            if result.get('updated'):
+                db_mdb.add_movement(
+                    username=current_user,
+                    action='triage_receipt_edit',
+                    order_id=str(order_id or existing_receipt.get('order_id', '')).strip(),
+                    details=f'Recebimento triagem editado | Cliente {customer_code}',
+                    timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    unit=unit,
+                    sector=TRIAGE_SECTOR,
+                )
+                flash('Recebimento de triagem atualizado com sucesso.', 'success')
+            else:
+                flash('Nao foi possivel atualizar o recebimento.', 'danger')
+
+            return redirect(post_return_to)
 
         order_id = request.form.get('order_id', '').strip().upper()
         customer_code = request.form.get('customer_code', '').strip().upper()
@@ -3849,7 +3975,7 @@ def triage_receiving():
 
         if not customer_code or not received_at:
             flash('Preencha todos os campos obrigatorios da triagem.', 'danger')
-            return redirect(url_for('triage_receiving'))
+            return redirect(post_return_to)
 
         # Pedido sempre automatico e sequencial (nao depende do front-end).
         order_id_num = db_mdb.get_next_triage_order_id(unit=unit, sector=TRIAGE_SECTOR)
@@ -3865,7 +3991,7 @@ def triage_receiving():
 
         if not customer_name:
             flash('Codigo do cliente nao encontrado na base. Cadastre/importe o cliente primeiro.', 'danger')
-            return redirect(url_for('triage_receiving'))
+            return redirect(post_return_to)
 
         active_client_orders = db_mdb.get_active_orders_by_client_number(
             client_number=customer_code,
@@ -3915,7 +4041,7 @@ def triage_receiving():
             )
 
         flash(f'Recebimento de triagem salvo com sucesso. Pedido: {order_id}.', 'success')
-        return redirect(url_for('triage_receiving'))
+        return redirect(post_return_to)
 
     query = request.args.get('q', '').strip()
     filters = {
@@ -3958,6 +4084,14 @@ def triage_receiving():
         customer_code_suggestions=customer_code_suggestions,
         now_iso=now_iso,
         next_order_id=next_order_id,
+        return_to=return_to,
+        editing_receipt=editing_receipt,
+        form_order_id_value=form_order_id_value or next_order_id,
+        form_customer_code_value=form_customer_code_value,
+        form_customer_name_value=form_customer_name_value,
+        form_quantity_value=form_quantity_value,
+        form_received_at_value=form_received_at_value or now_iso,
+        form_notes_value=form_notes_value,
     )
 
 
@@ -3997,7 +4131,7 @@ def triage_client_active_services_lookup():
         client_number=code,
         unit=get_current_unit(),
         sector=TRIAGE_SECTOR,
-        limit=8,
+        limit=None,
     )
 
     items = []

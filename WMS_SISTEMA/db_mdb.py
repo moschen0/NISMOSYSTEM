@@ -1127,11 +1127,18 @@ def get_active_orders_by_client_number(client_number, unit=None, sector=None, li
     orders = dicts_from_rows(cursor, rows)
 
     matched = []
+    max_items = None
+    if limit is not None:
+        try:
+            max_items = int(limit)
+        except Exception:
+            max_items = None
+
     for order in orders:
         order_client = normalize_client_number(order.get('box', ''))
         if order_client == normalized_value:
             matched.append(order)
-            if len(matched) >= int(limit):
+            if max_items is not None and len(matched) >= max_items:
                 break
 
     return matched
@@ -1196,6 +1203,29 @@ def get_triage_receipt_by_order_id(order_id, unit=None, sector=None):
     cursor = conn.cursor()
     conditions = ["order_id = ?"]
     params = [order_id]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT TOP 1 * FROM triage_receipts {where} ORDER BY id DESC", params)
+    row = cursor.fetchone()
+    return dict_from_row(cursor, row)
+
+
+def get_triage_receipt_by_id(receipt_id, unit=None, sector=None):
+    """Retorna recebimento de triagem por ID."""
+    try:
+        receipt_id = int(receipt_id)
+    except Exception:
+        return None
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["id = ?"]
+    params = [receipt_id]
     if unit is not None:
         conditions.append("[unit] = ?")
         params.append(normalize_unit(unit))
@@ -1296,6 +1326,92 @@ def upsert_triage_receipt(
     row = cursor.fetchone()
     triage_id = int(row[0]) if row else None
     return {'id': triage_id, 'is_new': True}
+
+
+def update_triage_receipt_by_id(
+    receipt_id,
+    order_id,
+    customer_code,
+    customer_name,
+    service_name,
+    quantity,
+    received_at,
+    received_by,
+    notes='',
+    status='received',
+    unit=DEFAULT_UNIT,
+    sector='TRIAGEM'
+):
+    """Atualiza um recebimento de triagem por ID."""
+    unit = normalize_unit(unit)
+    sector = sector or 'TRIAGEM'
+
+    try:
+        receipt_id = int(receipt_id)
+    except Exception:
+        return {'id': None, 'updated': False}
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT TOP 1 id FROM triage_receipts WHERE id = ? AND [unit] = ? AND [sector] = ?",
+        (receipt_id, unit, sector)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return {'id': None, 'updated': False}
+
+    now_str = datetime_now_str()
+    cursor.execute(
+        """
+        UPDATE triage_receipts
+        SET order_id = ?, customer_code = ?, customer_name = ?, service_name = ?, quantity = ?,
+            received_at = ?, received_by = ?, notes = ?, [status] = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            str(order_id or '').strip().upper(),
+            str(customer_code or '').strip().upper(),
+            customer_name,
+            str(service_name or '').strip(),
+            int(quantity or 1),
+            received_at,
+            received_by,
+            notes,
+            status,
+            now_str,
+            receipt_id,
+        )
+    )
+    conn.commit()
+    return {'id': receipt_id, 'updated': True}
+
+
+def delete_triage_receipt_by_id(receipt_id, unit=None, sector=None):
+    """Exclui um recebimento de triagem por ID."""
+    try:
+        receipt_id = int(receipt_id)
+    except Exception:
+        return {'id': None, 'deleted': False}
+
+    unit = normalize_unit(unit)
+    sector = sector or 'TRIAGEM'
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT TOP 1 id FROM triage_receipts WHERE id = ? AND [unit] = ? AND [sector] = ?",
+        (receipt_id, unit, sector)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return {'id': None, 'deleted': False}
+
+    cursor.execute(
+        "DELETE FROM triage_receipts WHERE id = ?",
+        (receipt_id,)
+    )
+    conn.commit()
+    return {'id': receipt_id, 'deleted': True}
 
 
 def get_recent_triage_receipts(limit=100, unit=None, sector=None):
