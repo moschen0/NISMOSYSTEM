@@ -3312,10 +3312,11 @@ def remove_shelf():
             for order in orders:
                 order_id = order.get('order_id', '')
                 box = order.get('box', '')
-                db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit)
-                db_mdb.clear_order_position(order_id, unit=unit)
+                order_s = order.get('sector') or sector or DEFAULT_SECTOR
+                db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit, sector=order_s)
+                db_mdb.clear_order_position(order_id, unit=unit, sector=order_s)
                 db_mdb.add_movement(username=current_user, action='order_checkout', position=position, order_id=order_id, box=box,
-                    details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada', timestamp=current_time, unit=unit, sector=sector or DEFAULT_SECTOR)
+                    details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada', timestamp=current_time, unit=unit, sector=order_s)
                 removed_count += 1
         
         all_orders = db_mdb.get_all_orders(unit=unit, sector=sector)
@@ -3330,9 +3331,10 @@ def remove_shelf():
             order_id = order.get('order_id', '')
             box = order.get('box', '')
             position = order.get('position', '')
-            db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit)
+            order_s = order.get('sector') or sector or DEFAULT_SECTOR
+            db_mdb.update_order_status(order_id=order_id, status='removed', removed_at=current_time, removed_by=current_user, unit=unit, sector=order_s)
             db_mdb.add_movement(username=current_user, action='order_checkout', position=position, order_id=order_id, box=box,
-                details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada (posição órfã)', timestamp=current_time, unit=unit, sector=sector or DEFAULT_SECTOR)
+                details=f'Pedido removido automaticamente - Prateleira {zone}-{module} deletada (posição órfã)', timestamp=current_time, unit=unit, sector=order_s)
             removed_count += 1
         
         db_mdb.delete_shelf(zone, module, unit=unit)
@@ -3391,6 +3393,7 @@ def remove_zone():
             for order in orders:
                 order_id = order.get('order_id', '')
                 box = order.get('box', '')
+                order_s = order.get('sector') or sector or DEFAULT_SECTOR
                 
                 # Marcar pedido como removido
                 db_mdb.update_order_status(
@@ -3398,7 +3401,8 @@ def remove_zone():
                     status='removed',
                     removed_at=current_time,
                     removed_by=current_user,
-                    unit=unit
+                    unit=unit,
+                    sector=order_s
                 )
                 
                 # Registrar movimento de saída
@@ -3411,7 +3415,7 @@ def remove_zone():
                     details=f'Pedido removido automaticamente - Zona {zone_code} deletada',
                     timestamp=current_time,
                     unit=unit,
-                    sector=sector or DEFAULT_SECTOR
+                    sector=order_s
                 )
                 
                 total_removed_orders += 1
@@ -3431,6 +3435,7 @@ def remove_zone():
         order_id = order.get('order_id', '')
         box = order.get('box', '')
         position = order.get('position', '')
+        order_s = order.get('sector') or sector or DEFAULT_SECTOR
         
         # Marcar pedido como removido
         db_mdb.update_order_status(
@@ -3438,9 +3443,10 @@ def remove_zone():
             status='removed',
             removed_at=current_time,
             removed_by=current_user,
-            unit=unit
+            unit=unit,
+            sector=order_s
         )
-        db_mdb.clear_order_position(order_id, unit=unit)
+        db_mdb.clear_order_position(order_id, unit=unit, sector=order_s)
         
         # Registrar movimento de saída
         db_mdb.add_movement(
@@ -3452,7 +3458,7 @@ def remove_zone():
             details=f'Pedido removido automaticamente - Zona {zone} deletada (posição órfã)',
             timestamp=current_time,
             unit=unit,
-            sector=sector or DEFAULT_SECTOR
+            sector=order_s
         )
         
         total_removed_orders += 1
@@ -3529,6 +3535,11 @@ def add_order():
         if not zone:
             flash('Selecione uma zona para alocar o pedido', 'danger')
             return redirect_add_order(bipador=bipador_mode, quick=quick_mode)
+
+        # Bloquear adição de pedidos no modo "Todos os setores" — setor ambíguo
+        if sector is None:
+            flash('Selecione um setor específico para adicionar pedidos. Use "Trocar Setor" no menu superior.', 'warning')
+            return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
         if not order_id:
             if is_triage_sector or is_triage_zone(zone, unit):
@@ -3575,10 +3586,10 @@ def add_order():
             flash(f'Nenhuma posição disponível na zona {zone}', 'warning')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
-        # Verificar se pedido ja existe
-        existing_order = db_mdb.get_order_by_id(order_id, unit=unit)
+        # Verificar se pedido ja existe NO SETOR ATUAL (permite mesmo ID em setor diferente)
+        existing_order = db_mdb.get_order_by_id(order_id, unit=unit, sector=sector)
         if existing_order and existing_order.get('status', 'add') == 'add':
-            flash(f'Pedido {order_id} já existe no sistema!', 'danger')
+            flash(f'Pedido {order_id} já está ativo no setor {sector}!', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
         
         # Validar capacidade usando o dicionário de contagens
@@ -3598,34 +3609,21 @@ def add_order():
         now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
         try:
-            # Se ja existe como removed, reativa o registro existente.
-            if existing_order and existing_order.get('status') == 'removed':
-                db_mdb.reactivate_order(
-                    order_id=order_id,
-                    position=position,
-                    box=box,
-                    timestamp=now_str,
-                    unit=unit,
-                    os_opto=os_opto
-                )
-                movement_action = 'order_reactivate'
-                movement_details = 'Pedido reativado'
-            else:
-                # Novo pedido: insere normalmente.
-                db_mdb.add_order(
-                    position=position,
-                    order_id=order_id,
-                    box=box,
-                    date=now_str,
-                    timestamp=now_str,
-                    created_by=session.get('user', 'Sistema'),
-                    status='add',
-                    unit=unit,
-                    sector=sector,
-                    os_opto=os_opto
-                )
-                movement_action = 'order_add'
-                movement_details = 'Pedido adicionado'
+            # Sempre insere novo registro — permite mesmo ID em setores distintos
+            db_mdb.add_order(
+                position=position,
+                order_id=order_id,
+                box=box,
+                date=now_str,
+                timestamp=now_str,
+                created_by=session.get('user', 'Sistema'),
+                status='add',
+                unit=unit,
+                sector=sector,
+                os_opto=os_opto
+            )
+            movement_action = 'order_add'
+            movement_details = 'Pedido adicionado'
         except Exception:
             flash(f'Falha ao salvar o pedido {order_id}. Tente novamente.', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
@@ -4046,11 +4044,16 @@ def checkout_order():
         if not is_valid_triage_os(order_id):
             flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
             return redirect(url_for('checkout_order'))
-        
-        order = db_mdb.get_order_by_id(order_id, unit=unit)
+
+        # Bloquear saída no modo "Todos os setores" — setor ambíguo
+        if sector is None:
+            flash('Selecione um setor específico para dar saída em pedidos. Use "Trocar Setor" no menu superior.', 'warning')
+            return redirect(url_for('checkout_order'))
+
+        order = db_mdb.get_order_by_id(order_id, unit=unit, sector=sector)
         
         if not order or order.get('status', 'add') != 'add':
-            flash(f'Pedido {order_id} não encontrado ou já foi removido', 'warning')
+            flash(f'Pedido {order_id} não encontrado no setor {sector} ou já foi removido', 'warning')
             return redirect(url_for('checkout_order'))
         
         # Atualizar status para removido
@@ -4062,7 +4065,8 @@ def checkout_order():
             status='removed',
             removed_at=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             removed_by=session.get('user', 'Sistema'),
-            unit=unit
+            unit=unit,
+            sector=sector
         )
         
         # Registrar movimento
@@ -4094,11 +4098,13 @@ def remove_order():
     unit = get_current_unit()
     position = request.form.get('position', '').strip().upper()
     order_id = request.form.get('order_id', '').strip()
-    
-    order = db_mdb.get_order_by_id(order_id, unit=unit)
-    
+    order_sector = get_current_sector()  # pode ser None em modo ALL
+
+    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=order_sector)
+
     if order and order.get('position') == position:
-        db_mdb.update_order_status(order_id, 'removed', unit=unit)
+        actual_sector = order.get('sector') or order_sector or DEFAULT_SECTOR
+        db_mdb.update_order_status(order_id, 'removed', unit=unit, sector=actual_sector)
         db_mdb.add_movement(
             username=session.get('user'),
             action='order_remove',
@@ -4108,7 +4114,7 @@ def remove_order():
             details='Pedido removido',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             unit=unit,
-            sector=get_current_sector() or DEFAULT_SECTOR
+            sector=actual_sector
         )
         flash(f'Pedido {order_id} removido', 'success')
         wms_logger.info(f'ORDER REMOVE | pedido={order_id} pos={position} user={session.get("user")} unit={unit}')
@@ -4145,16 +4151,17 @@ def move_order():
         flash('Origem e destino são iguais', 'warning')
         return redirect(url_for('position_detail', code=position))
     
-    # Buscar pedido
-    order = db_mdb.get_order_by_id(order_id, unit=unit)
+    # Buscar pedido — escopar pelo setor atual (None em ALL: retorna qualquer setor)
+    move_sector = get_current_sector()
+    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=move_sector)
     
     if not order or order.get('position') != position:
         flash('Pedido não encontrado', 'danger')
         return redirect(url_for('position_detail', code=position))
     
-    # Verificar capacidade do destino
-    dest_count = count_orders_at_position(destination, unit=unit, sector=get_current_sector())
-    shelves = db_mdb.get_all_shelves(unit=unit, sector=get_current_sector())
+    actual_sector = order.get('sector') or move_sector or DEFAULT_SECTOR
+    dest_count = count_orders_at_position(destination, unit=unit, sector=actual_sector)
+    shelves = db_mdb.get_all_shelves(unit=unit, sector=actual_sector)
     
     dest_capacity = 7  # default
     for shelf in shelves:
@@ -4171,7 +4178,7 @@ def move_order():
     # Mover pedido usando UPDATE
     # Para isso, precisamos apenas atualizar a posição do pedido.
     try:
-        db_mdb.update_order_position(order_id, destination, unit=unit)
+        db_mdb.update_order_position(order_id, destination, unit=unit, sector=actual_sector)
         
         # Registrar movimento
         db_mdb.add_movement(
@@ -4183,7 +4190,7 @@ def move_order():
             details=f'Pedido movido de {position} para {destination}',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             unit=unit,
-            sector=get_current_sector() or DEFAULT_SECTOR
+            sector=actual_sector
         )
         
         flash(f'Pedido {order_id} movido de {position} para {destination}', 'success')
@@ -4231,10 +4238,11 @@ def api_remove_order():
     order_id = request.form.get('order_id', '').strip()
     if not position or not order_id:
         return jsonify({'ok': False, 'message': 'Dados insuficientes'}), 400
-    order = db_mdb.get_order_by_id(order_id, unit=unit)
+    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=get_current_sector())
     if not order or order.get('position') != position:
         return jsonify({'ok': False, 'message': 'Pedido não encontrado'}), 404
-    db_mdb.update_order_status(order_id, 'removed', unit=unit)
+    api_remove_sector = order.get('sector') or get_current_sector() or DEFAULT_SECTOR
+    db_mdb.update_order_status(order_id, 'removed', unit=unit, sector=api_remove_sector)
     db_mdb.add_movement(
         username=session.get('user'),
         action='order_remove',
@@ -4244,7 +4252,7 @@ def api_remove_order():
         details='Pedido removido via painel visual',
         timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         unit=unit,
-        sector=get_current_sector() or DEFAULT_SECTOR
+        sector=api_remove_sector
     )
     wms_logger.info(f'ORDER REMOVE (api) | pedido={order_id} pos={position} user={session.get("user")} unit={unit}')
     return jsonify({'ok': True, 'message': f'Pedido {order_id} removido'})
@@ -4269,10 +4277,11 @@ def api_move_order():
         return jsonify({'ok': False, 'message': 'Dados insuficientes'}), 400
     if position == destination:
         return jsonify({'ok': False, 'message': 'Origem e destino são iguais'})
-    order = db_mdb.get_order_by_id(order_id, unit=unit)
+    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=sector)
     if not order or order.get('position') != position:
         return jsonify({'ok': False, 'message': 'Pedido não encontrado'}), 404
-    dest_count = count_orders_at_position(destination, unit=unit, sector=sector)
+    api_move_sector = order.get('sector') or sector or DEFAULT_SECTOR
+    dest_count = count_orders_at_position(destination, unit=unit, sector=api_move_sector)
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     dest_capacity = 7
     for shelf in shelves:
@@ -4284,7 +4293,7 @@ def api_move_order():
     if dest_count >= dest_capacity:
         return jsonify({'ok': False, 'message': f'Posição {destination} está cheia ({dest_count}/{dest_capacity})'})
     try:
-        db_mdb.update_order_position(order_id, destination, unit=unit)
+        db_mdb.update_order_position(order_id, destination, unit=unit, sector=api_move_sector)
         db_mdb.add_movement(
             username=session.get('user'),
             action='order_move',
@@ -4294,7 +4303,7 @@ def api_move_order():
             details=f'Pedido movido de {position} para {destination} via painel visual',
             timestamp=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             unit=unit,
-            sector=sector or DEFAULT_SECTOR
+            sector=api_move_sector
         )
         wms_logger.info(f'ORDER MOVE (api) | pedido={order_id} {position}->{destination} user={current_user} unit={unit}')
         return jsonify({'ok': True, 'message': f'Pedido {order_id} movido para {destination}'})
@@ -4406,9 +4415,25 @@ def search_orders():
     # Busca por query string
     query = request.args.get('q', '').strip().upper()
     
+    triage_matches = []
     if query:
         filtered_orders = db_mdb.search_orders(query, unit=unit, sector=sector)
-        all_orders = filtered_orders
+        triage_matches = db_mdb.search_triage_receipts(query, unit=unit, sector=TRIAGE_SECTOR)
+
+        triage_order_ids = [item.get('order_id') for item in triage_matches if item.get('order_id')]
+        triage_orders = db_mdb.get_active_orders_by_order_ids(
+            triage_order_ids,
+            unit=unit,
+            sector=TRIAGE_SECTOR,
+        )
+
+        seen_order_ids = set()
+        all_orders = []
+        for order in filtered_orders + triage_orders:
+            order_id = order.get('order_id')
+            if order_id and order_id not in seen_order_ids:
+                all_orders.append(order)
+                seen_order_ids.add(order_id)
 
     order_ids = [o.get('order_id') for o in all_orders if o.get('order_id')]
     triage_map = {}
@@ -4427,10 +4452,6 @@ def search_orders():
         else:
             order['triage_received'] = False
 
-    triage_matches = []
-    if query:
-        triage_matches = db_mdb.search_triage_receipts(query, unit=unit, sector=TRIAGE_SECTOR)
-    
     return render_template('search.html', 
                          orders=all_orders, 
                          total=len(all_orders),

@@ -650,15 +650,26 @@ def get_all_orders(status_filter=None, unit=None, sector=None):
     orders = dicts_from_rows(cursor, rows)
     return orders
 
-def get_order_by_id(order_id, unit=None):
-    """Retorna um pedido específico pelo ID"""
+def get_order_by_id(order_id, unit=None, sector=None):
+    """Retorna um pedido específico pelo ID.
+
+    Quando sector é informado a busca é restrita a (unit, sector, order_id),
+    permitindo o mesmo order_id em setores distintos da mesma unidade.
+    Retorna o registro mais recente quando há múltiplos (ex.: removido + ativo).
+    """
     conn = get_connection()
     cursor = conn.cursor()
+    conditions = ["order_id = ?"]
+    params = [order_id]
     if unit is not None:
         unit = normalize_unit(unit)
-        cursor.execute("SELECT * FROM orders WHERE order_id = ? AND [unit] = ?", (order_id, unit))
-    else:
-        cursor.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,))
+        conditions.append("[unit] = ?")
+        params.append(unit)
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
     row = cursor.fetchone()
     order = dict_from_row(cursor, row)
     return order
@@ -677,77 +688,102 @@ def add_order(position, order_id, box, date, timestamp, created_by, status='add'
     )
     conn.commit()
 
-def update_order_status(order_id, status, removed_at=None, removed_by=None, unit=None):
-    """Atualiza o status de um pedido"""
+def update_order_status(order_id, status, removed_at=None, removed_by=None, unit=None, sector=None):
+    """Atualiza o status de um pedido.
+
+    Quando sector é informado a atualização é restrita a (unit, sector, order_id)
+    para não afetar registros homônimos em outros setores.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     activity_flag = 'ativo' if str(status).strip().lower() == 'add' else 'inativo'
 
+    id_conditions = ["order_id = ?"]
+    id_params = [order_id]
+    if unit is not None:
+        unit = normalize_unit(unit)
+        id_conditions.append("[unit] = ?")
+        id_params.append(unit)
+    if sector is not None:
+        id_conditions.append("[sector] = ?")
+        id_params.append(sector)
+    where = f"WHERE {' AND '.join(id_conditions)}"
+
     if removed_at and removed_by:
-        if unit is not None:
-            unit = normalize_unit(unit)
-            cursor.execute(
-                "UPDATE orders SET [status] = ?, ativo_inativo = ?, removed_at = ?, removed_by = ? WHERE order_id = ? AND [unit] = ?",
-                (status, activity_flag, removed_at, removed_by, order_id, unit)
-            )
-        else:
-            cursor.execute(
-                "UPDATE orders SET [status] = ?, ativo_inativo = ?, removed_at = ?, removed_by = ? WHERE order_id = ?",
-                (status, activity_flag, removed_at, removed_by, order_id)
-            )
+        cursor.execute(
+            f"UPDATE orders SET [status] = ?, ativo_inativo = ?, removed_at = ?, removed_by = ? {where}",
+            (status, activity_flag, removed_at, removed_by, *id_params)
+        )
     else:
-        if unit is not None:
-            unit = normalize_unit(unit)
-            cursor.execute("UPDATE orders SET [status] = ?, ativo_inativo = ? WHERE order_id = ? AND [unit] = ?", (status, activity_flag, order_id, unit))
-        else:
-            cursor.execute("UPDATE orders SET [status] = ?, ativo_inativo = ? WHERE order_id = ?", (status, activity_flag, order_id))
-    
+        cursor.execute(
+            f"UPDATE orders SET [status] = ?, ativo_inativo = ? {where}",
+            (status, activity_flag, *id_params)
+        )
+
     conn.commit()
 
-def reactivate_order(order_id, position, box, timestamp, unit=None, os_opto=''):
-    """Reativa pedido removido sem criar novo registro (evita conflito UNIQUE)."""
+def reactivate_order(order_id, position, box, timestamp, unit=None, sector=None, os_opto=''):
+    """Reativa pedido removido sem criar novo registro.
+
+    Quando sector é informado a atualização é restrita a (unit, sector, order_id).
+    """
     conn = get_connection()
     cursor = conn.cursor()
     os_opto = str(os_opto or '').strip().upper()
+    id_conditions = ["order_id = ?"]
+    id_params = [order_id]
     if unit is not None:
         unit = normalize_unit(unit)
-        cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL, os_opto = ? WHERE order_id = ? AND [unit] = ?",
-            (position, box, timestamp, os_opto, order_id, unit)
-        )
-    else:
-        cursor.execute(
-            "UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL, os_opto = ? WHERE order_id = ?",
-            (position, box, timestamp, os_opto, order_id)
-        )
+        id_conditions.append("[unit] = ?")
+        id_params.append(unit)
+    if sector is not None:
+        id_conditions.append("[sector] = ?")
+        id_params.append(sector)
+    where = f"WHERE {' AND '.join(id_conditions)}"
+    cursor.execute(
+        f"UPDATE orders SET position = ?, box = ?, [status] = 'add', ativo_inativo = 'ativo', [timestamp] = ?, removed_at = NULL, removed_by = NULL, os_opto = ? {where}",
+        (position, box, timestamp, os_opto, *id_params)
+    )
     conn.commit()
 
-def clear_order_position(order_id, unit=None):
-    """Limpa a posição de um pedido (evita reaparecer em visões por posição/andar)"""
+def clear_order_position(order_id, unit=None, sector=None):
+    """Limpa a posição de um pedido (evita reaparecer em visões por posição/andar).
+
+    Quando sector é informado a atualização é restrita a (unit, sector, order_id).
+    """
     conn = get_connection()
     cursor = conn.cursor()
+    id_conditions = ["order_id = ?"]
+    id_params = [order_id]
     if unit is not None:
         unit = normalize_unit(unit)
-        cursor.execute("UPDATE orders SET position = '' WHERE order_id = ? AND [unit] = ?", (order_id, unit))
-    else:
-        cursor.execute("UPDATE orders SET position = '' WHERE order_id = ?", (order_id,))
+        id_conditions.append("[unit] = ?")
+        id_params.append(unit)
+    if sector is not None:
+        id_conditions.append("[sector] = ?")
+        id_params.append(sector)
+    where = f"WHERE {' AND '.join(id_conditions)}"
+    cursor.execute(f"UPDATE orders SET position = '' {where}", id_params)
     conn.commit()
 
-def update_order_position(order_id, destination, unit=None):
-    """Atualiza apenas a posicao de um pedido ativo."""
+def update_order_position(order_id, destination, unit=None, sector=None):
+    """Atualiza apenas a posicao de um pedido ativo.
+
+    Quando sector é informado a atualização é restrita a (unit, sector, order_id).
+    """
     conn = get_connection()
     cursor = conn.cursor()
+    id_conditions = ["order_id = ?", "[status] = 'add'"]
+    id_params = [order_id]
     if unit is not None:
         unit = normalize_unit(unit)
-        cursor.execute(
-            "UPDATE orders SET position = ? WHERE order_id = ? AND [status] = 'add' AND [unit] = ?",
-            (destination, order_id, unit)
-        )
-    else:
-        cursor.execute(
-            "UPDATE orders SET position = ? WHERE order_id = ? AND [status] = 'add'",
-            (destination, order_id)
-        )
+        id_conditions.append("[unit] = ?")
+        id_params.append(unit)
+    if sector is not None:
+        id_conditions.append("[sector] = ?")
+        id_params.append(sector)
+    where = f"WHERE {' AND '.join(id_conditions)}"
+    cursor.execute(f"UPDATE orders SET position = ? {where}", (destination, *id_params))
     conn.commit()
 
 def count_orders_in_position(position, unit=None, sector=None):
@@ -984,6 +1020,31 @@ def search_orders(query, unit=None, sector=None):
     rows = cursor.fetchall()
     orders = dicts_from_rows(cursor, rows)
     return orders
+
+
+def get_active_orders_by_order_ids(order_ids, unit=None, sector=None):
+    """Retorna pedidos ativos/endereço por uma lista de order_id."""
+    clean_ids = [str(x or '').strip().upper() for x in (order_ids or []) if str(x or '').strip()]
+    if not clean_ids:
+        return []
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    placeholders = ','.join(['?'] * len(clean_ids))
+    conditions = [f"order_id IN ({placeholders})", "[status] = 'add'"]
+    params = list(clean_ids)
+
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
+    rows = cursor.fetchall()
+    return dicts_from_rows(cursor, rows)
 
 def get_orders_by_position(position, unit=None, sector=None):
     """Retorna pedidos de uma posição específica"""

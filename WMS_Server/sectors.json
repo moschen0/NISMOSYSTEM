@@ -3,18 +3,41 @@
     "name": "AR",
     "description": "Setor AR",
     "status": "active",
-    "created_at": "12/05/2026 11:41:56"
+    "created_at": "12/05/2026 11:41:56",
+    "permissions": [
+      "dashboard",
+      "audit",
+      "audit_expected_orders",
+      "confirmations",
+      "search",
+      "checkout",
+      "os_opto",
+      "movements"
+    ]
   },
   "TRIAGEM": {
     "name": "TRIAGEM",
     "description": "Setor de recebimento e triagem",
     "status": "active",
-    "created_at": "25/05/2026 00:00:00"
+    "created_at": "25/05/2026 00:00:00",
+    "permissions": [
+      "dashboard",
+      "audit",
+      "audit_expected_orders",
+      "search",
+      "search_cross_sector",
+      "checkout",
+      "triage",
+      "etiquetas"
+    ]
   },
   "VTA": {
     "name": "VTA",
     "description": "Setor VTA",
     "status": "active",
-    "created_at": "12/05/2026 11:41:56"
+    "created_at": "12/05/2026 11:41:56",
+    "permissions": [
+      "search"
+    ]
   }
 }

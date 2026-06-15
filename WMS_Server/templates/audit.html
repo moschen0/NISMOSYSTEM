@@ -1,0 +1,720 @@
+{% extends "base.html" %}
+
+{% block title %}Conferência de Endereço — WMS{% endblock %}
+
+{% block content %}
+
+{# ── FASE 1: Seleção de Endereço ─────────────────────────────────────────── #}
+{% if not conference_mode %}
+
+  <h2 class="mb-1"><i class="bi bi-clipboard2-check"></i> Conferência de Endereço</h2>
+  <p class="text-muted mb-4">
+    Digite o endereço que deseja conferir. Use <strong>ZONA-MÓDULO</strong> para conferir
+    tudo na prateleira, ou <strong>ZONA-MÓDULO-ANDAR</strong> para um andar específico.
+  </p>
+
+  <form method="POST" action="{{ url_for('audit_select') }}" id="auditSelectForm">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label fw-semibold">Endereço</label>
+        <input type="text" name="address" id="addressInput" class="form-control form-control-lg"
+               placeholder="Ex: P-01 ou P-01-02"
+               pattern="[A-Za-z0-9][A-Za-z0-9\-]*"
+               autocomplete="off" autofocus required
+               value="{{ prefill }}">
+        <div class="form-text">
+          <i class="bi bi-info-circle"></i>
+          <code>P-01</code> → tudo na prateleira &nbsp;|&nbsp;
+          <code>P-01-02</code> → somente o andar 02
+        </div>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+          <i class="bi bi-play-circle"></i> Iniciar Conferência
+        </button>
+      </div>
+    </div>
+  </form>
+
+  {% if zone_module_data %}
+  <hr class="my-4">
+  <p class="text-muted mb-2 small"><i class="bi bi-grid-3x3-gap"></i> Selecione prateleira ou um andar específico:</p>
+  <div class="d-flex flex-column gap-2">
+    {% for item in zone_module_data %}
+    <div class="d-flex flex-wrap align-items-center gap-1">
+      <button type="button"
+              class="btn btn-outline-secondary btn-sm fw-semibold"
+              style="min-width:68px;"
+              title="Conferir módulo completo: {{ item.address }}"
+              onclick="fillAudit('{{ item.address }}')">
+        <i class="bi bi-layers-fill" style="font-size:10px;"></i> {{ item.address }}
+      </button>
+      <span class="text-muted" style="font-size:10px;">andares:</span>
+      {% for lvl in item.levels %}
+      <button type="button"
+              class="btn btn-outline-primary btn-sm"
+              style="min-width:34px;"
+              title="Conferir {{ item.address }}-{{ '%02d'|format(lvl) }}"
+              onclick="fillAudit('{{ item.address }}-{{ '%02d'|format(lvl) }}')">
+        {{ lvl }}
+      </button>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+{# ── FASE 2: Modo Conferência ────────────────────────────────────────────── #}
+{% else %}
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">
+        <i class="bi bi-clipboard2-check"></i>
+        Conferência &mdash; <span class="text-primary font-monospace">{{ address }}</span>
+      </h2>
+      <small class="text-muted">
+        {{ positions|length }} posição(ões) auditada(s):
+        {% for p in positions %}<span class="badge bg-secondary font-monospace">{{ p }}</span> {% endfor %}
+      </small>
+      {% if not is_admin %}
+      <div class="mt-1">
+        <span class="badge bg-secondary" style="font-size:10px; font-weight:400;">
+          <i class="bi bi-eye-slash"></i> Modo cego — bipe o que está na prateleira
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    <a href="{{ url_for('audit_select') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> Outro endereço
+    </a>
+  </div>
+
+  <div class="row g-4">
+
+    {# ── Coluna Esquerda: pedidos esperados (somente admin) ── #}
+    {% if is_admin %}
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-dark text-white">
+          <i class="bi bi-list-check"></i>
+          <strong>Esperado no sistema</strong>
+          <span class="badge bg-light text-dark ms-1">{{ expected_orders|length }}</span>
+        </div>
+        <div class="card-body p-2" style="max-height:420px; overflow-y:auto;">
+          {% if expected_orders %}
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Pedido</th>
+                <th>Caixa</th>
+                <th>Posição</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for o in expected_orders | sort(attribute='position') %}
+              <tr id="exp-{{ o.order_id }}">
+                <td class="font-monospace">{{ o.order_id }}</td>
+                <td>{{ o.box or '—' }}</td>
+                <td><span class="badge bg-secondary font-monospace">{{ o.position }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3"></i>
+            <p class="mb-0 mt-1">Nenhum pedido cadastrado aqui.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Coluna Direita: área de bipagem ── #}
+    <div class="{{ 'col-lg-8' if is_admin else 'col-12' }}">
+
+      {% if not result %}
+      {# ── Formulário de bipagem ── #}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <i class="bi bi-upc-scan"></i>
+          <strong>Bipe os pedidos físicos</strong>
+        </div>
+        <div class="card-body">
+          <p class="text-muted mb-3">
+            Escaneie ou digite os IDs dos pedidos que estão <em>fisicamente</em> no endereço
+            <strong class="font-monospace">{{ address }}</strong>.
+            Cada leitura é adicionada automaticamente à lista.
+          </p>
+
+          {% if history_enabled %}
+          <div class="alert alert-light border mb-3" data-autodismiss="false">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div class="fw-semibold">
+                <i class="bi bi-clock-history"></i>
+                Histórico de Conferências (últimas {{ history_limit }})
+              </div>
+              <span id="historySaveStatus" class="small text-muted">Aguardando bipagem...</span>
+            </div>
+
+            <div class="row g-2">
+              <div class="col-md-8">
+                <select id="historySelect" class="form-select form-select-sm">
+                  <option value="">Carregando histórico...</option>
+                </select>
+              </div>
+              <div class="col-md-4 d-grid d-md-flex gap-2">
+                <button type="button" class="btn btn-outline-primary btn-sm flex-fill" id="btnResumeLatest">
+                  <i class="bi bi-arrow-clockwise"></i> Retomar última
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="btnLoadHistory">
+                  <i class="bi bi-upload"></i> Carregar
+                </button>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
+          {# Campo de bipagem em tempo real #}
+          <div class="input-group mb-3">
+            <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+            <input type="text" id="scanInput" class="form-control form-control-lg font-monospace"
+                   placeholder="Bipe o pedido aqui (Enter para adicionar)"
+                   autocomplete="off" autofocus
+                   maxlength="8" inputmode="numeric">
+            <button class="btn btn-success" type="button" id="btnAddScan">
+              <i class="bi bi-plus-lg"></i> Adicionar
+            </button>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-muted small">Lista de bipagens (<span id="scanCount">0</span>):</span>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-success btn-sm" id="btnSaveDraft">
+                <i class="bi bi-floppy"></i> Salvar
+              </button>
+              <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearAll">
+                <i class="bi bi-trash"></i> Limpar tudo
+              </button>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('audit_conference', address=address) }}" id="auditForm">
+            <input type="hidden" name="draft_id" id="draftIdInput" value="{{ resume_draft_id or '' }}">
+            <textarea name="scanned_ids" id="scannedList" class="form-control font-monospace mb-3"
+                      rows="8" placeholder="(lista de IDs bipados aparecerá aqui)"
+                      style="font-size:0.85rem;">{{ scanned_raw }}</textarea>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-warning btn-lg fw-bold" id="btnConferir">
+                <i class="bi bi-check2-all"></i> Conferir
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {% else %}
+      {# ── Resultado da Conferência ── #}
+
+      {# Resumo em cards #}
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="card text-center border-0 shadow-sm" style="background:#166534; color:white;">
+            <div class="card-body py-3">
+              <div class="fs-1 fw-bold">{{ result.ok|length }}</div>
+              <div class="small">OK</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card text-center border-0 shadow-sm" style="background:#991b1b; color:white;">
+            <div class="card-body py-3">
+              <div class="fs-1 fw-bold">{{ result.missing|length }}</div>
+              <div class="small">Faltando</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card text-center border-0 shadow-sm" style="background:#FFDE21; color:#1a1a1a;">
+            <div class="card-body py-3">
+              <div class="fs-1 fw-bold">{{ result.wrong_location|length }}</div>
+              <div class="small">End. errado</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card text-center border-0 shadow-sm" style="background:#0a0a0a; color:white;">
+            <div class="card-body py-3">
+              <div class="fs-1 fw-bold">{{ result.not_found|length }}</div>
+              <div class="small">Não cadastrado</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── OK ── #}
+      {% if result.ok %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header text-white" style="background:#166534;">
+          <i class="bi bi-check-circle-fill"></i>
+          <strong>Conferidos com sucesso ({{ result.ok|length }})</strong>
+        </div>
+        <div class="card-body p-2">
+          <div class="d-flex flex-wrap gap-1">
+            {% for oid in result.ok %}
+            <span class="badge font-monospace" style="background:#166534; font-size:0.9rem;">{{ oid }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Faltando ── #}
+      {% if result.missing %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header text-white" style="background:#991b1b;">
+          <i class="bi bi-x-circle-fill"></i>
+          <strong>Faltando — no sistema mas não bipado ({{ result.missing|length }})</strong>
+        </div>
+        <div class="card-body p-2">
+          <table class="table table-sm mb-0">
+            <thead class="table-light">
+              <tr><th>Pedido</th><th>Caixa</th><th>Posição</th></tr>
+            </thead>
+            <tbody>
+              {% for o in result.missing %}
+              <tr>
+                <td class="font-monospace fw-bold text-danger">{{ o.order_id }}</td>
+                <td>{{ o.box or '—' }}</td>
+                <td><span class="badge bg-secondary font-monospace">{{ o.position }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Endereço errado ── #}
+      {% if result.wrong_location %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header" style="background:#FFDE21; color:#1a1a1a;">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <strong>Endereço errado — bipado aqui mas cadastrado em outro local ({{ result.wrong_location|length }})</strong>
+        </div>
+        <div class="card-body p-2">
+          <table class="table table-sm mb-0">
+            <thead class="table-light">
+              <tr><th>Pedido bipado</th><th>Caixa</th><th>Posição no sistema</th></tr>
+            </thead>
+            <tbody>
+              {% for item in result.wrong_location %}
+              <tr>
+                <td class="font-monospace fw-bold" style="color:#92400e;">{{ item.scanned_id }}</td>
+                <td>{{ item.order.box or '—' }}</td>
+                <td>
+                  <a href="{{ url_for('position_detail', code=item.order.position) }}"
+                     class="badge bg-warning text-dark font-monospace text-decoration-none">
+                    {{ item.order.position }} <i class="bi bi-box-arrow-up-right"></i>
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Não cadastrado ── #}
+      {% if result.not_found %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header text-white" style="background:#0a0a0a;">
+          <i class="bi bi-question-circle-fill"></i>
+          <strong>Não cadastrado no sistema ({{ result.not_found|length }})</strong>
+        </div>
+        <div class="card-body p-2">
+          <div class="d-flex flex-wrap gap-1">
+            {% for oid in result.not_found %}
+            <span class="badge font-monospace bg-dark" style="font-size:0.9rem;">{{ oid }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Ação: repetir conferência #}
+      <div class="d-flex gap-2 mt-3 flex-wrap">
+        <a href="{{ url_for('audit_conference', address=address) }}" class="btn btn-outline-primary">
+          <i class="bi bi-arrow-counterclockwise"></i> Refazer conferência
+        </a>
+        <a href="{{ url_for('audit_select') }}" class="btn btn-outline-secondary">
+          <i class="bi bi-grid"></i> Outro endereço
+        </a>
+        <button type="button" class="btn btn-primary" id="btnSendTelegram"
+                style="background:#0088cc; border-color:#0088cc;">
+          <i class="bi bi-telegram"></i> Enviar para Telegram
+        </button>
+        <span id="tgSendResult" class="align-self-center small"></span>
+      </div>
+
+      {# Formulário oculto com os dados da conferência para envio ao Telegram #}
+      <form id="tgConferenceForm" style="display:none;">
+        <input type="hidden" name="address" value="{{ address }}">
+        <textarea name="scanned_ids">{{ scanned_raw }}</textarea>
+      </form>
+
+      {% endif %}{# end result #}
+    </div>{# end col-lg-8 #}
+  </div>{# end row #}
+
+{% endif %}{# end conference_mode #}
+
+{% endblock %}
+
+{% block scripts %}
+{% if not conference_mode %}
+<script>
+function fillAudit(addr) {
+  document.getElementById('addressInput').value = addr;
+  document.getElementById('auditSelectForm').submit();
+}
+{% if prefill %}
+document.addEventListener('DOMContentLoaded', function () {
+  var btn = document.querySelector('#auditSelectForm button[type="submit"]');
+  if (btn) btn.focus();
+});
+{% endif %}
+</script>
+{% endif %}
+{% if conference_mode and not result %}
+<script>
+(function () {
+  const scanInput  = document.getElementById('scanInput');
+  const listArea   = document.getElementById('scannedList');
+  const countBadge = document.getElementById('scanCount');
+  const btnAdd     = document.getElementById('btnAddScan');
+  const btnClear   = document.getElementById('btnClearAll');
+  const btnSave    = document.getElementById('btnSaveDraft');
+  const auditForm  = document.getElementById('auditForm');
+  const draftInput = document.getElementById('draftIdInput');
+
+  const historySelect = document.getElementById('historySelect');
+  const btnResumeLatest = document.getElementById('btnResumeLatest');
+  const btnLoadHistory = document.getElementById('btnLoadHistory');
+  const saveStatusEl = document.getElementById('historySaveStatus');
+
+  const currentAddress = {{ address|tojson }};
+  const historyEnabled = {{ history_enabled|tojson }};
+  const resumeDraftId = {{ (resume_draft_id or '')|tojson }};
+  const listUrl = {{ url_for('audit_history_list')|tojson }};
+  const saveUrl = {{ url_for('audit_history_save')|tojson }};
+
+  function updateCount() {
+    const lines = listArea.value.split('\n').filter(l => l.trim() !== '');
+    countBadge.textContent = lines.length;
+  }
+
+  function getLines() {
+    const raw = listArea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    const seen = new Set();
+    const deduped = [];
+    for (const value of raw) {
+      if (seen.has(value)) continue;
+      seen.add(value);
+      deduped.push(value);
+    }
+    return deduped;
+  }
+
+  function setSaveStatus(text, cssClass) {
+    if (!saveStatusEl) return;
+    saveStatusEl.textContent = text;
+    saveStatusEl.className = 'small ' + (cssClass || 'text-muted');
+  }
+
+  function detailUrl(draftId) {
+    return '/audit/history/' + encodeURIComponent(draftId);
+  }
+
+  function goToAddress(address, draftId) {
+    const target = '/audit/' + encodeURIComponent(address) + '?resume_draft=' + encodeURIComponent(draftId || '');
+    window.location.href = target;
+  }
+
+  async function loadDraftById(draftId) {
+    if (!draftId) return;
+    const response = await fetch(detailUrl(draftId), {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    const payload = await response.json();
+    if (!payload.ok || !payload.item) {
+      throw new Error(payload.message || 'Não foi possível carregar o rascunho.');
+    }
+
+    const item = payload.item;
+    const itemAddress = String(item.address || '').toUpperCase();
+    if (itemAddress && itemAddress !== currentAddress) {
+      goToAddress(itemAddress, item.draft_id || draftId);
+      return;
+    }
+
+    const lines = Array.isArray(item.scanned_ids) ? item.scanned_ids : [];
+    listArea.value = lines.join('\n');
+    if (draftInput) draftInput.value = item.draft_id || draftId;
+    updateCount();
+    setSaveStatus('Rascunho restaurado: ' + (item.updated_at || ''), 'text-success');
+    scanInput.focus();
+  }
+
+  async function loadHistoryList() {
+    if (!historyEnabled || !historySelect) return [];
+    try {
+      const response = await fetch(listUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const payload = await response.json();
+      const items = (payload && payload.ok && Array.isArray(payload.items)) ? payload.items : [];
+
+      historySelect.innerHTML = '';
+      if (!items.length) {
+        historySelect.innerHTML = '<option value="">Sem histórico recente</option>';
+      } else {
+        historySelect.innerHTML = '<option value="">Selecione uma conferência...</option>';
+        for (const item of items) {
+          const opt = document.createElement('option');
+          opt.value = item.draft_id || '';
+          const status = item.status === 'completed' ? 'Concluída' : 'Em andamento';
+          opt.textContent = [item.address, item.scan_count + ' bip', item.username, item.updated_at_br, status]
+            .filter(Boolean)
+            .join(' • ');
+          opt.dataset.address = item.address || '';
+          historySelect.appendChild(opt);
+        }
+      }
+
+      return items;
+    } catch (err) {
+      historySelect.innerHTML = '<option value="">Erro ao carregar histórico</option>';
+      setSaveStatus('Não foi possível carregar histórico.', 'text-danger');
+      return [];
+    }
+  }
+
+  async function saveDraft(reason, useBeacon) {
+    if (!historyEnabled) return;
+    const lines = getLines();
+    const hasDraft = !!(draftInput && draftInput.value);
+    const isClear = (reason || '') === 'clear';
+
+    // Evita criar/sobrescrever rascunho com lista vazia sem ação explícita.
+    if (!lines.length && !isClear) {
+      if (!hasDraft) {
+        return;
+      }
+      if (reason === 'beforeunload') {
+        return;
+      }
+    }
+
+    const payload = {
+      draft_id: draftInput ? draftInput.value : '',
+      address: currentAddress,
+      scanned_ids: lines,
+      reason: reason || 'autosave'
+    };
+
+    if (useBeacon && navigator.sendBeacon) {
+      const ok = navigator.sendBeacon(saveUrl, new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+      if (ok) setSaveStatus('Salvando ao sair da tela...', 'text-muted');
+      return;
+    }
+
+    try {
+      setSaveStatus('Salvando...', 'text-muted');
+      const response = await fetch(saveUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload),
+        keepalive: true
+      });
+      const data = await response.json();
+      if (data.ok && draftInput) {
+        draftInput.value = data.draft_id || draftInput.value;
+        if (data.preserved) {
+          setSaveStatus('Rascunho preservado (evitado save vazio).', 'text-success');
+        } else if (data.skipped) {
+          setSaveStatus('Nenhuma bipagem para salvar.', 'text-muted');
+        } else {
+          setSaveStatus('Salvo em ' + (data.updated_at_br || ''), 'text-success');
+        }
+      } else {
+        setSaveStatus(data.message || 'Falha ao salvar.', 'text-danger');
+      }
+    } catch (err) {
+      setSaveStatus('Erro ao salvar rascunho.', 'text-danger');
+    }
+  }
+
+  let saveTimer = null;
+  function scheduleSave(reason) {
+    if (!historyEnabled) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      saveDraft(reason || 'autosave', false);
+    }, 400);
+  }
+
+  function addScan() {
+    const val = scanInput.value.trim();
+    if (!val) return;
+    const lines = listArea.value.split('\n').filter(l => l.trim() !== '');
+    if (lines.includes(val)) {
+      scanInput.select();
+      scanInput.style.borderColor = '#dc3545';
+      setTimeout(() => scanInput.style.borderColor = '', 600);
+      return; // duplicado — ignora silenciosamente
+    }
+    lines.push(val);
+    listArea.value = lines.join('\n');
+    scanInput.value = '';
+    scanInput.focus();
+    updateCount();
+    scheduleSave('scan');
+  }
+
+  scanInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addScan(); }
+  });
+  btnAdd.addEventListener('click', addScan);
+
+  btnClear.addEventListener('click', function () {
+    if (confirm('Limpar toda a lista de bipagens?')) {
+      listArea.value = '';
+      scanInput.value = '';
+      scanInput.focus();
+      updateCount();
+      scheduleSave('clear');
+    }
+  });
+
+  if (btnSave) {
+    btnSave.addEventListener('click', function () {
+      saveDraft('manual-save', false);
+    });
+  }
+
+  listArea.addEventListener('input', function () {
+    updateCount();
+    scheduleSave('manual-input');
+  });
+
+  if (auditForm) {
+    auditForm.addEventListener('submit', function () {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      setSaveStatus('Concluindo conferência...', 'text-muted');
+    });
+  }
+
+  if (historyEnabled && btnLoadHistory) {
+    btnLoadHistory.addEventListener('click', function () {
+      const selectedId = historySelect ? historySelect.value : '';
+      if (!selectedId) return;
+      loadDraftById(selectedId).catch(function (err) {
+        setSaveStatus(err.message || 'Falha ao carregar rascunho.', 'text-danger');
+      });
+    });
+  }
+
+  if (historyEnabled && btnResumeLatest) {
+    btnResumeLatest.addEventListener('click', async function () {
+      const items = await loadHistoryList();
+      if (!items.length) return;
+
+      const sameAddress = items.find(i => String(i.address || '').toUpperCase() === currentAddress && i.status !== 'completed');
+      const chosen = sameAddress || items[0];
+      if (!chosen || !chosen.draft_id) return;
+
+      loadDraftById(chosen.draft_id).catch(function (err) {
+        setSaveStatus(err.message || 'Falha ao retomar rascunho.', 'text-danger');
+      });
+    });
+  }
+
+  window.addEventListener('beforeunload', function () {
+    if (!historyEnabled) return;
+    saveDraft('beforeunload', true);
+  });
+
+  // Inicializa contagem caso venha com scanned_raw preenchido
+  updateCount();
+  if (historyEnabled) {
+    loadHistoryList().then(function (items) {
+      if (resumeDraftId) {
+        return loadDraftById(resumeDraftId).catch(function (err) {
+          setSaveStatus(err.message || 'Falha ao carregar rascunho da URL.', 'text-danger');
+        });
+      }
+
+      const hasTypedData = getLines().length > 0;
+      if (hasTypedData) {
+        scheduleSave('initial-textarea');
+        return;
+      }
+
+      const sameAddress = items.find(i => String(i.address || '').toUpperCase() === currentAddress && i.status !== 'completed');
+      if (sameAddress && sameAddress.draft_id) {
+        return loadDraftById(sameAddress.draft_id).catch(function (err) {
+          setSaveStatus(err.message || 'Falha ao restaurar rascunho.', 'text-danger');
+        });
+      }
+    });
+  }
+  scanInput.focus();
+})();
+</script>
+{% endif %}
+{% if conference_mode and result %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const btn = document.getElementById('btnSendTelegram');
+  const resultEl = document.getElementById('tgSendResult');
+  if (!btn) return;
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    resultEl.textContent = 'Enviando…';
+    resultEl.className = 'align-self-center small text-muted';
+
+    const form = document.getElementById('tgConferenceForm');
+    const data = new FormData(form);
+
+    fetch('{{ url_for("telegram_send_conference_csv") }}', {
+      method: 'POST',
+      body: data,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(d => {
+      resultEl.textContent = d.message;
+      resultEl.className = 'align-self-center small ' + (d.ok ? 'text-success' : 'text-danger');
+      if (!d.ok) btn.disabled = false;
+    })
+    .catch(e => {
+      resultEl.textContent = 'Erro de rede: ' + e;
+      resultEl.className = 'align-self-center small text-danger';
+      btn.disabled = false;
+    });
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

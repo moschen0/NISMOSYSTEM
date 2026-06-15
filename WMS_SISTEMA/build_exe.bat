@@ -74,6 +74,10 @@ echo [INFO] Compilando EXE...
     --hidden-import waitress ^
     --hidden-import telegram_notifier ^
     --hidden-import dotenv ^
+    --hidden-import db_mdb ^
+    --hidden-import etiquetas_100x150 ^
+    --hidden-import etiquetas_bp ^
+    --hidden-import confirmations_bp ^
     --hidden-import reportlab.graphics.barcode.code128 ^
     --hidden-import reportlab.graphics.barcode.code39 ^
     --hidden-import reportlab.graphics.barcode.code93 ^

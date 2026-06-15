@@ -3,6 +3,19 @@
 
 {% block content %}
 <style>
+    /* ── Zone header: garante texto branco sobre fundo escuro ── */
+    .zone-header,
+    .zone-header h1,
+    .zone-header h2,
+    .zone-header h3,
+    .zone-header h4,
+    .zone-header h5,
+    .zone-header h6,
+    .zone-header small,
+    .zone-header .badge {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+
     /* ── Visualização de Prateleiras ── */
     .racks-wrap {
         display: grid;
@@ -59,7 +72,7 @@
     }
     .box-block {
         height: 19px;
-        background: #0a0a0a;
+        background: #166534;
         color: #fff;
         display: flex;
         align-items: center;
@@ -72,7 +85,23 @@
         text-overflow: ellipsis;
         padding: 0 4px;
         border-radius: 2px;
+        cursor: help;
+        border: 1px solid transparent;
+        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, filter 120ms ease;
     }
+    .box-block:hover,
+    .box-block:focus-visible {
+        border-color: #ffd54f;
+        box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.45), 0 3px 8px rgba(0, 0, 0, 0.28);
+        filter: brightness(1.15) saturate(1.2);
+        transform: scale(1.04);
+        position: relative;
+        z-index: 2;
+    }
+    .box-tier-normal   { background: #166534; color: #fff; }
+    .box-tier-attention{ background: #FFDE21; color: #1a1a1a; }
+    .box-tier-urgent   { background: #991b1b; color: #fff; }
+    .box-tier-critical { background: #0a0a0a; color: #fff; }
     .slot-lbl {
         font-size: 9px;
         font-weight: 600;
@@ -83,6 +112,45 @@
         overflow: hidden;
         text-overflow: ellipsis;
         width: 100%;
+    }
+    .box-info-tooltip {
+        position: fixed;
+        z-index: 1100;
+        min-width: 240px;
+        max-width: 340px;
+        background: #ffffff;
+        border: 1px solid #cfd4da;
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+        padding: 10px;
+        display: none;
+        user-select: text;
+    }
+    .box-info-tooltip .tip-title {
+        font-size: 11px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: #1f2937;
+    }
+    .box-info-tooltip .tip-line {
+        font-size: 12px;
+        line-height: 1.35;
+        margin-bottom: 3px;
+        color: #111827;
+    }
+    .box-info-tooltip .tip-line strong {
+        color: #374151;
+    }
+    .box-info-tooltip .tip-actions {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .box-info-tooltip .tip-copy-msg {
+        font-size: 11px;
+        color: #198754;
+        display: none;
     }
 
     @media (max-width: 1400px) {
@@ -116,7 +184,10 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('lista')" data-view="lista"><i class="bi bi-list-ul me-2"></i>Lista</a></li>
+                    {% if not is_triage_sector %}
                     <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setView('prateleiras')" data-view="prateleiras"><i class="bi bi-grid-3x3-gap me-2"></i>Prateleiras</a></li>
+                    {% endif %}
+                    <li><a class="dropdown-item" href="{{ url_for('shelf_preview6') }}"><i class="bi bi-grid-3x3-gap me-2"></i>Prateleiras (6 cx)</a></li>
                 </ul>
             </div>
         </div>
@@ -203,9 +274,9 @@
             {% for zone_name, shelf_list in zones.items() %}
             <!-- Zona Expansível -->
             <div class="card mb-4">
-                <div class="zone-header text-decoration-none text-dark"
+                <div class="zone-header text-decoration-none"
                    data-zone="{{ zone_name }}"
-                   style="display: block; padding: 15px; background: linear-gradient(135deg, #ff9800 0%, #ff7f00 100%); color: white; cursor: pointer;"
+                   style="display: block; padding: 15px 20px; background: #1d1d1f; color: rgba(255,255,255,0.9); cursor: pointer;"
                    onclick="toggleZone(this);">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -306,8 +377,14 @@
 
                     {% for shelf in shelf_list %}
                     <div class="card-body border-bottom" style="background-color: #fafafa;">
-                        <h6 class="mb-3">
-                            <i class="bi bi-layers-fill"></i> Módulo <strong>{{ shelf.module }}</strong>
+                        <h6 class="mb-3 d-flex align-items-center gap-2">
+                            <span><i class="bi bi-layers-fill"></i> Módulo <strong>{{ shelf.module }}</strong></span>
+                            <a href="{{ url_for('audit_select', address=shelf.zone ~ '-' ~ shelf.module) }}"
+                               class="btn btn-sm btn-outline-secondary"
+                               title="Conferência deste módulo"
+                               style="opacity:0.5; padding:1px 7px; font-size:11px; line-height:1.8;">
+                                <i class="bi bi-clipboard2-check"></i>
+                            </a>
                         </h6>
                         
                         <!-- Andares -->
@@ -320,12 +397,12 @@
                                    data-zone="{{ shelf.zone }}"
                                    data-module="{{ shelf.module }}"
                                    data-level="{{ level }}"
-                                   style="border-color: #ff9800; cursor: pointer; transition: background-color 0.2s;"
+                                   style="border-color: #0066cc; cursor: pointer; transition: background-color 0.2s;"
                                    onclick="event.preventDefault(); toggleLevelOrders(this);">
                                     <strong><i class="bi bi-layers"></i> Andar {{ level }} <i class="bi bi-chevron-down ms-2" style="transition: transform 0.3s;"></i></strong>
                                 </a>
                                 <div class="level-orders-container" style="display: none; margin-top: 10px;">
-                                    <div class="ps-3 border-start border-3" style="border-color: #ff9800;">
+                                    <div class="ps-3 border-start border-3" style="border-color: #0066cc;">
                                         <div class="spinner-border spinner-border-sm" role="status">
                                             <span class="visually-hidden">Carregando...</span>
                                         </div>
@@ -395,6 +472,18 @@
 </div><!-- /view-lista -->
 
 <div id="view-prateleiras" style="display:none;">
+    {% if time_thresholds %}
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center" style="font-size:11px;">
+        <strong><i class="bi bi-clock"></i> Tempo de permanência:</strong>
+        <span style="background:#166534;color:#fff;padding:2px 8px;border-radius:3px;">Verde &mdash; &lt; {{ time_thresholds.green_days }}d (Normal)</span>
+        <span style="background:#FFDE21;color:#1a1a1a;padding:2px 8px;border-radius:3px;">Amarelo &mdash; {{ time_thresholds.green_days }}&ndash;{{ time_thresholds.yellow_days }}d (Atenção)</span>
+        <span style="background:#991b1b;color:#fff;padding:2px 8px;border-radius:3px;">Vermelho &mdash; {{ time_thresholds.yellow_days }}&ndash;{{ time_thresholds.red_days }}d (Urgente)</span>
+        <span style="background:#0a0a0a;color:#fff;padding:2px 8px;border-radius:3px;border:1px solid #555;">Preto &mdash; &ge; {{ time_thresholds.red_days }}d (Crítico)</span>
+        {% if can_access_settings %}
+        <a href="{{ url_for('settings') }}" class="ms-1" style="font-size:10px;"><i class="bi bi-gear"></i> Configurar</a>
+        {% endif %}
+    </div>
+    {% endif %}
     <div class="racks-wrap">
         {% if preview_zones %}
             {% for zone_group in preview_zones %}
@@ -402,7 +491,15 @@
                     <article class="rack">
                         <div class="rack-header">
                             <span>Zona {{ shelf.zone }} · Módulo {{ shelf.module|int if shelf.module.isdigit() else shelf.module }}</span>
-                            <span class="rack-pct">{{ shelf.occupancy_percent }}% ocupação</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="{{ url_for('audit_select', address=shelf.zone ~ '-' ~ shelf.module) }}"
+                                   title="Conferência"
+                                   style="color:rgba(26,26,26,0.4); text-decoration:none; line-height:1;"
+                                   onclick="event.stopPropagation();">
+                                    <i class="bi bi-clipboard2-check" style="font-size:12px;"></i>
+                                </a>
+                                <span class="rack-pct">{{ shelf.occupancy_percent }}% ocupação</span>
+                            </div>
                         </div>
                         <div class="rack-body">
                             {% for row in shelf.rows %}
@@ -418,7 +515,14 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in cell.boxes %}
-                                                            <div class="box-block">{{ box }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}"
+                                                                 data-order-id="{{ box.order_id|default('', true)|e }}"
+                                                                 data-box-number="{{ box.box|default('', true)|e }}"
+                                                                data-os-opto="{{ box.os_opto|default('', true)|e }}"
+                                                                 data-added-by="{{ box.created_by|default('', true)|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 data-position="{{ cell.position|e }}"
+                                                                 title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                     <div class="slot-lbl" title="{{ cell.position }}">{{ cell.position }}</div>
@@ -434,7 +538,14 @@
                                                 <div class="mod-slot">
                                                     <div class="box-stack">
                                                         {% for box in chunk %}
-                                                            <div class="box-block">{{ box }}</div>
+                                                            <div class="box-block box-tier-{{ box.tier }}"
+                                                                 data-order-id="{{ box.order_id|default('', true)|e }}"
+                                                                 data-box-number="{{ box.box|default('', true)|e }}"
+                                                                data-os-opto="{{ box.os_opto|default('', true)|e }}"
+                                                                 data-added-by="{{ box.created_by|default('', true)|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 data-position="{{ only_cell.position|e }}"
+                                                                 title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
                                                 </div>
@@ -464,15 +575,21 @@
     <a href="{{ url_for('add_order', bipador=1, quick=1) }}" class="btn btn-lg btn-success" title="Modo rapido (menos cliques)">
         <i class="bi bi-plus-circle"></i> Novo Pedido
     </a>
+    {% if can_access_checkout %}
     <a href="{{ url_for('checkout_order') }}" class="btn btn-lg btn-danger">
         <i class="bi bi-box-arrow-up"></i> Saída de Pedido
     </a>
+    {% endif %}
+    {% if can_access_search %}
     <a href="{{ url_for('search_orders') }}" class="btn btn-lg btn-primary">
         <i class="bi bi-search"></i> Buscar Pedidos
     </a>
+    {% endif %}
+    {% if can_access_movements %}
     <a href="{{ url_for('view_movements') }}" class="btn btn-lg btn-info">
         <i class="bi bi-clock-history"></i> Ver Histórico
     </a>
+    {% endif %}
 </div>
 
 <script>
@@ -493,9 +610,230 @@ function setView(view) {
     });
 }
 document.addEventListener('DOMContentLoaded', () => {
+    const isTriageSector = {{ 'true' if is_triage_sector else 'false' }};
     const saved = localStorage.getItem('wms_tema') || 'lista';
-    if (saved === 'prateleiras') setView('prateleiras');
+    // Triagem só aceita lista ou prateleiras(6cx) — nunca restaura 'prateleiras'
+    if (!isTriageSector && saved === 'prateleiras') setView('prateleiras');
+    initBoxInfoTooltip();
 });
+
+function initBoxInfoTooltip() {
+    const boxBlocks = document.querySelectorAll('.box-block');
+    if (!boxBlocks.length) return;
+
+    const isAdmin = {{ 'true' if session.get('user', '')|lower == 'admin' else 'false' }};
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'box-info-tooltip';
+    tooltip.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong class="tip-title" style="font-size:12px;">Detalhes da Caixa</strong>
+            <button type="button" data-tip-close style="background:none;border:none;padding:0 2px;cursor:pointer;color:#6c757d;font-size:15px;line-height:1;">&#x2715;</button>
+        </div>
+        <div class="tip-line"><strong>OS:</strong> <span data-tip="order"></span></div>
+        <div class="tip-line"><strong>OS OPTO:</strong> <span data-tip="os-opto"></span></div>
+        <div class="tip-line"><strong>Caixa:</strong> <span data-tip="box"></span></div>
+        <div class="tip-line"><strong>Adicionado por:</strong> <span data-tip="user"></span></div>
+        <div class="tip-line"><strong>Data de add:</strong> <span data-tip="date"></span></div>
+        <div class="tip-line"><strong>Posição:</strong> <span data-tip="pos"></span></div>
+        <hr style="margin:8px 0;">
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-tip-copy style="flex:1;font-size:11px;">
+                <i class="bi bi-clipboard"></i> Copiar
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" data-tip-remove style="flex:1;font-size:11px;">
+                <i class="bi bi-box-arrow-up"></i> Dar Saída
+            </button>
+        </div>
+        <button type="button" class="btn btn-sm btn-warning w-100" data-tip-move-toggle style="font-size:11px;">
+            <i class="bi bi-arrow-left-right"></i> Mover Para &#9658;
+        </button>
+        <div data-tip-move-panel style="display:none;margin-top:6px;">
+            <input type="text" class="form-control form-control-sm" data-tip-dest-input
+                   placeholder="Digitar posição (ex: P-01-03)" autocomplete="off" style="font-size:11px;">
+            <div data-tip-dest-list style="display:none;max-height:130px;overflow-y:auto;
+                 border:1px solid #dee2e6;border-radius:0 0 4px 4px;background:#fff;"></div>
+            <button type="button" class="btn btn-sm btn-warning w-100 mt-1" data-tip-move-confirm disabled style="font-size:11px;">
+                <i class="bi bi-check-lg"></i> Confirmar Mover
+            </button>
+        </div>
+        <div data-tip-msg style="font-size:11px;margin-top:4px;display:none;"></div>
+    `;
+    document.body.appendChild(tooltip);
+
+    const elOrder     = tooltip.querySelector('[data-tip="order"]');
+    const elOpto      = tooltip.querySelector('[data-tip="os-opto"]');
+    const elBox       = tooltip.querySelector('[data-tip="box"]');
+    const elUser      = tooltip.querySelector('[data-tip="user"]');
+    const elDate      = tooltip.querySelector('[data-tip="date"]');
+    const elPos       = tooltip.querySelector('[data-tip="pos"]');
+    const copyBtn     = tooltip.querySelector('[data-tip-copy]');
+    const removeBtn   = tooltip.querySelector('[data-tip-remove]');
+    const moveToggle  = tooltip.querySelector('[data-tip-move-toggle]');
+    const movePanel   = tooltip.querySelector('[data-tip-move-panel]');
+    const destInput   = tooltip.querySelector('[data-tip-dest-input]');
+    const destList    = tooltip.querySelector('[data-tip-dest-list]');
+    const moveConfirm = tooltip.querySelector('[data-tip-move-confirm]');
+    const msgEl       = tooltip.querySelector('[data-tip-msg]');
+    const closeBtn    = tooltip.querySelector('[data-tip-close]');
+
+    let payload = null, selectedDest = '', cachedPositions = null;
+
+    if (!isAdmin) {
+        moveToggle.disabled = true;
+        moveToggle.title = 'Apenas admin pode mover pedidos';
+        moveToggle.style.opacity = '0.55';
+    }
+
+    function fb(v) { return (v && String(v).trim()) ? String(v).trim() : '-'; }
+
+    function reposition(cx, cy) {
+        const m = 12;
+        let l = cx + 14, t = cy + 14;
+        tooltip.style.display = 'block';
+        const r = tooltip.getBoundingClientRect();
+        if (l + r.width  > window.innerWidth  - m) l = cx - r.width  - 14;
+        if (t + r.height > window.innerHeight - m) t = cy - r.height - 14;
+        if (l < m) l = m; if (t < m) t = m;
+        tooltip.style.left = l + 'px'; tooltip.style.top = t + 'px';
+    }
+
+    function showMsg(text, ok) {
+        msgEl.textContent = text;
+        msgEl.style.color = ok ? '#198754' : '#dc3545';
+        msgEl.style.display = 'block';
+    }
+
+    function hide() {
+        tooltip.style.display = 'none';
+        movePanel.style.display = 'none';
+        destList.style.display = 'none';
+        destInput.value = ''; selectedDest = '';
+        moveConfirm.disabled = true;
+        msgEl.style.display = 'none';
+        moveToggle.innerHTML = '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;';
+    }
+
+    function openFor(block, cx, cy) {
+        payload = {
+            order: fb(block.dataset.orderId),
+            osOpto: fb(block.dataset.osOpto),
+            box:   fb(block.dataset.boxNumber || block.textContent),
+            user:  fb(block.dataset.addedBy),
+            date:  fb(block.dataset.addedAt),
+            pos:   fb(block.dataset.position),
+        };
+        elOrder.textContent = payload.order; elOpto.textContent = payload.osOpto;
+        elBox.textContent = payload.box;
+        elUser.textContent  = payload.user;  elDate.textContent = payload.date;
+        elPos.textContent   = payload.pos;
+        movePanel.style.display = 'none'; destList.style.display = 'none';
+        destInput.value = ''; selectedDest = ''; moveConfirm.disabled = true;
+        msgEl.style.display = 'none';
+        moveToggle.innerHTML = '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;';
+        removeBtn.disabled = false;
+        removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída';
+        reposition(cx, cy);
+    }
+
+    boxBlocks.forEach(b => {
+        b.style.cursor = 'pointer';
+        b.addEventListener('click', e => { e.stopPropagation(); openFor(b, e.clientX, e.clientY); });
+    });
+
+    tooltip.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('click', () => hide());
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+    closeBtn.addEventListener('click', hide);
+
+    // Copiar
+    copyBtn.addEventListener('click', async () => {
+        if (!payload) return;
+        const t = `OS: ${payload.order}\nOS OPTO: ${payload.osOpto}\nCaixa: ${payload.box}\nAdicionado por: ${payload.user}\nData de add: ${payload.date}\nPosição: ${payload.pos}`;
+        try { await navigator.clipboard.writeText(t); showMsg('Copiado!', true); }
+        catch { showMsg('Falha ao copiar', false); }
+    });
+
+    // Dar Saída
+    removeBtn.addEventListener('click', () => {
+        if (!payload) return;
+        if (!confirm(`Dar saída no pedido OS ${payload.order} (Caixa ${payload.box}) da posição ${payload.pos}?\n\nEsta ação não pode ser desfeita.`)) return;
+        removeBtn.disabled = true;
+        removeBtn.textContent = 'Aguarde…';
+        const fd = new FormData();
+        fd.append('order_id', payload.order); fd.append('position', payload.pos);
+        fetch('/api/order/remove', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) { hide(); location.reload(); }
+                else { showMsg(d.message || 'Erro', false); removeBtn.disabled = false; removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída'; }
+            })
+            .catch(() => { showMsg('Erro de rede', false); removeBtn.disabled = false; removeBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i> Dar Saída'; });
+    });
+
+    // Mover Para
+    function loadPositions() {
+        if (cachedPositions) return Promise.resolve();
+        return fetch('/api/positions/all', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json()).then(d => { cachedPositions = d.positions || []; });
+    }
+
+    function renderList(filter) {
+        if (!cachedPositions) return;
+        const cur = payload?.pos || '';
+        const filtered = cachedPositions.filter(p => p.position !== cur && p.position.toUpperCase().includes(filter.toUpperCase()));
+        if (!filtered.length) {
+            destList.innerHTML = '<div style="padding:6px 8px;font-size:11px;color:#6c757d;">Nenhuma posição encontrada</div>';
+            destList.style.display = 'block'; return;
+        }
+        destList.innerHTML = filtered.slice(0, 40).map(p => {
+            const full = p.count >= p.capacity;
+            return `<div style="padding:5px 8px;cursor:${full?'not-allowed':'pointer'};font-size:11px;background:${full?'#fff3cd':'#fff'};border-bottom:1px solid #f0f0f0;"
+                         data-dest="${p.position}" data-full="${full}">
+                        ${p.position}
+                        <span style="float:right;color:${full?'#dc3545':'#198754'};font-size:10px;">${p.count}/${p.capacity}${full?' CHEIO':''}</span>
+                    </div>`;
+        }).join('');
+        destList.style.display = 'block';
+        destList.querySelectorAll('[data-dest]').forEach(item => {
+            if (item.dataset.full === 'true') return;
+            item.addEventListener('click', () => {
+                selectedDest = item.dataset.dest;
+                destInput.value = selectedDest;
+                destList.style.display = 'none';
+                moveConfirm.disabled = false;
+            });
+        });
+    }
+
+    moveToggle.addEventListener('click', () => {
+        if (moveToggle.disabled) return;
+        const open = movePanel.style.display !== 'none';
+        movePanel.style.display = open ? 'none' : 'block';
+        moveToggle.innerHTML = open
+            ? '<i class="bi bi-arrow-left-right"></i> Mover Para &#9658;'
+            : '<i class="bi bi-arrow-left-right"></i> Mover Para &#9660;';
+        if (!open) loadPositions().then(() => { renderList(''); destInput.focus(); });
+    });
+
+    destInput.addEventListener('focus', () => { if (cachedPositions) renderList(destInput.value); });
+    destInput.addEventListener('input', () => { selectedDest = ''; moveConfirm.disabled = true; renderList(destInput.value); });
+    destList.addEventListener('click', e => e.stopPropagation());
+
+    moveConfirm.addEventListener('click', () => {
+        if (!payload || !selectedDest) return;
+        moveConfirm.disabled = true; moveConfirm.textContent = 'Movendo…';
+        const fd = new FormData();
+        fd.append('order_id', payload.order); fd.append('position', payload.pos); fd.append('destination', selectedDest);
+        fetch('/api/order/move', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) { hide(); location.reload(); }
+                else { showMsg(d.message || 'Erro', false); moveConfirm.disabled = false; moveConfirm.innerHTML = '<i class="bi bi-check-lg"></i> Confirmar Mover'; }
+            })
+            .catch(() => { showMsg('Erro de rede', false); moveConfirm.disabled = false; moveConfirm.innerHTML = '<i class="bi bi-check-lg"></i> Confirmar Mover'; });
+    });
+}
 
 // Função para expandir/colapsar formulário de nova prateleira
 function toggleShelfForm(element) {
@@ -553,10 +891,10 @@ async function toggleLevelOrders(element) {
             let html = '';
             
             if (data.orders && data.orders.length > 0) {
-                html = '<div class="ps-3 border-start border-3" style="border-color: #ff9800;">';
+                html = '<div class="ps-3 border-start border-3" style="border-color: #0066cc;">';
                 data.orders.forEach(order => {
                     html += `
-                        <div class="mb-2 p-2 bg-white rounded border-start border-3" style="border-color: #ff9800;">
+                        <div class="mb-2 p-2 bg-white rounded border-start border-3" style="border-color: #0066cc;">
                             <div class="d-flex justify-content-between align-items-start">
                                 <div>
                                     <strong class="d-block">${order.order_id}</strong>
@@ -573,7 +911,7 @@ async function toggleLevelOrders(element) {
                 });
                 html += '</div>';
             } else {
-                html = '<div class="ps-3 border-start border-3 p-2 text-muted" style="border-color: #ff9800;"><i class="bi bi-info-circle"></i> Nenhum pedido neste andar</div>';
+                html = '<div class="ps-3 border-start border-3 p-2 text-muted" style="border-color: #0066cc;"><i class="bi bi-info-circle"></i> Nenhum pedido neste andar</div>';
             }
             
             container.innerHTML = html;
