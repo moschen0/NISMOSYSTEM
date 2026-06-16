@@ -44,5 +44,4 @@ xref-*.html
 *.toc
 *.pyz
 localpycs/
-
-TELEGRAM_API_KEY = 8501677677:AAH4XLcQBavnuq0xSykJKbdgVsLrA-Orktw
+*.txt

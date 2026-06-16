@@ -201,7 +201,7 @@ def draw_label_100x150_pdf(data: dict) -> BytesIO:
             c.drawString(19 * mm, 53 * mm - indice * 5 * mm, linha)
 
     c.setFont("Helvetica-Bold", 8.5)
-    c.drawString(19 * mm, 37 * mm, "Dados OPTO:")
+    c.drawString(19 * mm, 37 * mm, "Dados:")
     c.setFont("Helvetica", 8.8)
     c.drawString(19 * mm, 33 * mm, f"Tipo de Lente: {tipo_lente or '-'}")
     c.drawString(19 * mm, 29 * mm, f"Fotossensibilidade: {foto or '-'}")
