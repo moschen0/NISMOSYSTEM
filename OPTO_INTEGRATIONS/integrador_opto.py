@@ -11,6 +11,9 @@ from openpyxl.styles import Font, PatternFill, Alignment
 
 from parser_siou import PATH_OS_SIOU
 
+AGEVIEW_SIOU_PATH = Path(r"\\192.168.1.210\SIOU\ImpOs\AgeViewBKP")
+AGEVIEW_CODES = {"0001", "0002", "0003"}
+
 # ---------------------------------------------------------------------------
 # Integração com o banco WMS (para buscar a "OS OPTO" pelo ID do serviço)
 # ---------------------------------------------------------------------------
@@ -257,11 +260,40 @@ def find_txt(os_id: str) -> Path:
     return matches[0]
 
 
+def find_txt_in_base(os_id: str, base_path: Path) -> Path:
+    """Localiza {os_id}.txt em `base_path` (busca recursiva)."""
+    base = Path(base_path)
+    matches = list(base.rglob(f"{os_id}.txt"))
+    if not matches:
+        raise FileNotFoundError(f"Arquivo '{os_id}.txt' não encontrado em {base}")
+    return matches[0]
+
+
 def parse_txt(path: Path) -> dict[int, str]:
     """Lê a linha única do .txt SIOU e retorna {índice: valor}."""
     raw = path.read_text(encoding="utf-8", errors="replace").strip()
     fields = raw.split(",")
     return {i: v.strip() for i, v in enumerate(fields)}
+
+
+def _is_ageview_product(fields: dict[int, str]) -> bool:
+    """Retorna True se o campo 35 contiver qualquer código AgeView."""
+    product_codes = fields.get(35, "") or ""
+    parts = [p.strip() for p in product_codes.split(";") if p.strip()]
+    return any(p in AGEVIEW_CODES for p in parts)
+
+
+def resolve_txt_fields(os_id: str) -> tuple[Path, dict[int, str]]:
+    """Busca e lê o .txt correto da OS, usando AgeViewBKP quando aplicável."""
+    txt_path = find_txt(os_id)
+    fields = parse_txt(txt_path)
+    if _is_ageview_product(fields):
+        try:
+            txt_path = find_txt_in_base(os_id, AGEVIEW_SIOU_PATH)
+            fields = parse_txt(txt_path)
+        except FileNotFoundError:
+            pass
+    return txt_path, fields
 
 
 def build_row(fields: dict[int, str]) -> list[str]:
@@ -467,7 +499,7 @@ def generate_scheduled_export(companies: list[str] = None, date_str: str = None)
 
         # Validacao 2: arquivo .txt do SIOU
         try:
-            txt_path = find_txt(order_id)
+            txt_path, fields = resolve_txt_fields(order_id)
         except FileNotFoundError as exc:
             failed_orders.append({
                 "order_id": order_id, "os_opto": os_opto,
@@ -479,7 +511,6 @@ def generate_scheduled_export(companies: list[str] = None, date_str: str = None)
 
         # Validacao 3: build_row (inclui lookup de tratamento no DB_TRAT)
         try:
-            fields = parse_txt(txt_path)
             row = build_row(fields)
             row[0] = os_opto
             # Substitui o marcador 'POSITION' pela posição/endereço vindo do WMS
@@ -616,8 +647,7 @@ def main() -> None:
             continue
 
         try:
-            txt_path = find_txt(os_id)
-            fields = parse_txt(txt_path)
+            txt_path, fields = resolve_txt_fields(os_id)
             # Busca a OS OPTO no WMS pelo field 0 (os_laboratorio = order_id)
             order_key = fields.get(0, "").strip() or os_id
             os_opto = fetch_os_opto(order_key)

@@ -827,8 +827,11 @@ def _build_envio_label_data(order_id: str, os_opto: str, position: str,
     try:
         opto = _import_integrador_opto()
         opto.init_database()
-        txt_path = opto.find_txt(order_id)
-        fields   = opto.parse_txt(txt_path)
+        if hasattr(opto, 'resolve_txt_fields'):
+            txt_path, fields = opto.resolve_txt_fields(order_id)
+        else:
+            txt_path = opto.find_txt(order_id)
+            fields   = opto.parse_txt(txt_path)
         row      = opto.build_row(fields)
         from datetime import datetime as _dt
         base.update({
