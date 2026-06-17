@@ -1584,7 +1584,8 @@ def get_triage_customer_name_by_code(customer_code, unit=None, sector=None):
     if not code:
         return ''
 
-    # numero_cliente é INTEGER na tabela; aceita código numérico com zeros à esquerda
+    # Aceita códigos com zeros à esquerda e também bases que armazenam o valor
+    # como texto no Access.
     code_stripped = code.lstrip('0') or '0'
     if not code_stripped.isdigit():
         return ''
@@ -1594,9 +1595,21 @@ def get_triage_customer_name_by_code(customer_code, unit=None, sector=None):
     try:
         cursor.execute(
             "SELECT TOP 1 nome_cliente FROM etiq_clients "
-            "WHERE numero_cliente = ? AND nome_cliente IS NOT NULL AND nome_cliente <> '' "
+            "WHERE (numero_cliente = ? OR CStr(numero_cliente) = ?) "
+            "AND nome_cliente IS NOT NULL AND nome_cliente <> '' "
             "ORDER BY id DESC",
-            (int(code_stripped),),
+            (int(code_stripped), code),
+        )
+        row = cursor.fetchone()
+        if row and row[0] is not None:
+            return str(row[0]).strip()
+
+        cursor.execute(
+            "SELECT TOP 1 customer_name FROM triage_receipts "
+            "WHERE (customer_code = ? OR CStr(customer_code) = ?) "
+            "AND customer_name IS NOT NULL AND customer_name <> '' "
+            "ORDER BY received_at DESC, id DESC",
+            (code, code),
         )
         row = cursor.fetchone()
         return str(row[0]).strip() if row and row[0] is not None else ''
