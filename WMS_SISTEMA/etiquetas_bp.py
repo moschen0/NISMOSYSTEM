@@ -1089,12 +1089,20 @@ def roteiro_info():
     if not cor:
         return jsonify({"entregador": "", "horario": ""})
     clients = fetch_all_clients()
-    for c in clients:
-        if str(c.get("cor_roteiro", "")).strip().lower() == cor:
-            return jsonify({
-                "entregador": c.get("entregador", "") or "",
-                "horario": c.get("horario_roteiro", "") or "",
-            })
+    fallback: dict[str, Any] | None = None
+    for c in reversed(clients):
+        if str(c.get("cor_roteiro", "")).strip().lower() != cor:
+            continue
+        payload = {
+            "entregador": c.get("entregador", "") or "",
+            "horario": c.get("horario_roteiro", "") or "",
+        }
+        if payload["entregador"] or payload["horario"]:
+            return jsonify(payload)
+        if fallback is None:
+            fallback = payload
+    if fallback is not None:
+        return jsonify(fallback)
     return jsonify({"entregador": "", "horario": ""})
 
 

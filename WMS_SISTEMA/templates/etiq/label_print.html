@@ -23,12 +23,12 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   {% endif %}
   <script>
-    const STORAGE_KEY = "etiquetas:label-layout:v1";
+    const STORAGE_KEYS = ["etiquetas:label-layout:v2", "etiquetas:label-layout:v1"];
     const BARCODE_TYPE = "{{ barcode_type }}";
     const AUTO_PRINT = {{ 'true' if auto_print else 'false' }};
 
     function applySavedLabelLayout(root = document) {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
       if (!raw) {
         return;
       }

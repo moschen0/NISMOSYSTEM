@@ -135,7 +135,7 @@
   </main>
 
   <script>
-    const STORAGE_KEY = "etiquetas:label-layout:v1";
+    const STORAGE_KEYS = ["etiquetas:label-layout:v2", "etiquetas:label-layout:v1"];
     const AUTO_PRINT_SCALE_PERCENT = 90;
     const form = document.getElementById("label-form");
     const previewArea = document.getElementById("inline-label-area");
@@ -151,7 +151,7 @@
     // Restore saved barcode type preference
     (function() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
         if (raw) {
           const cfg = JSON.parse(raw);
           if (cfg.barcodeType && barcodeTypeSelect) {
@@ -165,10 +165,10 @@
     barcodeTypeSelect && barcodeTypeSelect.addEventListener("change", function() {
       currentBarcodeType = barcodeTypeSelect.value;
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(STORAGE_KEYS[0]);
         const cfg = raw ? JSON.parse(raw) : {};
         cfg.barcodeType = currentBarcodeType;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+        localStorage.setItem(STORAGE_KEYS[0], JSON.stringify(cfg));
       } catch (_) {}
     });
 
@@ -199,7 +199,7 @@
     }
 
     function applySavedLabelLayout(root = document) {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
       if (!raw) {
         return;
       }
@@ -349,16 +349,14 @@
       previewChip.style.background = hex;
       roteiroPreview.hidden = false;
       previewHorario.textContent = "";
+      horarioInput.value = "";
+      entregadorInput.value = "";
       try {
         const res = await fetch(`/etiq/clientes/roteiro-info?cor=${encodeURIComponent(cor)}`);
         const data = await res.json();
-        if (data.horario) {
-          previewHorario.textContent = data.horario;
-          horarioInput.value = data.horario;
-        }
-        if (data.entregador) {
-          entregadorInput.value = data.entregador;
-        }
+        previewHorario.textContent = data.horario || "";
+        horarioInput.value = data.horario || "";
+        entregadorInput.value = data.entregador || "";
       } catch (_) {
         // silent
       }
