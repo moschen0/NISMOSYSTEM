@@ -254,6 +254,13 @@
                             </div>
                         </div>
                         <div class="row mt-3">
+                            <div class="col-12">
+                                <label class="form-label">Altura de cada andar (px)</label>
+                                <textarea class="form-control" name="row_heights" rows="2" placeholder="Ex: 72, 64, 56\nInforme uma altura por andar, de cima para baixo."></textarea>
+                                <small class="text-muted">Se preencher apenas um valor, ele será aplicado em todos os andares.</small>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
                             <div class="col-md-12">
                                 <button type="submit" class="btn btn-primary w-100">
                                     <i class="bi bi-plus-lg"></i> Criar Prateleira
@@ -503,7 +510,7 @@
                         </div>
                         <div class="rack-body">
                             {% for row in shelf.rows %}
-                                <div class="rack-level">
+                                <div class="rack-level" style="min-height: {{ row.height_px }}px;">
                                     {% if row.cells %}
                                         <div class="level-lbl">
                                             {{ row.cells[0].position if not shelf.has_modules else row.cells[0].position.rsplit('-', 1)[0] }}

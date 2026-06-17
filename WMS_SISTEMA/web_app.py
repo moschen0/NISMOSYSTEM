@@ -1051,7 +1051,7 @@ def _check_ip_and_maintenance():
     """Verifica blacklist/whitelist de IP e modo manutenção antes de qualquer request."""
     ep = request.endpoint
     # Endpoints sempre isentos
-    if ep in ('static', 'maintenance_page'):
+    if ep in ('static', 'maintenance_page', 'maintenance_status'):
         return
 
     ip = request.remote_addr or ''
@@ -1364,6 +1364,46 @@ def parse_int(value, default=1):
         return num if num > 0 else default
     except Exception:
         return default
+
+
+def parse_row_heights(value, levels, default_height=72):
+    """Converte alturas das linhas em lista de inteiros (de cima para baixo)."""
+    total_levels = max(1, int(levels or 1))
+    default_height = max(32, int(default_height or 72))
+    raw_text = str(value or '').strip()
+    if not raw_text:
+        return [default_height] * total_levels
+
+    if raw_text.startswith('['):
+        try:
+            parsed_json = json.loads(raw_text)
+            numbers = parsed_json if isinstance(parsed_json, list) else []
+        except Exception:
+            numbers = re.split(r'[\s,;]+', raw_text)
+    else:
+        numbers = re.split(r'[\s,;]+', raw_text)
+
+    heights = []
+    for item in numbers:
+        try:
+            height = int(float(str(item).strip()))
+        except Exception:
+            continue
+        if height > 0:
+            heights.append(max(32, height))
+
+    if not heights:
+        return [default_height] * total_levels
+    if len(heights) == 1 and total_levels > 1:
+        return heights * total_levels
+    if len(heights) < total_levels:
+        heights.extend([heights[-1]] * (total_levels - len(heights)))
+    return heights[:total_levels]
+
+
+def get_shelf_row_heights(shelf, levels, default_height=72):
+    """Retorna alturas visuais por linha para uma prateleira."""
+    return parse_row_heights(shelf.get('row_heights', ''), levels, default_height=default_height)
 
 
 def parse_triage_excel_rows(file_storage):
@@ -2547,8 +2587,9 @@ def dashboard():
             lv = shelf['levels']
             cl = shelf['columns']
             sl = shelf['slots']
+            row_heights = get_shelf_row_heights(shelf, lv)
             rows_vis = []
-            for level in range(lv, 0, -1):
+            for row_index, level in enumerate(range(lv, 0, -1)):
                 cells = []
                 for col in range(1, cl + 1):
                     if cl == 1:
@@ -2558,7 +2599,7 @@ def dashboard():
                     raw_boxes = [make_box_entry(o, _thresholds_dash) for o in order_map.get(position, [])]
                     raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
                     cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
-                rows_vis.append({'level': level, 'cells': cells})
+                rows_vis.append({'level': level, 'cells': cells, 'height_px': row_heights[row_index]})
             preview_zones_dash.setdefault(z, []).append({
                 'zone': z,
                 'module': m,
@@ -2652,10 +2693,11 @@ def shelf_preview():
         levels = int(shelf.get('levels', 1) or 1)
         columns = int(shelf.get('columns', 1) or 1)
         slots = int(shelf.get('slots', 7) or 7)
+        row_heights = get_shelf_row_heights(shelf, levels)
 
         rows = []
         shelf_display_count = 0
-        for level in range(levels, 0, -1):
+        for row_index, level in enumerate(range(levels, 0, -1)):
             cells = []
             for col in range(1, columns + 1):
                 if columns == 1:
@@ -2689,6 +2731,7 @@ def shelf_preview():
             rows.append({
                 'level': level,
                 'cells': cells,
+                'height_px': row_heights[row_index],
             })
 
         preview_zones.setdefault(zone, []).append({
@@ -2782,10 +2825,11 @@ def shelf_preview6():
         levels  = int(shelf.get('levels', 1) or 1)
         columns = int(shelf.get('columns', 1) or 1)
         slots   = int(shelf.get('slots', 6) or 6)
+        row_heights = get_shelf_row_heights(shelf, levels)
 
         rows = []
         shelf_display_count = 0
-        for level in range(levels, 0, -1):
+        for row_index, level in enumerate(range(levels, 0, -1)):
             cells = []
             for col in range(1, columns + 1):
                 if columns == 1:
@@ -2808,7 +2852,7 @@ def shelf_preview6():
                 shelf_display_count += min(len(raw_boxes), 6)
                 cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
 
-            rows.append({'level': level, 'cells': cells})
+            rows.append({'level': level, 'cells': cells, 'height_px': row_heights[row_index]})
 
         capacity = levels * columns * slots
         preview_zones.setdefault(zone, []).append({
@@ -2900,6 +2944,7 @@ def triage_preview():
         levels  = int(shelf.get('levels', 1) or 1)
         columns = int(shelf.get('columns', 1) or 1)
         slots   = int(shelf.get('slots', 6) or 6)
+        row_heights = get_shelf_row_heights(shelf, levels)
 
         # ── Visual remapping ─────────────────────────────────────────────────
         # Quando a prateleira tem coluna única com muitos slots (ex: columns=1, slots=96),
@@ -2914,7 +2959,7 @@ def triage_preview():
 
         rows = []
         shelf_display_count = 0
-        for level in range(levels, 0, -1):
+        for row_index, level in enumerate(range(levels, 0, -1)):
             cells = []
             for col in range(1, columns + 1):
                 if columns == 1:
@@ -2942,7 +2987,7 @@ def triage_preview():
                 shelf_display_count += min(len(raw_boxes), slots)
                 cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
 
-            rows.append({'level': level, 'cells': cells})
+            rows.append({'level': level, 'cells': cells, 'height_px': row_heights[row_index]})
 
         capacity = levels * columns * slots
         preview_zones.setdefault(zone, []).append({
@@ -3239,6 +3284,7 @@ def add_shelf():
     levels = max(1, int(request.form.get('levels', 1) or 1))
     columns = max(1, int(request.form.get('columns', 1) or 1))
     slots = max(1, int(request.form.get('slots', 7) or 7))
+    row_heights = parse_row_heights(request.form.get('row_heights', ''), levels)
     
     if not zone or not module:
         flash('Zona e Módulo são obrigatórios', 'danger')
@@ -3265,7 +3311,16 @@ def add_shelf():
             flash(f'Descrição da zona {zone} atualizada com sucesso', 'info')
         flash(f'Prateleira {zone}-{module} já existe', 'warning')
     else:
-        db_mdb.add_shelf(zone, module, levels, columns, slots, unit=unit, sector=get_current_sector())
+        db_mdb.add_shelf(
+            zone,
+            module,
+            levels,
+            columns,
+            slots,
+            unit=unit,
+            sector=get_current_sector(),
+            row_heights=json.dumps(row_heights, ensure_ascii=False),
+        )
         db_mdb.add_movement(
             username=session.get('user'),
             action='shelf_add',
@@ -5052,6 +5107,21 @@ def maintenance_page():
     until_iso = state['until'].isoformat() if state.get('until') else ''
     message = state.get('message', 'Sistema em manutenção. Aguarde.')
     return render_template('maintenance.html', message=message, until_iso=until_iso)
+
+
+@app.route('/api/maintenance-status')
+def maintenance_status():
+    """Retorna o estado atual do modo manutenção sem redirecionar."""
+    state = get_maintenance_state()
+    payload = {
+        'active': bool(state.get('active')),
+        'until': state['until'].isoformat() if state.get('until') else None,
+        'message': state.get('message', 'Sistema em manutenção. Aguarde.'),
+    }
+    response = jsonify(payload)
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    return response
 
 
 @app.route('/admin/log-tail')

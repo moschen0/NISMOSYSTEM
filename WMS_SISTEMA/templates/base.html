@@ -699,7 +699,7 @@
 
 <div id="konamiOverlay" class="konami-overlay" aria-hidden="true" role="dialog" aria-label="Easter egg Konami">
     <div class="konami-card">
-        <img src="{{ url_for('static', filename='81297eff9522409c8fa6aff08c28412b.jpg') }}" alt="Foto da cabra do código Konami">
+        <img src="{{ url_for('static', filename='images/81297eff9522409c8fa6aff08c28412b.jpg') }}" alt="Foto da cabra do código Konami">
         <div class="konami-hint">Konami Code ativado</div>
     </div>
 </div>
@@ -731,6 +731,31 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    (function() {
+        var maintenancePollingEnabled = {{ 'true' if session.get('user') and session.get('user', '').lower() != 'admin' else 'false' }};
+        var maintenanceStatusUrl = {{ url_for('maintenance_status') | tojson }};
+        var maintenancePageUrl = {{ url_for('maintenance_page') | tojson }};
+        var maintenancePollMs = 10000;
+
+        function pollMaintenanceStatus() {
+            if (!maintenancePollingEnabled) return;
+
+            fetch(maintenanceStatusUrl, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function(response) { return response.ok ? response.json() : null; })
+                .then(function(data) {
+                    if (data && data.active) {
+                        window.location.replace(maintenancePageUrl);
+                    }
+                })
+                .catch(function() {});
+        }
+
+        if (maintenancePollingEnabled) {
+            pollMaintenanceStatus();
+            setInterval(pollMaintenanceStatus, maintenancePollMs);
+        }
+    })();
+
     // Bootstrap alerts (usados em templates filhos)
     document.querySelectorAll('.alert:not([data-autodismiss="false"])').forEach(function(el) {
         setTimeout(function() { try { new bootstrap.Alert(el).close(); } catch(e) {} }, 5000);

@@ -266,6 +266,15 @@ def _ensure_unit_schema(conn):
             except Exception:
                 pass
 
+        # Altura visual por linha da prateleira (texto/JSON livre).
+        if not _column_exists(cursor, 'shelves', 'row_heights'):
+            try:
+                _run_ddl_on_conn(conn, "ALTER TABLE shelves ADD COLUMN row_heights LONGTEXT")
+            except Exception as _e:
+                if not _column_exists(cursor, 'shelves', 'row_heights'):
+                    import logging
+                    logging.warning(f"Nao foi possivel adicionar [row_heights] em shelves: {_e}")
+
         # Adiciona coluna de atividade para relatorios e normaliza legado.
         if not _column_exists(cursor, 'orders', 'ativo_inativo'):
             try:
@@ -304,6 +313,7 @@ def _ensure_unit_schema(conn):
             ('orders', 'unit'),
             ('movements', 'unit'),
             ('shelves', 'sector'),
+            ('shelves', 'row_heights'),
             ('orders', 'sector'),
             ('movements', 'sector'),
             ('orders', 'ativo_inativo'),
@@ -602,15 +612,15 @@ def get_all_shelves(unit=None, sector=None):
     shelves = dicts_from_rows(cursor, rows)
     return shelves
 
-def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR):
+def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR, row_heights=None):
     """Adiciona uma nova prateleira"""
     unit = normalize_unit(unit)
     sector = sector or DEFAULT_SECTOR
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO shelves (zone, module, levels, columns, slots, [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (zone, module, levels, columns, slots, unit, sector)
+        "INSERT INTO shelves (zone, module, levels, columns, slots, row_heights, [unit], [sector]) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (zone, module, levels, columns, slots, row_heights, unit, sector)
     )
     conn.commit()
 
