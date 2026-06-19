@@ -956,6 +956,9 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
     const STORAGE_KEY = "etiquetas:label-layout:v2";
+    const SERVER_LAYOUT_URL = "/etiq/etiquetas/layout";
+    const SERVER_LAYOUT_SAVE_URL = "/etiq/etiquetas/layout/salvar";
+    const SERVER_LAYOUT_CLEAR_URL = "/etiq/etiquetas/layout/limpar";
     const $ = id => document.getElementById(id);
     const SECTION_META = {
       horario: {
@@ -1283,17 +1286,50 @@
     function saveLayoutConfig() {
       const data = collectLayoutConfig();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      setStatus("Configuracao salva com sucesso.");
-      setActiveModelLabel("Salvo neste computador");
+      fetch(SERVER_LAYOUT_SAVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: data }),
+      }).then(async (res) => {
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && payload.ok) {
+          setStatus("Configuracao salva no servidor.");
+          setActiveModelLabel("Salvo no servidor");
+          return;
+        }
+        setStatus(payload.error || "Erro ao salvar no servidor.");
+      }).catch(() => {
+        setStatus("Configuracao salva apenas neste computador.");
+        setActiveModelLabel("Salvo neste computador");
+      });
     }
 
     function autoSaveLayoutConfig() {
       const data = collectLayoutConfig();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      fetch(SERVER_LAYOUT_SAVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: data }),
+      }).catch(() => {});
       setStatus("Configuracao salva automaticamente.");
     }
 
-    function loadLayoutConfig() {
+    async function loadLayoutConfig() {
+      try {
+        const res = await fetch(SERVER_LAYOUT_URL);
+        const data = await res.json();
+        if (data && Object.keys(data).length) {
+          applyLayoutConfig(data);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+          setStatus("Configuracao carregada do servidor.");
+          setActiveModelLabel("Salvo no servidor");
+          return;
+        }
+      } catch (_) {
+        // fallback below
+      }
+
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) {
         setStatus("Nenhuma configuracao salva para carregar.");
@@ -1302,15 +1338,18 @@
       try {
         const data = JSON.parse(raw);
         applyLayoutConfig(data);
-        setStatus("Configuracao carregada.");
+        setStatus("Configuracao carregada do navegador.");
         setActiveModelLabel("Salvo neste computador");
       } catch (_) {
         setStatus("Configuracao salva esta invalida.");
       }
     }
 
-    function clearLayoutConfig() {
+    async function clearLayoutConfig() {
       localStorage.removeItem(STORAGE_KEY);
+      try {
+        await fetch(SERVER_LAYOUT_CLEAR_URL, { method: "POST" });
+      } catch (_) {}
       setStatus("Configuracao removida.");
       setActiveModelLabel("Rascunho atual");
     }
@@ -1519,9 +1558,7 @@
     }
 
     renderBarcodes();
-    if (localStorage.getItem(STORAGE_KEY)) {
-      loadLayoutConfig();
-    }
+    loadLayoutConfig();
     applyPositions();
     updateActiveSectionControls();
     updateBarcodeLabel();

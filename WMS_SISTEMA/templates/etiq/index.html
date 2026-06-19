@@ -136,6 +136,7 @@
 
   <script>
     const STORAGE_KEYS = ["etiquetas:label-layout:v2", "etiquetas:label-layout:v1"];
+    const SERVER_LAYOUT_URL = "/etiq/etiquetas/layout";
     const AUTO_PRINT_SCALE_PERCENT = 90;
     const form = document.getElementById("label-form");
     const previewArea = document.getElementById("inline-label-area");
@@ -198,15 +199,29 @@
       }
     }
 
-    function applySavedLabelLayout(root = document) {
-      const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
-      if (!raw) {
+    async function applySavedLabelLayout(root = document) {
+      let cfg = null;
+      try {
+        const res = await fetch(SERVER_LAYOUT_URL);
+        cfg = await res.json();
+      } catch (_) {
+        const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
+        if (raw) {
+          try {
+            cfg = JSON.parse(raw);
+          } catch (_) {
+            cfg = null;
+          }
+        }
+      }
+
+      if (!cfg || !Object.keys(cfg).length) {
         return;
       }
 
       try {
-        const cfg = JSON.parse(raw);
         const labels = root.querySelectorAll(".strip-label");
+        const hideChip = Boolean(cfg.hide_chip ?? cfg.hideChip);
         labels.forEach(labelEl => {
           labelEl.style.setProperty("--top-x", `${Number(cfg.topX ?? 0)}mm`);
           labelEl.style.setProperty("--top-y", `${Number(cfg.topY ?? 0)}mm`);
@@ -223,7 +238,7 @@
 
           labelEl.classList.toggle("hide-top", Boolean(cfg.hideTop));
           labelEl.classList.toggle("hide-meta", Boolean(cfg.hideMeta));
-          labelEl.classList.toggle("hide-chip", Boolean(cfg.hideChip));
+          labelEl.classList.toggle("hide-chip", hideChip);
           labelEl.classList.toggle("hide-barcode", Boolean(cfg.hideBarcode));
         });
       } catch (_) {
@@ -260,7 +275,7 @@
 
       renderBarcode("os-barcode-inline", osId, currentBarcodeType);
 
-      applySavedLabelLayout(previewContent);
+      await applySavedLabelLayout(previewContent);
 
       printBtn.disabled = false;
 

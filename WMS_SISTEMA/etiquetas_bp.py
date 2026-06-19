@@ -48,6 +48,7 @@ _DATA_DIR = _get_etiq_data_dir()
 
 LEGACY_XLS_FILENAME = "CONTROLE CLIENTES COM ESTOJOS.xlsx"
 CODE128_LAYOUT_CONFIG_PATH = _DATA_DIR / "etiq_code128_layout_config.json"
+LABEL_LAYOUT_CONFIG_PATH = _DATA_DIR / "etiq_label_layout_config.json"
 LABEL_MODELS_PATH = _DATA_DIR / "etiq_label_models.json"
 
 LABEL_CLIENTS_TABLE = "etiq_clients"
@@ -110,6 +111,7 @@ DB_READY_KEY: tuple[str, int, int] | None = None
 CLIENTS_CACHE: list[dict[str, Any]] | None = None
 CLIENTS_CACHE_KEY: tuple[str, int, int] | None = None
 LEGACY_IMPORT_DONE_KEY: tuple[str, int, int] | None = None
+LABEL_LAYOUT_LOCK = Lock()
 LABEL_MODELS_LOCK = Lock()
 
 TRIAGE_SECTOR = "TRIAGEM"
@@ -938,6 +940,31 @@ def save_label_models(models: list[dict[str, Any]]) -> None:
     )
 
 
+def load_label_layout_config() -> dict[str, Any]:
+    if not LABEL_LAYOUT_CONFIG_PATH.exists():
+        return {}
+    try:
+        data = json.loads(LABEL_LAYOUT_CONFIG_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_label_layout_config(layout_config: dict[str, Any]) -> None:
+    LABEL_LAYOUT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LABEL_LAYOUT_CONFIG_PATH.write_text(
+        json.dumps(layout_config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def clear_label_layout_config() -> None:
+    try:
+        LABEL_LAYOUT_CONFIG_PATH.unlink()
+    except FileNotFoundError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -956,6 +983,7 @@ def index():
         success=success,
         active_tab="dashboard",
         route_colors=sorted(ROUTE_COLOR_MAP.items()),
+        layout_config=load_label_layout_config(),
     )
 
 
@@ -1270,7 +1298,7 @@ def batch_labels_pdf():
 @etq_bp.get("/etiquetas/manual")
 def label_manual_edit():
     cores = sorted(ROUTE_COLOR_MAP.items())
-    return render_template("etiq/label_edit.html", cores=cores)
+    return render_template("etiq/label_edit.html", cores=cores, layout_config=load_label_layout_config())
 
 
 @etq_bp.get("/etiquetas/modelos")
@@ -1331,4 +1359,27 @@ def delete_label_model():
     with LABEL_MODELS_LOCK:
         models = load_label_models()
         save_label_models([m for m in models if m.get("name") != name])
+    return jsonify({"ok": True})
+
+
+@etq_bp.get("/etiquetas/layout")
+def get_label_layout():
+    return jsonify(load_label_layout_config())
+
+
+@etq_bp.post("/etiquetas/layout/salvar")
+def save_label_layout():
+    data = request.get_json(force=True, silent=True) or {}
+    config = data.get("config", {})
+    if not isinstance(config, dict):
+        return jsonify({"error": "Configuracao invalida."}), 400
+    with LABEL_LAYOUT_LOCK:
+        save_label_layout_config(config)
+    return jsonify({"ok": True})
+
+
+@etq_bp.post("/etiquetas/layout/limpar")
+def clear_label_layout():
+    with LABEL_LAYOUT_LOCK:
+        clear_label_layout_config()
     return jsonify({"ok": True})
