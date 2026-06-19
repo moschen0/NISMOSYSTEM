@@ -1621,6 +1621,25 @@ def datetime_now_str():
     """Timestamp padrao do sistema."""
     from datetime import datetime
     return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+def _confirmation_time_columns(cursor):
+    """Retorna as colunas de timestamp suportadas pela tabela de confirmações.
+
+    Mantemos compatibilidade com bases legadas que usam [timestamp] e com a
+    estrutura atual que grava em ts_millis.
+    """
+    columns = []
+    for column_name in ('ts_millis', 'timestamp'):
+        if _column_exists(cursor, 'order_confirmations', column_name):
+            columns.append(column_name)
+    return columns
+
+def _confirmation_order_by_clause(cursor):
+    """Retorna a expressão ORDER BY mais confiável para confirmações."""
+    columns = _confirmation_time_columns(cursor)
+    if columns:
+        return f"ORDER BY [{columns[0]}] DESC"
+    return "ORDER BY [id] DESC"
 
 
 # ============================================================================
@@ -1655,15 +1674,27 @@ def add_confirmation(username, sector, os_reference, os_confirmation, result, un
         else:
             return str(value)
     
+    time_columns = _confirmation_time_columns(cursor)
+    insert_columns = [
+        'username', 'sector', 'os_reference', 'os_confirmation', 'result', 'unit',
+        'created_at', '[data]', 'hora',
+    ]
+    insert_values = [
+        escape_sql(username), escape_sql(sector), escape_sql(os_reference),
+        escape_sql(os_confirmation), escape_sql(result), escape_sql(unit),
+        escape_sql(now), escape_sql(data), escape_sql(hora),
+    ]
+
+    for column_name in time_columns:
+        insert_columns.append(f'[{column_name}]')
+        insert_values.append(str(timestamp))
+    
     # Construir query com SQL direto (compatível com Access)
     sql = f"""
         INSERT INTO order_confirmations (
-            username, sector, os_reference, os_confirmation, result, unit,
-            created_at, [data], hora, ts_millis
+            {', '.join(insert_columns)}
         ) VALUES (
-            {escape_sql(username)}, {escape_sql(sector)}, {escape_sql(os_reference)},
-            {escape_sql(os_confirmation)}, {escape_sql(result)}, {escape_sql(unit)},
-            {escape_sql(now)}, {escape_sql(data)}, {escape_sql(hora)}, {timestamp}
+            {', '.join(insert_values)}
         )
     """
     
@@ -1717,10 +1748,10 @@ def get_confirmations(unit=None, sector=None, username=None, result=None, limit=
         params.append(result)
     
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    limit_clause = f" LIMIT {int(limit)}" if limit else ""
+    top_clause = f"TOP {int(limit)} " if limit else ""
     
     cursor.execute(
-        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC{limit_clause}",
+        f"SELECT {top_clause}* FROM order_confirmations {where} {_confirmation_order_by_clause(cursor)}",
         params
     )
     
@@ -1770,7 +1801,7 @@ def get_confirmations_filtered(filters, unit=None):
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     
     cursor.execute(
-        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC",
+        f"SELECT * FROM order_confirmations {where} {_confirmation_order_by_clause(cursor)}",
         params
     )
     
@@ -1859,7 +1890,7 @@ def search_confirmations(query, unit=None, sector=None):
     where = f"WHERE {' AND '.join(conditions)}"
     
     cursor.execute(
-        f"SELECT * FROM order_confirmations {where} ORDER BY [timestamp] DESC",
+        f"SELECT * FROM order_confirmations {where} {_confirmation_order_by_clause(cursor)}",
         params
     )
     

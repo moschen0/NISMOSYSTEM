@@ -61,7 +61,7 @@ def create_order_confirmations_table(conn):
             [created_at] TEXT(50),
             [data] TEXT(50),
             [hora] TEXT(50),
-            [timestamp] LONG
+            [ts_millis] LONG
         )
         """
         
@@ -86,7 +86,7 @@ def create_indexes(conn):
         ("idx_confirmations_unit", "CREATE INDEX idx_confirmations_unit ON order_confirmations (unit)"),
         ("idx_confirmations_sector", "CREATE INDEX idx_confirmations_sector ON order_confirmations (sector)"),
         ("idx_confirmations_result", "CREATE INDEX idx_confirmations_result ON order_confirmations (result)"),
-        ("idx_confirmations_timestamp", "CREATE INDEX idx_confirmations_timestamp ON order_confirmations (timestamp)"),
+        ("idx_confirmations_timestamp", "CREATE INDEX idx_confirmations_timestamp ON order_confirmations (ts_millis)"),
     ]
     
     for idx_name, sql in indexes:

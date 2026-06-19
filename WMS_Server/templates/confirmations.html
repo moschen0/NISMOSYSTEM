@@ -6,10 +6,15 @@
     <!-- Card Principal: Conferência -->
     <div class="col-lg-7">
       <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
+        <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between gap-2">
           <h5 class="mb-0">
             <i class="bi bi-check2-circle"></i> Conferência de OS
           </h5>
+          {% if is_admin or username == 'admin' %}
+          <button type="button" class="btn btn-light btn-sm" onclick="Confirmations.exportarRegistros()">
+            <i class="bi bi-download"></i> Exportar XLSX
+          </button>
+          {% endif %}
         </div>
         <div class="card-body">
           <p class="text-muted small mb-4">
@@ -135,7 +140,7 @@
         </p>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-danger" data-bs-dismiss="modal" onclick="Confirmations.fecharModalErro()">
+        <button type="button" class="btn btn-danger" onclick="Confirmations.fecharModalErro()">
           <i class="bi bi-check"></i> Entendido
         </button>
       </div>

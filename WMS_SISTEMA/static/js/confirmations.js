@@ -298,13 +298,21 @@ const Confirmations = (() => {
     if (aEl) aEl.textContent = osA;
     if (bEl) bEl.textContent = osB;
 
-    if (modalEl && typeof bootstrap !== 'undefined') {
-      const modal = new bootstrap.Modal(modalEl);
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
       modal.show();
     }
   }
 
   function fecharModalErro() {
+    const modalEl = document.getElementById('modalErro');
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+      const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+      modal.hide();
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modal.dispose();
+      }, { once: true });
+    }
     clearFields();
     const fieldA = document.getElementById('field-a');
     if (fieldA) fieldA.focus();
@@ -336,6 +344,7 @@ const Confirmations = (() => {
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({}),
     })
     .then(response => {
       if (!response.ok) {

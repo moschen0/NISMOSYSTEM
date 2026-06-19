@@ -75,7 +75,8 @@ def confirmations_page():
     return render_template('confirmations.html',
         username=user,
         sector=sector or user_info.get('sector', 'Geral') if user_info else 'Geral',
-        unit=unit
+        unit=unit,
+        is_admin=is_admin()
     )
 
 
@@ -275,7 +276,7 @@ def export_confirmations_xlsx():
         
         # Admin exporta com filtros
         unit = get_current_unit()
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         filters = {
             'result': data.get('result', ''),
             'username': data.get('username', ''),
