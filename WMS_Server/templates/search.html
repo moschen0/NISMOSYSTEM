@@ -81,6 +81,7 @@
                                 <th><i class="bi bi-circle-fill"></i> Status</th>
                                 <th><i class="bi bi-geo-alt"></i> Posição</th>
                                 <th><i class="bi bi-diagram-3"></i> Setor</th>
+                                <th><i class="bi bi-person-badge"></i> Código do cliente</th>
                                 <th><i class="bi bi-box2"></i> Caixa</th>
                                 <th><i class="bi bi-clipboard-check"></i> Triagem</th>
                                 <th><i class="bi bi-person"></i> Cadastrado por</th>
@@ -112,6 +113,13 @@
                                 <td>
                                     {% if order.get('sector') %}
                                         <span class="badge bg-secondary">{{ order.get('sector') }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if order.get('triage_customer_code') %}
+                                        <span class="badge bg-primary">{{ order.get('triage_customer_code') }}</span>
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}

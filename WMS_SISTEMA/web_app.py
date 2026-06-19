@@ -4602,7 +4602,10 @@ def search_orders():
         return access_denied
     unit = get_current_unit()
     sector = get_search_sector_scope()
-    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector)
+    sort_order = request.args.get('sort', 'DESC').strip().upper()
+    if sort_order not in {'ASC', 'DESC'}:
+        sort_order = 'DESC'
+    all_orders = db_mdb.get_all_orders(status_filter='add', unit=unit, sector=sector, sort_order=sort_order)
     
     # Busca por query string
     query = request.args.get('q', '').strip().upper()
@@ -4637,17 +4640,32 @@ def search_orders():
 
     for order in all_orders:
         triage_info = triage_map.get(order.get('order_id'))
+        sector_code = str(order.get('sector', '') or '').strip().upper()
+        is_triage_order = sector_code == TRIAGE_SECTOR
+
+        if is_triage_order:
+            order['display_customer_code'] = str(order.get('box', '') or '').strip()
+            order['display_box'] = str(order.get('os_opto', '') or '').strip()
+        else:
+            order['display_customer_code'] = ''
+            order['display_box'] = str(order.get('box', '') or '').strip()
+
         if triage_info:
             order['triage_received'] = True
             order['triage_customer_code'] = triage_info.get('customer_code', '')
             order['triage_received_at'] = triage_info.get('received_at', '')
+            if not is_triage_order:
+                order['display_customer_code'] = order['triage_customer_code']
         else:
             order['triage_received'] = False
+            order['triage_customer_code'] = ''
+            order['triage_received_at'] = ''
 
     return render_template('search.html', 
                          orders=all_orders, 
                          total=len(all_orders),
                          query=query,
+                         sort_order=sort_order,
                          triage_matches=triage_matches,
                          triage_total=len(triage_matches))
 

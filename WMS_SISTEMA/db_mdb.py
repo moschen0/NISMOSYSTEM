@@ -639,8 +639,8 @@ def delete_shelf(zone, module, unit=None):
 # ORDERS
 # ============================================================================
 
-def get_all_orders(status_filter=None, unit=None, sector=None):
-    """Retorna todos os pedidos, opcionalmente filtrados por status"""
+def get_all_orders(status_filter=None, unit=None, sector=None, sort_order='DESC'):
+    """Retorna todos os pedidos, opcionalmente filtrados por status."""
     conn = get_connection()
     cursor = conn.cursor()
     conditions = []
@@ -655,7 +655,8 @@ def get_all_orders(status_filter=None, unit=None, sector=None):
         conditions.append("[sector] = ?")
         params.append(sector)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] DESC", params)
+    sort_order = 'ASC' if str(sort_order).strip().upper() == 'ASC' else 'DESC'
+    cursor.execute(f"SELECT * FROM orders {where} ORDER BY [timestamp] {sort_order}", params)
     rows = cursor.fetchall()
     orders = dicts_from_rows(cursor, rows)
     return orders
