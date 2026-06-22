@@ -45,3 +45,4 @@ xref-*.html
 *.pyz
 localpycs/
 *.txt
+*.pdf
