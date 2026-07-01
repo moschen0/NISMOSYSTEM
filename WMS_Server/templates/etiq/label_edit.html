@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='etiq/styles.css') }}">
   <style>
     .editor-shell {
@@ -530,7 +531,7 @@
     @media print {
       @page { size: 80mm 20mm; margin: 0; }
       body { background: white; margin: 0; padding: 0; }
-      .topbar, .shell { display: none !important; }
+      .navbar, .shell { display: none !important; }
       #print-area {
         display: flex !important;
         width: 80mm;
@@ -549,20 +550,43 @@
   </style>
 </head>
 <body class="dashboard-page">
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') }}">
-      <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="45" class="me-3" style="object-fit: contain;">
-      <div class="brand-text">
-        <strong>MASTER ETIQUETAS</strong>
-        <span>editor guiado de layout</span>
-      </div>
-    </a>
+  <nav class="navbar navbar-expand-lg navbar-dark fixed-top etiq-navbar">
+    <div class="container-fluid">
+      <a class="navbar-brand d-flex align-items-center" href="{{ url_for('dashboard') }}">
+        <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="26" style="object-fit: contain;">
+        <span>WMS</span>
+      </a>
 
-    <nav class="topbar-nav" aria-label="Navegacao principal">
-      <a href="{{ url_for('etiquetas.index') }}" class="topbar-link is-active" title="Ir para criar etiquetas">Criar</a>
-      <a href="{{ url_for('etiquetas.barcode_code128') }}" class="topbar-link" title="Gerador de etiquetas das caixinhas">Caixinhas</a>
-    </nav>
-  </header>
+      <button class="navbar-toggler" type="button" id="navbar-toggle" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.index') }}" class="nav-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">
+              <i class="bi bi-tag-fill"></i> Criar
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.barcode_code128') }}" class="nav-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">
+              <i class="bi bi-upc-scan"></i> Caixinhas
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="nav-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">
+              <i class="bi bi-box-seam"></i> Etiq. Envio
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.impressos_list') }}" class="nav-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">
+              <i class="bi bi-printer"></i> Reimprimir
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
 
   <main class="shell">
     <div class="dashboard-card">
@@ -955,6 +979,13 @@
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
+    const navbarToggle = document.getElementById("navbar-toggle");
+    const navbarCollapse = document.getElementById("navbarNav");
+    navbarToggle && navbarToggle.addEventListener("click", () => {
+      const isOpen = navbarCollapse.classList.toggle("show");
+      navbarToggle.setAttribute("aria-expanded", String(isOpen));
+    });
+
     const STORAGE_KEY = "etiquetas:label-layout:v2";
     const $ = id => document.getElementById(id);
     const SECTION_META = {

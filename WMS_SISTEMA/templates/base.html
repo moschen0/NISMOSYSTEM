@@ -594,8 +594,25 @@
                         </li>
                     </ul>
                 </li>
+                {% elif user_sectors and user_sectors|length > 1 %}
+                <!-- Seletor de Setor (usuário com múltiplos setores vinculados) -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="sectorDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-diagram-3"></i> {{ current_sector }}
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="sectorDropdown">
+                        {% for key in user_sectors %}
+                        <li>
+                            <a class="dropdown-item {% if key == current_sector %}active{% endif %}" href="{{ url_for('switch_sector', sector_name=key) }}">
+                                <i class="bi bi-arrow-right-circle"></i> {{ key }}
+                                {% if all_sectors.get(key) and all_sectors[key].description %}<small class="text-muted ms-1">{{ all_sectors[key].description }}</small>{% endif %}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </li>
                 {% else %}
-                <!-- Badge de setor para usuário não-admin -->
+                <!-- Badge de setor para usuário não-admin com um único setor -->
                 <li class="nav-item d-flex align-items-center">
                     <span class="nav-sector-chip me-1">
                         <i class="bi bi-diagram-3"></i> {{ current_sector }}

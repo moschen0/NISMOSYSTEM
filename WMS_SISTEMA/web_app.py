@@ -461,6 +461,36 @@ def load_permissions():
             'description': 'Geração e impressão de etiquetas',
             'icon': 'bi-tag'
         },
+        'etiq_criar': {
+            'id': 'etiq_criar',
+            'name': 'Etiquetas - Criar',
+            'description': 'Aba "Criar" do sistema de etiquetas de roteiros (cadastro de clientes e impressão)',
+            'icon': 'bi-tag-fill'
+        },
+        'etiq_adicionar_cliente': {
+            'id': 'etiq_adicionar_cliente',
+            'name': 'Etiquetas - Adicionar Cliente',
+            'description': 'Botão "+ Adicionar Cliente" na aba Criar do sistema de etiquetas',
+            'icon': 'bi-person-plus'
+        },
+        'etiq_caixinhas': {
+            'id': 'etiq_caixinhas',
+            'name': 'Etiquetas - Caixinhas',
+            'description': 'Aba "Caixinhas" do sistema de etiquetas: geração de código de barras Code128',
+            'icon': 'bi-upc-scan'
+        },
+        'etiq_envio': {
+            'id': 'etiq_envio',
+            'name': 'Etiquetas - Etiq. Envio',
+            'description': 'Aba "Etiq. Envio" do sistema de etiquetas: etiqueta de envio 100x150mm',
+            'icon': 'bi-box-seam'
+        },
+        'etiq_reimprimir': {
+            'id': 'etiq_reimprimir',
+            'name': 'Etiquetas - Reimprimir',
+            'description': 'Aba "Reimprimir" do sistema de etiquetas: reimpressão de etiquetas salvas',
+            'icon': 'bi-printer'
+        },
         'movements': {
             'id': 'movements',
             'name': 'Histórico',
@@ -1108,6 +1138,23 @@ def _track_active_session():
         }
 
 
+def parse_user_sectors(sector_value):
+    """Converte o valor bruto do campo users.sector ('AR' ou 'AR,VTA') em lista de setores."""
+    if not sector_value:
+        return []
+    return [s.strip() for s in str(sector_value).split(',') if s.strip()]
+
+
+def serialize_user_sectors(sectors_list):
+    """Converte uma lista de setores em string separada por vírgula para persistir no BD."""
+    cleaned = []
+    for s in sectors_list or []:
+        s = str(s).strip()
+        if s and s not in cleaned:
+            cleaned.append(s)
+    return ','.join(cleaned)
+
+
 def get_sector_permissions(sector_name):
     sectors = load_sectors()
     if sector_name is None:
@@ -1175,6 +1222,7 @@ def inject_admin_context():
         'all_sectors': sectors,
         'current_sector': current_sec,
         'sector_is_all': current_sec == 'ALL',
+        'user_sectors': session.get('sectors', []),
         'can_access_triage': can_access_feature('triage'),
         'can_access_etiquetas': can_access_feature('etiquetas'),
         'can_access_dashboard': can_access_feature('dashboard'),
@@ -2107,10 +2155,13 @@ def login():
             if username.lower() == 'admin':
                 session['unit'] = unit
                 session['sector'] = 'ALL'  # Admin vê todos os setores por padrão
+                session['sectors'] = list(load_sectors().keys())
                 session['permissions'] = list(PERMISSION_FLAGS.keys())
             else:
                 session['unit'] = db_mdb.normalize_unit(user.get('unit', unit))
-                session['sector'] = user.get('sector', DEFAULT_SECTOR) or DEFAULT_SECTOR
+                user_sectors = parse_user_sectors(user.get('sector', '')) or [DEFAULT_SECTOR]
+                session['sectors'] = user_sectors
+                session['sector'] = user_sectors[0]
                 session['permissions'] = list(get_sector_permissions(session['sector']))
             flash(f'Bem-vindo, {username}!', 'success')
             wms_logger.info(f'LOGIN OK | user={username} unit={session["unit"]} ip={request.remote_addr}')
@@ -2138,7 +2189,7 @@ def register():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
-        sector = request.form.get('sector', 'geral').strip()
+        sector = serialize_user_sectors(request.form.getlist('sector')) or 'geral'
         unit = db_mdb.normalize_unit(request.form.get('unit', ''))
 
         if not is_valid_unit(unit):
@@ -2214,19 +2265,25 @@ def switch_unit(unit_name):
 @app.route('/switch-sector/<sector_name>')
 @login_required
 def switch_sector(sector_name):
-    """Troca o setor ativo na sessão (apenas admin)"""
-    if not is_admin_user():
-        flash('Apenas o admin pode trocar de setor', 'danger')
-        return redirect(url_for('dashboard'))
-    if sector_name != 'ALL':
-        sectors = load_sectors()
-        if sector_name not in sectors:
-            flash('Setor inválido', 'danger')
-            return redirect(url_for('dashboard'))
-    session['sector'] = sector_name
-    if sector_name == 'ALL':
-        session['permissions'] = list(PERMISSION_FLAGS.keys())
+    """Troca o setor ativo na sessão.
+
+    Admin pode trocar para qualquer setor (ou 'ALL'). Usuários comuns só podem
+    trocar entre os setores vinculados à própria conta (session['sectors']).
+    """
+    if is_admin_user():
+        if sector_name != 'ALL':
+            sectors = load_sectors()
+            if sector_name not in sectors:
+                flash('Setor inválido', 'danger')
+                return redirect(url_for('dashboard'))
+        session['sector'] = sector_name
+        session['permissions'] = list(PERMISSION_FLAGS.keys()) if sector_name == 'ALL' else list(get_sector_permissions(sector_name))
     else:
+        user_sectors = session.get('sectors') or [session.get('sector', DEFAULT_SECTOR)]
+        if sector_name not in user_sectors:
+            flash('Você não tem acesso a este setor', 'danger')
+            return redirect(url_for('dashboard'))
+        session['sector'] = sector_name
         session['permissions'] = list(get_sector_permissions(sector_name))
     label = 'Todos os setores' if sector_name == 'ALL' else sector_name
     flash(f'Setor alterado para {label}', 'success')
@@ -4902,7 +4959,8 @@ def edit_user_sector():
         return access_denied
     unit = get_current_unit()
     target_username = request.form.get('username', '').strip()
-    new_sector = request.form.get('sector', '').strip()
+    new_sectors = request.form.getlist('sector')
+    new_sector = serialize_user_sectors(new_sectors)
     master_pass = request.form.get('master_password', '').strip()
     
     # Validar senha mestre
@@ -4916,17 +4974,17 @@ def edit_user_sector():
         flash(f'Usuário "{target_username}" não encontrado!', 'danger')
         return redirect(url_for('list_users'))
     
-    # Atualizar setor
+    # Atualizar setor(es)
     try:
         db_mdb.update_user(target_username, unit=unit, sector=new_sector)
         wms_logger.info(f'USER EDIT-SETOR | alvo={target_username} setor_novo="{new_sector or "Geral"}" unit={unit} por={session.get("user")}')
-        flash(f'Setor de "{target_username}" atualizado para "{new_sector or "Geral"}"!', 'success')
+        flash(f'Setor(es) de "{target_username}" atualizado(s) para "{new_sector or "Geral"}"!', 'success')
         
         # Registrar auditoria
         db_mdb.add_movement(
             username=session.get('user'),
             action='edit_user_sector',
-            details=f'Setor do usuário "{target_username}" alterado para "{new_sector or "Geral"}"',
+            details=f'Setor(es) do usuário "{target_username}" alterado(s) para "{new_sector or "Geral"}"',
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             unit=unit,
             sector=get_current_sector() or DEFAULT_SECTOR

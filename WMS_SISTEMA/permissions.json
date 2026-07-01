@@ -78,6 +78,41 @@
       "created_at": "2024-01-01T00:00:00"
     },
     {
+      "id": "etiq_criar",
+      "name": "Etiquetas - Criar",
+      "description": "Aba \"Criar\" do sistema de etiquetas de roteiros (cadastro de clientes e impressão)",
+      "icon": "bi-tag-fill",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "etiq_adicionar_cliente",
+      "name": "Etiquetas - Adicionar Cliente",
+      "description": "Botão \"+ Adicionar Cliente\" na aba Criar do sistema de etiquetas",
+      "icon": "bi-person-plus",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "etiq_caixinhas",
+      "name": "Etiquetas - Caixinhas",
+      "description": "Aba \"Caixinhas\" do sistema de etiquetas: geração de código de barras Code128",
+      "icon": "bi-upc-scan",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "etiq_envio",
+      "name": "Etiquetas - Etiq. Envio",
+      "description": "Aba \"Etiq. Envio\" do sistema de etiquetas: etiqueta de envio 100x150mm",
+      "icon": "bi-box-seam",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "etiq_reimprimir",
+      "name": "Etiquetas - Reimprimir",
+      "description": "Aba \"Reimprimir\" do sistema de etiquetas: reimpressão de etiquetas salvas",
+      "icon": "bi-printer",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
       "id": "movements",
       "name": "Histórico",
       "description": "Consulta ao histórico de movimentos",

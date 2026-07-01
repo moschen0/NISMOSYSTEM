@@ -7,28 +7,68 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='etiq/styles.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 </head>
 <body class="dashboard-page">
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') }}">
-      <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="45" class="me-3" style="object-fit: contain;">
-      <div class="brand-text">
-        <strong>MASTER ETIQUETAS</strong>
+  <nav class="navbar navbar-expand-lg navbar-dark fixed-top etiq-navbar">
+    <div class="container-fluid">
+      {% if can_access_dashboard %}
+      <a class="navbar-brand d-flex align-items-center" href="{{ url_for('dashboard') }}">
+      {% else %}
+      <span class="navbar-brand d-flex align-items-center">
+      {% endif %}
+        <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="26" style="object-fit: contain;">
+        <span>WMS</span>
+      {% if can_access_dashboard %}</a>{% else %}</span>{% endif %}
+
+      <button class="navbar-toggler" type="button" id="navbar-toggle" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          {% if etiq_can_access('etiq_adicionar_cliente') %}
+          <li class="nav-item">
+            <button type="button" id="open-add-client-btn" class="nav-link nav-link-cta">+ Adicionar Cliente</button>
+          </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_criar') %}
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.index') }}" class="nav-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">
+              <i class="bi bi-tag-fill"></i> Criar
+            </a>
+          </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_caixinhas') %}
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.barcode_code128') }}" class="nav-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">
+              <i class="bi bi-upc-scan"></i> Caixinhas
+            </a>
+          </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_envio') %}
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="nav-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">
+              <i class="bi bi-box-seam"></i> Etiq. Envio
+            </a>
+          </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_reimprimir') %}
+          <li class="nav-item">
+            <a href="{{ url_for('etiquetas.impressos_list') }}" class="nav-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">
+              <i class="bi bi-printer"></i> Reimprimir
+            </a>
+          </li>
+          {% endif %}
+        </ul>
       </div>
-    </a>
+    </div>
+  </nav>
 
-    <nav class="topbar-nav" aria-label="Navegacao principal">
-      <button type="button" id="open-add-client-btn" class="topbar-link">+ Adicionar Cliente</button>
-      <a href="{{ url_for('etiquetas.index') }}" class="topbar-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">Criar</a>
-      <a href="{{ url_for('etiquetas.barcode_code128') }}" class="topbar-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">Caixinhas</a>
-      <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="topbar-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">&#128230; Etiq. Envio</a>
-      <a href="{{ url_for('etiquetas.impressos_list') }}" class="topbar-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">&#128247; Reimprimir</a>
-    </nav>
-  </header>
-
+  {% if etiq_can_access('etiq_adicionar_cliente') %}
   <!-- Modal Adicionar Cliente -->
   <div id="add-client-modal" class="modal-backdrop" hidden>
     <div class="modal-box">
@@ -68,6 +108,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
 
   <main class="shell">
@@ -145,6 +186,8 @@
     const clienteInput = form.querySelector('input[name="numero_cliente"]');
     const osInput = form.querySelector('input[name="os_id"]');
     const barcodeTypeSelect = document.getElementById("barcode-type-select");
+    const navbarToggle = document.getElementById("navbar-toggle");
+    const navbarCollapse = document.getElementById("navbarNav");
     let currentLabelSize = "80x20";
     let currentBarcodeType = "CODE128";
     let autoPrintAfterPreview = false;
@@ -325,57 +368,65 @@
       });
     }
 
+    navbarToggle && navbarToggle.addEventListener("click", () => {
+      const isOpen = navbarCollapse.classList.toggle("show");
+      navbarToggle.setAttribute("aria-expanded", String(isOpen));
+    });
+
     printBtn.addEventListener("click", () => {
       triggerPrint(AUTO_PRINT_SCALE_PERCENT);
     });
 
     // Modal Adicionar Cliente
+    const openAddClientBtn = document.getElementById("open-add-client-btn");
     const modal = document.getElementById("add-client-modal");
-    document.getElementById("open-add-client-btn").addEventListener("click", () => {
-      modal.hidden = false;
-      modal.querySelector('input[name="numero_cliente"]').focus();
-    });
-    document.getElementById("close-add-client-btn").addEventListener("click", () => {
-      modal.hidden = true;
-    });
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) modal.hidden = true;
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !modal.hidden) modal.hidden = true;
-    });
+    if (openAddClientBtn && modal) {
+      openAddClientBtn.addEventListener("click", () => {
+        modal.hidden = false;
+        modal.querySelector('input[name="numero_cliente"]').focus();
+      });
+      document.getElementById("close-add-client-btn").addEventListener("click", () => {
+        modal.hidden = true;
+      });
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) modal.hidden = true;
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal.hidden) modal.hidden = true;
+      });
 
-    document.getElementById("add-client-form").addEventListener("submit", () => {
-      document.getElementById("save-client-btn").disabled = true;
-      document.getElementById("save-client-notice").style.display = "block";
-    });
+      document.getElementById("add-client-form").addEventListener("submit", () => {
+        document.getElementById("save-client-btn").disabled = true;
+        document.getElementById("save-client-notice").style.display = "block";
+      });
 
-    // Preview de roteiro ao selecionar cor
-    const corSelect = document.getElementById("cor-roteiro-select");
-    const roteiroPreview = document.getElementById("roteiro-preview");
-    const previewChip = document.getElementById("roteiro-preview-chip");
-    const previewHorario = document.getElementById("roteiro-preview-horario");
-    const horarioInput = document.getElementById("horario-roteiro-input");
-    const entregadorInput = document.getElementById("entregador-input");
+      // Preview de roteiro ao selecionar cor
+      const corSelect = document.getElementById("cor-roteiro-select");
+      const roteiroPreview = document.getElementById("roteiro-preview");
+      const previewChip = document.getElementById("roteiro-preview-chip");
+      const previewHorario = document.getElementById("roteiro-preview-horario");
+      const horarioInput = document.getElementById("horario-roteiro-input");
+      const entregadorInput = document.getElementById("entregador-input");
 
-    corSelect.addEventListener("change", async () => {
-      const cor = corSelect.value;
-      const hex = corSelect.options[corSelect.selectedIndex].dataset.hex || "#ccc";
-      previewChip.style.background = hex;
-      roteiroPreview.hidden = false;
-      previewHorario.textContent = "";
-      horarioInput.value = "";
-      entregadorInput.value = "";
-      try {
-        const res = await fetch(`/etiq/clientes/roteiro-info?cor=${encodeURIComponent(cor)}`);
-        const data = await res.json();
-        previewHorario.textContent = data.horario || "";
-        horarioInput.value = data.horario || "";
-        entregadorInput.value = data.entregador || "";
-      } catch (_) {
-        // silent
-      }
-    });
+      corSelect.addEventListener("change", async () => {
+        const cor = corSelect.value;
+        const hex = corSelect.options[corSelect.selectedIndex].dataset.hex || "#ccc";
+        previewChip.style.background = hex;
+        roteiroPreview.hidden = false;
+        previewHorario.textContent = "";
+        horarioInput.value = "";
+        entregadorInput.value = "";
+        try {
+          const res = await fetch(`/etiq/clientes/roteiro-info?cor=${encodeURIComponent(cor)}`);
+          const data = await res.json();
+          previewHorario.textContent = data.horario || "";
+          horarioInput.value = data.horario || "";
+          entregadorInput.value = data.entregador || "";
+        } catch (_) {
+          // silent
+        }
+      });
+    }
 
   </script>
 </body>

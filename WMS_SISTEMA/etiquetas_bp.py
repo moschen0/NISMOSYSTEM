@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from functools import wraps
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
@@ -135,6 +136,51 @@ def _check_etiq_access():
         return
     flash("Acesso restrito ao setor autorizado para etiquetas ou admin.", "danger")
     return redirect(url_for("dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Granular permissions — cada botão da navbar do sistema de etiquetas vira
+# uma permissão independente, liberável em Gerenciamento de Células / Setores.
+# ---------------------------------------------------------------------------
+
+def can_access_feature(feature: str) -> bool:
+    if session.get("user", "").lower() == "admin":
+        return True
+    permissions = session.get("permissions", [])
+    return feature in permissions if isinstance(permissions, list) else False
+
+
+@etq_bp.app_template_global("etiq_can_access")
+def etiq_can_access(feature: str) -> bool:
+    return can_access_feature(feature)
+
+
+def _first_accessible_etiq_redirect():
+    if can_access_feature("etiq_criar"):
+        return redirect(url_for("etiquetas.index"))
+    if can_access_feature("etiq_caixinhas"):
+        return redirect(url_for("etiquetas.barcode_code128"))
+    if can_access_feature("etiq_envio"):
+        return redirect(url_for("etiquetas.label_100x150_new"))
+    if can_access_feature("etiq_reimprimir"):
+        return redirect(url_for("etiquetas.impressos_list"))
+    flash("Acesso restrito para os recursos de etiquetas.", "danger")
+    return redirect(url_for("dashboard"))
+
+
+def _etiq_feature_required(feature: str):
+    """Protege uma rota exigindo uma permissão granular do sistema de etiquetas."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(*args, **kwargs):
+            if can_access_feature(feature):
+                return view_func(*args, **kwargs)
+            if request.method == "GET":
+                flash("Acesso restrito para este recurso de etiquetas.", "danger")
+                return _first_accessible_etiq_redirect()
+            return jsonify({"error": "Acesso restrito para este recurso."}), 403
+        return wrapped
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -535,6 +581,7 @@ def _save_to_impressos(pdf_bytes: bytes, label: str) -> Path | None:
 
 
 @etq_bp.route("/etiquetas/envio")
+@_etiq_feature_required("etiq_envio")
 def label_100x150_new():
     """Direct access from topbar — empty form, auto-fills enviado_por from session."""
     return render_template(
@@ -558,6 +605,7 @@ def label_100x150_new():
 
 
 @etq_bp.route("/etiquetas/envio/pdf")
+@_etiq_feature_required("etiq_envio")
 def label_envio_pdf_quick():
     """Quick PDF from query params (used by auto-print modal on dashboard)."""
     rq = request.args
@@ -592,6 +640,7 @@ def label_envio_pdf_quick():
 
 
 @etq_bp.route("/etiquetas/print_100x150/<int:id>")
+@_etiq_feature_required("etiq_envio")
 def label_100x150_view(id: int):
     """Preview page with form for all label fields."""
     numero, _cor, _horario, entregador = fetch_client_label_base(id)
@@ -619,6 +668,7 @@ def label_100x150_view(id: int):
 
 
 @etq_bp.route("/etiquetas/print_100x150/<int:id>/pdf")
+@_etiq_feature_required("etiq_envio")
 def label_100x150_pdf(id: int):
     """Generate and return a 150x100mm landscape PDF, saving it to Impressos/."""
     numero, _cor, _horario, entregador = fetch_client_label_base(id)
@@ -658,6 +708,7 @@ def label_100x150_pdf(id: int):
 
 
 @etq_bp.route("/etiquetas/impressos")
+@_etiq_feature_required("etiq_reimprimir")
 def impressos_list():
     """List all saved PDFs in Impressos/ for reprinting."""
     impressos_dir = _DATA_DIR / "Impressos"
@@ -674,6 +725,7 @@ def impressos_list():
 
 
 @etq_bp.route("/etiquetas/impressos/<path:filename>")
+@_etiq_feature_required("etiq_reimprimir")
 def impressos_serve(filename: str):
     """Serve a saved PDF from Impressos/ for view / reprint / download."""
     impressos_dir = (_DATA_DIR / "Impressos").resolve()
@@ -970,6 +1022,7 @@ def clear_label_layout_config() -> None:
 # ---------------------------------------------------------------------------
 
 @etq_bp.get("/")
+@_etiq_feature_required("etiq_criar")
 def index():
     error = request.args.get("error")
     success = request.args.get("success")
@@ -988,6 +1041,7 @@ def index():
 
 
 @etq_bp.get("/codigo-barras/code128")
+@_etiq_feature_required("etiq_caixinhas")
 def barcode_code128():
     error = request.args.get("error")
     success = request.args.get("success")
@@ -1011,6 +1065,7 @@ def barcode_code128():
 
 
 @etq_bp.post("/codigo-barras/code128/layout/salvar")
+@_etiq_feature_required("etiq_caixinhas")
 def barcode_code128_save_layout():
     raw_values = request.form.get("values", "").strip()
     layout_config = parse_code128_layout_params(request.form)
@@ -1020,6 +1075,7 @@ def barcode_code128_save_layout():
 
 
 @etq_bp.post("/codigo-barras/code128/pdf")
+@_etiq_feature_required("etiq_caixinhas")
 def barcode_code128_pdf():
     raw_values = request.form.get("values", "").strip()
     barcode_values = parse_box_numbers(raw_values)
@@ -1094,6 +1150,7 @@ def barcode_code128_pdf():
 
 
 @etq_bp.post("/clientes")
+@_etiq_feature_required("etiq_adicionar_cliente")
 def add_or_update_client():
     try:
         numero_cliente = int(request.form["numero_cliente"])
@@ -1112,6 +1169,7 @@ def add_or_update_client():
 
 
 @etq_bp.get("/clientes/roteiro-info")
+@_etiq_feature_required("etiq_adicionar_cliente")
 def roteiro_info():
     cor = request.args.get("cor", "").strip().lower()
     if not cor:
@@ -1135,6 +1193,7 @@ def roteiro_info():
 
 
 @etq_bp.post("/clientes/excluir/<int:numero_cliente>")
+@_etiq_feature_required("etiq_criar")
 def remove_client(numero_cliente: int):
     try:
         delete_client(numero_cliente)
@@ -1144,6 +1203,7 @@ def remove_client(numero_cliente: int):
 
 
 @etq_bp.get("/etiquetas/os")
+@_etiq_feature_required("etiq_criar")
 def label_by_os_id():
     try:
         os_id = int(request.args.get("os_id", "").strip())
@@ -1168,6 +1228,7 @@ def label_by_os_id():
 
 
 @etq_bp.get("/etiquetas/os/preview")
+@_etiq_feature_required("etiq_criar")
 def label_preview_by_os_id():
     try:
         os_id = int(request.args.get("os_id", "").strip())
@@ -1187,6 +1248,7 @@ def label_preview_by_os_id():
 
 
 @etq_bp.get("/etiquetas/cliente/<int:numero_cliente>")
+@_etiq_feature_required("etiq_criar")
 def print_label(numero_cliente: int):
     label_data = build_label_data(numero_cliente, persist_print_date=True)
     auto_print = request.args.get("autoprint", "").strip().lower() in {"1", "true", "yes"}
@@ -1202,6 +1264,7 @@ def print_label(numero_cliente: int):
 
 
 @etq_bp.get("/etiquetas/cliente/<int:numero_cliente>/pdf")
+@_etiq_feature_required("etiq_criar")
 def label_pdf(numero_cliente: int):
     label_data = build_label_data(numero_cliente, persist_print_date=True)
     if not label_data:
@@ -1224,6 +1287,7 @@ def label_pdf(numero_cliente: int):
 
 
 @etq_bp.get("/etiquetas/cliente/<int:numero_cliente>/pdf/caixinha")
+@_etiq_feature_required("etiq_criar")
 def label_pdf_caixinha(numero_cliente: int):
     label_data = build_label_data(numero_cliente, persist_print_date=True)
     if not label_data:
@@ -1256,6 +1320,7 @@ def label_pdf_caixinha(numero_cliente: int):
 
 
 @etq_bp.get("/etiquetas/lote")
+@_etiq_feature_required("etiq_criar")
 def print_batch_labels():
     try:
         filter_rota = request.args.get("filter_rota", "").strip()
@@ -1270,6 +1335,7 @@ def print_batch_labels():
 
 
 @etq_bp.get("/etiquetas/lote/pdf")
+@_etiq_feature_required("etiq_criar")
 def batch_labels_pdf():
     try:
         filter_rota = request.args.get("filter_rota", "").strip()
@@ -1296,17 +1362,20 @@ def batch_labels_pdf():
 
 
 @etq_bp.get("/etiquetas/manual")
+@_etiq_feature_required("etiq_criar")
 def label_manual_edit():
     cores = sorted(ROUTE_COLOR_MAP.items())
     return render_template("etiq/label_edit.html", cores=cores, layout_config=load_label_layout_config())
 
 
 @etq_bp.get("/etiquetas/modelos")
+@_etiq_feature_required("etiq_criar")
 def list_label_models():
     return jsonify(load_label_models())
 
 
 @etq_bp.post("/etiquetas/modelos/salvar")
+@_etiq_feature_required("etiq_criar")
 def save_label_model():
     data = request.get_json(force=True, silent=True) or {}
     name = str(data.get("name", "")).strip()
@@ -1328,6 +1397,7 @@ def save_label_model():
 
 
 @etq_bp.post("/etiquetas/modelos/renomear")
+@_etiq_feature_required("etiq_criar")
 def rename_label_model():
     data = request.get_json(force=True, silent=True) or {}
     old_name = str(data.get("old_name", "")).strip()
@@ -1351,6 +1421,7 @@ def rename_label_model():
 
 
 @etq_bp.post("/etiquetas/modelos/excluir")
+@_etiq_feature_required("etiq_criar")
 def delete_label_model():
     data = request.get_json(force=True, silent=True) or {}
     name = str(data.get("name", "")).strip()
@@ -1363,11 +1434,13 @@ def delete_label_model():
 
 
 @etq_bp.get("/etiquetas/layout")
+@_etiq_feature_required("etiq_criar")
 def get_label_layout():
     return jsonify(load_label_layout_config())
 
 
 @etq_bp.post("/etiquetas/layout/salvar")
+@_etiq_feature_required("etiq_criar")
 def save_label_layout():
     data = request.get_json(force=True, silent=True) or {}
     config = data.get("config", {})
@@ -1379,6 +1452,7 @@ def save_label_layout():
 
 
 @etq_bp.post("/etiquetas/layout/limpar")
+@_etiq_feature_required("etiq_criar")
 def clear_label_layout():
     with LABEL_LAYOUT_LOCK:
         clear_label_layout_config()
