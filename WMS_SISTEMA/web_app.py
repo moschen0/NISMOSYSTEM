@@ -274,7 +274,8 @@ def get_age_tier(age_days, thresholds):
 
 def make_box_entry(order, thresholds):
     """Constrói os dados da caixa para visualização e tooltip de detalhes."""
-    label = str(order.get('box') or order.get('order_id', '')).strip()
+    # Prefer mostrar o `order_id` na etiqueta da caixa (visibilidade da OS)
+    label = str(order.get('order_id', '') or order.get('box') or '').strip()
     order_id = str(order.get('order_id', '') or '').strip()
     box_number = str(order.get('box', '') or '').strip()
     os_opto = str(order.get('os_opto', '') or '').strip()
@@ -508,6 +509,42 @@ def load_permissions():
             'name': 'Configurações',
             'description': 'Acesso às configurações do sistema',
             'icon': 'bi-gear'
+        },
+        'expedicao': {
+            'id': 'expedicao',
+            'name': 'Expedição',
+            'description': 'Acesso ao módulo de Expedição (botão na barra de navegação)',
+            'icon': 'bi-truck'
+        },
+        'expedicao_checkin': {
+            'id': 'expedicao_checkin',
+            'name': 'Expedição - Checkin de Entrada',
+            'description': 'Aba de leitura do ID Master e fechamento de lotes na Expedição',
+            'icon': 'bi-upc-scan'
+        },
+        'expedicao_picking': {
+            'id': 'expedicao_picking',
+            'name': 'Expedição - Onda de Picking',
+            'description': 'Aba de geração de onda de picking por horário na Expedição',
+            'icon': 'bi-signpost-split'
+        },
+        'expedicao_doublecheck': {
+            'id': 'expedicao_doublecheck',
+            'name': 'Expedição - Picking com Doublecheck',
+            'description': 'Aba de conferência cega (doublecheck) de picking na Expedição',
+            'icon': 'bi-check2-square'
+        },
+        'expedicao_embalagem': {
+            'id': 'expedicao_embalagem',
+            'name': 'Expedição - Embala e Fatura',
+            'description': 'Aba de embalagem e envio para faturamento na Expedição',
+            'icon': 'bi-box-seam-fill'
+        },
+        'shelf_level_clients': {
+            'id': 'shelf_level_clients',
+            'name': 'Prateleira - Vincular Cliente por Andar',
+            'description': 'Vincular/editar o cliente fixo de cada andar das prateleiras (engrenagem no dashboard, setor Expedição)',
+            'icon': 'bi-person-badge'
         }
     }
 
@@ -958,12 +995,32 @@ app.register_blueprint(etq_bp)
 from confirmations_bp import confirmations_bp
 app.register_blueprint(confirmations_bp)
 
+from expedicao_bp import expedicao_bp
+app.register_blueprint(expedicao_bp)
+
 app.secret_key = os.environ.get('WMS_SECRET_KEY', 'wms-dev-key-insecure')
 MASTER_PASSWORD = os.environ.get('WMS_MASTER_PASSWORD', 'masterkey')
 DEFAULT_UNIT = db_mdb.DEFAULT_UNIT
 DEFAULT_SECTOR = db_mdb.DEFAULT_SECTOR
 AVAILABLE_UNITS = list(db_mdb.AVAILABLE_UNITS)
 app.jinja_env.globals['permission_labels'] = PERMISSION_FLAGS
+
+
+# ---------------------------------------------------------------------------
+# Debug helpers
+# ---------------------------------------------------------------------------
+@app.route('/_debug/routes')
+def _debug_routes():
+    """Return a JSON list of registered routes (for local debugging)."""
+    routes = []
+    for rule in sorted(app.url_map.iter_rules(), key=lambda r: r.rule):
+        methods = sorted([m for m in rule.methods if m not in ('HEAD', 'OPTIONS')])
+        routes.append({
+            'rule': rule.rule,
+            'endpoint': rule.endpoint,
+            'methods': methods,
+        })
+    return jsonify({'routes': routes})
 
 
 # ============================================================================
@@ -1235,6 +1292,12 @@ def inject_admin_context():
         'can_access_movements': can_access_feature('movements'),
         'can_access_users': can_access_feature('users'),
         'can_access_settings': can_access_feature('settings'),
+        'can_access_expedicao': can_access_feature('expedicao'),
+        'can_access_expedicao_checkin': can_access_feature('expedicao_checkin'),
+        'can_access_expedicao_picking': can_access_feature('expedicao_picking'),
+        'can_access_expedicao_doublecheck': can_access_feature('expedicao_doublecheck'),
+        'can_access_expedicao_embalagem': can_access_feature('expedicao_embalagem'),
+        'can_access_shelf_level_clients': can_access_feature('shelf_level_clients'),
         'permission_labels': permission_labels,
         'all_permissions': permissions,
     }
@@ -1350,6 +1413,31 @@ def find_shelf(zone, module, unit=None, sector=None):
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
     return next((s for s in shelves 
                 if s.get('zone') == zone and s.get('module') == module), None)
+
+def find_client_conflict(client_number, unit, sector, exclude_zone=None, exclude_module=None, exclude_level=None):
+    """Verifica se client_number já está vinculado a outro andar/prateleira.
+
+    Regra: 1 cliente = 1 andar fixo. Retorna dict {'zone','module','level'} do
+    conflito encontrado, ou None se o client_number estiver livre (ou só
+    vinculado ao próprio andar sendo salvo, via exclude_*).
+    """
+    exclude_level_str = str(exclude_level) if exclude_level is not None else None
+    for shelf in db_mdb.get_all_shelves(unit=unit, sector=sector):
+        zone = shelf.get('zone')
+        module = shelf.get('module')
+        try:
+            level_clients = json.loads(shelf.get('level_clients') or '{}')
+        except Exception:
+            level_clients = {}
+        if not isinstance(level_clients, dict):
+            continue
+        for level_key, linked_client in level_clients.items():
+            if linked_client != client_number:
+                continue
+            if zone == exclude_zone and module == exclude_module and level_key == exclude_level_str:
+                continue
+            return {'zone': zone, 'module': module, 'level': level_key}
+    return None
 
 def get_shelf_positions(zone, module, levels, columns):
     """Gera lista de posições disponíveis em uma prateleira"""
@@ -1859,7 +1947,7 @@ def sort_zones_by_priority(zones, tag_catalog=None, zone_tags_map=None):
 
     return sorted(zones, key=zone_sort_key)
 
-def get_best_position_for_zone(zone):
+def get_best_position_for_zone(zone, client_number=None):
     """
     Retorna a melhor posição para armazenar um pedido em uma zona específica.
     Regras de prioridade:
@@ -1889,6 +1977,36 @@ def get_best_position_for_zone(zone):
 
     zone_shelves = sorted(zone_shelves, key=module_sort_key)
 
+    # If a client_number is provided, first try to find a position on a linked level
+    if client_number:
+        for shelf in zone_shelves:
+            zone_code = shelf.get('zone', '')
+            module = shelf.get('module', '')
+            levels = shelf.get('levels', 1)
+            columns = shelf.get('columns', 1)
+            slots = shelf.get('slots', 7)
+
+            positions = get_shelf_positions(zone_code, module, levels, columns)
+            # parse level_clients JSON for this shelf (if present)
+            try:
+                level_clients = json.loads(shelf.get('level_clients') or '{}')
+            except Exception:
+                level_clients = {}
+
+            for position in positions:
+                count = position_counts.get(position, 0)
+                if count >= slots:
+                    continue
+                # extract level (third segment)
+                try:
+                    parts = position.split('-')
+                    level_num = int(parts[2])
+                except Exception:
+                    level_num = None
+                if level_num is not None and str(level_num) in level_clients and level_clients.get(str(level_num)) == client_number:
+                    return position
+
+    # Fallback: original allocation rules (no client preference)
     for shelf in zone_shelves:
         zone_code = shelf.get('zone', '')
         module = shelf.get('module', '')
@@ -2577,7 +2695,20 @@ def dashboard():
             # Usar o dicionário de contagens ao invés de fazer queries individuais
             occupancy = sum(position_counts.get(pos, 0) for pos in positions)
             capacity = len(positions) * slots
-            
+
+            try:
+                raw_level_clients = json.loads(shelf.get('level_clients') or '{}')
+            except Exception:
+                raw_level_clients = {}
+            if not isinstance(raw_level_clients, dict):
+                raw_level_clients = {}
+            level_client_map = {}
+            for level_key, client_value in raw_level_clients.items():
+                try:
+                    level_client_map[int(level_key)] = client_value
+                except (TypeError, ValueError):
+                    continue
+
             shelf_data.append({
                 'zone': zone,
                 'module': module,
@@ -2587,7 +2718,8 @@ def dashboard():
                 'positions': positions,
                 'occupancy': occupancy,
                 'capacity': capacity,
-                'usage_percent': int((occupancy / capacity * 100) if capacity > 0 else 0)
+                'usage_percent': int((occupancy / capacity * 100) if capacity > 0 else 0),
+                'level_client_map': level_client_map
             })
         
         # Agrupar prateleiras por zona e coletar nomes/tags
@@ -2648,6 +2780,7 @@ def dashboard():
             cl = shelf['columns']
             sl = shelf['slots']
             row_heights = get_shelf_row_heights(shelf, lv)
+            shelf_level_client_map = shelf.get('level_client_map', {})
             rows_vis = []
             for row_index, level in enumerate(range(lv, 0, -1)):
                 cells = []
@@ -2659,7 +2792,12 @@ def dashboard():
                     raw_boxes = [make_box_entry(o, _thresholds_dash) for o in order_map.get(position, [])]
                     raw_boxes = list(reversed(raw_boxes))  # mais antiga primeiro → fundo-esquerda
                     cells.append({'position': position, 'boxes': raw_boxes, 'count': len(raw_boxes)})
-                rows_vis.append({'level': level, 'cells': cells, 'height_px': row_heights[row_index]})
+                rows_vis.append({
+                    'level': level,
+                    'cells': cells,
+                    'height_px': row_heights[row_index],
+                    'client_number': shelf_level_client_map.get(level),
+                })
             preview_zones_dash.setdefault(z, []).append({
                 'zone': z,
                 'module': m,
@@ -3395,6 +3533,55 @@ def add_shelf():
         flash(f'Prateleira {zone}-{module} criada com sucesso', 'success')
     
     return redirect(url_for('dashboard'))
+
+@app.route('/shelf/level/set_client', methods=['POST'])
+@login_required
+def set_shelf_level_client():
+    """Vincula (ou remove) um client_number a um andar fixo de prateleira.
+
+    Só disponível no setor EXPEDICAO, gated pela permissão granular
+    'shelf_level_clients' (sem senha mestre). Rota chamada via fetch/JSON.
+    """
+    if not can_access_feature('shelf_level_clients'):
+        return jsonify({'error': 'Sem permissão para vincular cliente por andar.'}), 403
+
+    sector = get_current_sector()
+    if sector != 'EXPEDICAO':
+        return jsonify({'error': 'Recurso disponível apenas no setor EXPEDICAO.'}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+    zone = str(data.get('zone', '')).strip().upper()
+    module = str(data.get('module', '')).strip().zfill(2)
+    try:
+        level = int(data.get('level'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Andar inválido.'}), 400
+    client_number = str(data.get('client_number', '')).strip()
+
+    unit = get_current_unit()
+    shelf = find_shelf(zone, module, unit=unit, sector=sector)
+    if not shelf:
+        return jsonify({'error': 'Prateleira não encontrada.'}), 404
+    levels = int(shelf.get('levels', 1) or 1)
+    if level < 1 or level > levels:
+        return jsonify({'error': 'Andar fora do intervalo desta prateleira.'}), 400
+
+    if client_number:
+        conflict = find_client_conflict(
+            client_number, unit, sector,
+            exclude_zone=zone, exclude_module=module, exclude_level=level,
+        )
+        if conflict:
+            return jsonify({
+                'error': f"Cliente {client_number} já está vinculado ao Andar {conflict['level']} de {conflict['zone']}-{conflict['module']}.",
+                'conflict': conflict,
+            }), 409
+
+    try:
+        db_mdb.set_shelf_level_client(zone, module, level, client_number, unit=unit, sector=sector)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 404
+    return jsonify({'success': True, 'zone': zone, 'module': module, 'level': level, 'client_number': client_number})
 
 @app.route('/shelf/remove', methods=['POST'])
 @login_required

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Checkin de Entrada - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Checkin de Entrada — leitura do ID Master e fechamento de lotes por cliente</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-upc-scan"></i> Bipar ID Master</h5>
+      </div>
+      <div class="card-body">
+        <div id="checkin-alert" class="alert" role="alert" style="display: none;"></div>
+        <form id="form-checkin-scan" onsubmit="return false;">
+          <div class="mb-3">
+            <label class="form-label fw-bold">ID Master (OS)</label>
+            <input type="text" id="master-id-input" class="form-control form-control-lg font-monospace"
+                   placeholder="Ex: 12345678" autocomplete="off" inputmode="numeric" autofocus>
+          </div>
+          <div class="mb-3" id="client-number-wrapper" style="display:none;">
+            <label class="form-label fw-bold">Número do Cliente</label>
+            <input type="text" id="client-number-input" class="form-control" placeholder="Ex: 403" autocomplete="off">
+            <small class="text-muted">ID Master não encontrado no sistema — informe o cliente para criar o pedido.</small>
+          </div>
+          <button type="button" class="btn btn-primary btn-lg w-100" onclick="Expedicao.Checkin.scan()">
+            <i class="bi bi-upc-scan"></i> Bipar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h6 class="mb-0"><i class="bi bi-signpost-split"></i> Gerar Onda de Picking</h6>
+      </div>
+      <div class="card-body">
+        <div id="picking-alert-checkin" class="alert" role="alert" style="display: none;"></div>
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <label class="form-label mb-0 fw-bold">Horário</label>
+            <div class="input-group">
+              <select id="horario-select-checkin" class="form-select">
+                <option value="">Selecione um horário...</option>
+                {% for horario in horarios %}
+                <option value="{{ horario }}">{{ horario }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-outline-secondary" type="button" id="horario-refresh-btn" title="Atualizar horários">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col">
+            <button type="button" class="btn btn-primary" id="gerar-onda-btn">Gerar Onda</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-folder2-open"></i> Lotes abertos</h6>
+      </div>
+      <div class="card-body">
+        {% if not open_lotes %}
+        <p class="text-muted small mb-0">Nenhum lote aberto no momento.</p>
+        {% endif %}
+        {% for lote in open_lotes %}
+        <div class="border rounded p-3 mb-3" data-lote-id="{{ lote.id }}">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong class="font-monospace">{{ lote.lote_code }}</strong>
+            <span class="badge bg-info">Cliente {{ lote.client_number }}</span>
+          </div>
+          <ul class="list-group list-group-flush mb-2">
+            {% for item in lote['items'] %}
+            <li class="list-group-item px-0 py-1 font-monospace">{{ item.order_id }}</li>
+            {% endfor %}
+          </ul>
+          <div class="input-group">
+            <input type="text" class="form-control form-control-sm" id="endereco-{{ lote.id }}" placeholder="Endereçamento (ex: A01)" value="{{ lote.endereco or '' }}">
+            <button class="btn btn-sm btn-success" onclick="Expedicao.Checkin.fechar({{ lote.id }})">
+              <i class="bi bi-lock"></i> Fechar Lote
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-printer"></i> Aguardando confirmação da guia</h6>
+      </div>
+      <div class="card-body">
+        {% if not pending_lotes %}
+        <p class="text-muted small mb-0">Nenhum lote aguardando confirmação.</p>
+        {% endif %}
+        {% for lote in pending_lotes %}
+        <div class="border rounded p-3 mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong class="font-monospace">{{ lote.lote_code }}</strong>
+            <span class="badge bg-warning text-dark">Endereço {{ lote.endereco }}</span>
+          </div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('expedicao.checkin_guia', lote_id=lote.id) }}" target="_blank">
+              <i class="bi bi-printer"></i> Ver/Imprimir Guia
+            </a>
+            <button class="btn btn-sm btn-primary" onclick="Expedicao.Checkin.confirmar({{ lote.id }})">
+              <i class="bi bi-check2"></i> Confirmar Guia (armazenado)
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/expedicao.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => Expedicao.Checkin.init());
+</script>
+{% endblock %}

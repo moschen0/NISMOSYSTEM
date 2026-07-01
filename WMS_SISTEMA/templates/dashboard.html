@@ -406,7 +406,21 @@
                                    data-level="{{ level }}"
                                    style="border-color: #0066cc; cursor: pointer; transition: background-color 0.2s;"
                                    onclick="event.preventDefault(); toggleLevelOrders(this);">
-                                    <strong><i class="bi bi-layers"></i> Andar {{ level }} <i class="bi bi-chevron-down ms-2" style="transition: transform 0.3s;"></i></strong>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <strong><i class="bi bi-layers"></i> Andar {{ level }} <i class="bi bi-chevron-down ms-2" style="transition: transform 0.3s;"></i></strong>
+                                        {% if can_access_shelf_level_clients and current_sector == 'EXPEDICAO' %}
+                                        <span class="d-flex align-items-center gap-1">
+                                            {% if shelf.level_client_map.get(level) %}
+                                            <span class="badge bg-info text-dark">Cliente {{ shelf.level_client_map.get(level) }}</span>
+                                            {% endif %}
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                                    title="Vincular cliente a este andar"
+                                                    onclick="event.preventDefault(); event.stopPropagation(); ShelfLevelClient.openModal('{{ shelf.zone }}', '{{ shelf.module }}', {{ level }}, '{{ shelf.level_client_map.get(level, '') }}');">
+                                                <i class="bi bi-gear"></i>
+                                            </button>
+                                        </span>
+                                        {% endif %}
+                                    </div>
                                 </a>
                                 <div class="level-orders-container" style="display: none; margin-top: 10px;">
                                     <div class="ps-3 border-start border-3" style="border-color: #0066cc;">
@@ -511,11 +525,28 @@
                         <div class="rack-body">
                             {% for row in shelf.rows %}
                                 <div class="rack-level" style="min-height: {{ row.height_px }}px;">
-                                    {% if row.cells %}
+                                    <div class="d-flex align-items-start justify-content-between">
+                                        {% if row.cells %}
                                         <div class="level-lbl">
                                             {{ row.cells[0].position if not shelf.has_modules else row.cells[0].position.rsplit('-', 1)[0] }}
                                         </div>
-                                    {% endif %}
+                                        {% else %}
+                                        <span></span>
+                                        {% endif %}
+                                        {% if can_access_shelf_level_clients and current_sector == 'EXPEDICAO' %}
+                                        <div class="d-flex align-items-center gap-1 mb-1">
+                                            {% if row.client_number %}
+                                            <span class="badge bg-info text-dark" style="font-size:9px;">Cliente {{ row.client_number }}</span>
+                                            {% endif %}
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                                    style="font-size:10px; line-height:1;"
+                                                    title="Vincular cliente a este andar"
+                                                    onclick="event.preventDefault(); event.stopPropagation(); ShelfLevelClient.openModal('{{ shelf.zone }}', '{{ shelf.module }}', {{ row.level }}, '{{ row.client_number or '' }}');">
+                                                <i class="bi bi-gear"></i>
+                                            </button>
+                                        </div>
+                                        {% endif %}
+                                    </div>
                                     {% if shelf.has_modules %}
                                         <div class="modules-grid" style="grid-template-columns: repeat({{ shelf.columns }}, 1fr);">
                                             {% for cell in row.cells %}
@@ -598,6 +629,37 @@
     </a>
     {% endif %}
 </div>
+
+{% if can_access_shelf_level_clients %}
+<!-- Modal: Vincular Cliente por Andar -->
+<div class="modal fade" id="editLevelClientModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h6 class="modal-title"><i class="bi bi-person-badge"></i> Vincular Cliente ao Andar</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <strong>Prateleira:</strong> <span id="elc-shelf-label"></span>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Número do Cliente</label>
+          <input type="text" class="form-control" id="elc-client-number" placeholder="Ex: 580 (vazio remove o vínculo)">
+          <small class="text-muted">Cada cliente só pode estar vinculado a 1 andar.</small>
+        </div>
+        <div id="elc-error" class="alert alert-danger py-2" style="display: none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="ShelfLevelClient.save()">
+          <i class="bi bi-check-lg"></i> Salvar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 // Toggle entre tema Lista e Prateleiras
@@ -929,6 +991,71 @@ async function toggleLevelOrders(element) {
         container.innerHTML = '<div class="ps-3 border-start border-3 p-2 text-danger" style="border-color: #dc3545;"><i class="bi bi-exclamation-circle"></i> Erro: ' + error.message + '</div>';
     }
 }
+
+// Vincular cliente por andar (engrenagem) — setor EXPEDICAO
+const ShelfLevelClient = (() => {
+    let current = { zone: '', module: '', level: null };
+
+    function openModal(zone, module, level, currentClient) {
+        current = { zone, module, level };
+        const labelEl = document.getElementById('elc-shelf-label');
+        if (labelEl) labelEl.textContent = `${zone}-${module}, Andar ${level}`;
+        const inputEl = document.getElementById('elc-client-number');
+        if (inputEl) inputEl.value = currentClient || '';
+        const errorEl = document.getElementById('elc-error');
+        if (errorEl) {
+            errorEl.style.display = 'none';
+            errorEl.textContent = '';
+        }
+        const modalEl = document.getElementById('editLevelClientModal');
+        if (!modalEl || !window.bootstrap) {
+            console.error('ShelfLevelClient.openModal(): modal ou bootstrap indisponível.', { modalEl, bootstrap: window.bootstrap });
+            return;
+        }
+        const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+
+    function showError(message) {
+        console.error('ShelfLevelClient:', message);
+        const errorEl = document.getElementById('elc-error');
+        if (errorEl) {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        } else {
+            alert(message);
+        }
+    }
+
+    async function save() {
+        const inputEl = document.getElementById('elc-client-number');
+        const clientNumber = inputEl ? inputEl.value.trim() : '';
+        const errorEl = document.getElementById('elc-error');
+        if (errorEl) errorEl.style.display = 'none';
+        try {
+            const response = await fetch('/shelf/level/set_client', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    zone: current.zone,
+                    module: current.module,
+                    level: current.level,
+                    client_number: clientNumber,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                showError(data.error || 'Erro ao salvar vínculo.');
+                return;
+            }
+            window.location.reload();
+        } catch (error) {
+            showError('Erro inesperado: ' + error.message);
+        }
+    }
+
+    return { openModal, save };
+})();
 </script>
 
 {% endblock %}

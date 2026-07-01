@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Picking com Doublecheck - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Picking com Doublecheck — conferência cega dos IDs separados fisicamente</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+{% if not lote %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i> Nenhum lote selecionado. Vá até a
+  <a href="{{ url_for('expedicao.picking_page') }}">Onda de Picking</a> e selecione um lote para iniciar o doublecheck.
+</div>
+{% else %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-check2-square"></i> Lote {{ lote.lote_code }}</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-warning small">
+          <i class="bi bi-eye-slash"></i> <strong>Conferência às cegas:</strong> você não vê os IDs esperados.
+          Bipe fisicamente cada ID separado; o sistema confere automaticamente.
+        </div>
+        <!-- Loud warning modal / overlay for invalid OS scans -->
+        <div id="dc-loud-warning-overlay" style="display:none; position:fixed; inset:0; z-index:2147483647; align-items:center; justify-content:center;">
+          <div style="background:rgba(0,0,0,0.6); position:absolute; inset:0;"></div>
+          <div id="dc-loud-warning-box" style="position:relative; background:#fff; padding:28px 24px; border-radius:8px; max-width:760px; width:100%; box-shadow:0 8px 40px rgba(0,0,0,0.5); text-align:center;">
+            <div style="font-size:36px; color:#c82333; font-weight:700; margin-bottom:8px;">
+              <i class="bi bi-exclamation-triangle-fill"></i> ATENÇÃO
+            </div>
+            <div id="dc-loud-warning-message" style="font-size:20px; color:#111; margin-bottom:18px;"></div>
+            <div style="display:flex; gap:12px; justify-content:center;">
+              <button id="dc-loud-warning-ok" class="btn btn-danger btn-lg">Fechar</button>
+              <button id="dc-loud-warning-repeat" class="btn btn-outline-danger btn-lg">Tentar novamente</button>
+            </div>
+          </div>
+        </div>
+        <div id="doublecheck-alert" class="alert" role="alert" style="display: none;"></div>
+        <input type="hidden" id="dc-lote-id" value="{{ lote.id }}">
+        <input type="hidden" id="dc-onda-id" value="{{ onda_id or '' }}">
+        <div class="mb-3">
+          <label class="form-label fw-bold">ID bipado</label>
+          <input type="text" id="dc-order-id-input" class="form-control form-control-lg font-monospace"
+                 placeholder="Ex: 12345678" autocomplete="off" inputmode="numeric" autofocus>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg w-100 mb-3" onclick="Expedicao.Doublecheck.scan()">
+          <i class="bi bi-upc-scan"></i> Conferir
+        </button>
+
+        <div class="progress mb-2" style="height: 24px;">
+          <div id="dc-progress-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%;">0%</div>
+        </div>
+        <p class="small text-muted mb-3">
+          <span id="dc-confirmed">{{ progress.confirmed if progress else 0 }}</span> de
+          <span id="dc-total">{{ progress.total if progress else 0 }}</span> IDs confirmados
+        </p>
+
+        <button type="button" class="btn btn-outline-success w-100" onclick="Expedicao.Doublecheck.finalizar()">
+          <i class="bi bi-flag"></i> Finalizar Separação
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/expedicao.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => Expedicao.Doublecheck.init());
+</script>
+{% endblock %}

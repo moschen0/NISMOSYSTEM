@@ -144,9 +144,10 @@
 }
 
 .navbar .nav-link.is-active {
-  color: #fff;
-  background: var(--accent);
-  border-color: transparent;
+  color: var(--c-blue) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  font-weight: 600;
 }
 
 .navbar .nav-link.nav-link-cta {

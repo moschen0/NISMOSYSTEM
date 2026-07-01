@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Embala e Fatura - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Embala e Fatura — finalização do lote e envio para faturamento</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+<div id="embalagem-alert" class="alert" role="alert" style="display: none;"></div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header">
+    <h6 class="mb-0"><i class="bi bi-box-seam"></i> Lotes separados</h6>
+  </div>
+  <div class="card-body">
+    {% if not lotes %}
+    <p class="text-muted small mb-0">Nenhum lote separado aguardando embalagem/faturamento.</p>
+    {% endif %}
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th>Lote</th>
+          <th>Cliente</th>
+          <th>Status</th>
+          <th class="text-end">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lote in lotes %}
+        <tr>
+          <td class="font-monospace">{{ lote.lote_code }}</td>
+          <td>{{ lote.client_number }}</td>
+          <td>
+            {% if lote.status == 'separado_com_falta' %}
+            <span class="badge bg-danger">Separado com falta</span>
+            {% elif lote.status == 'separado_completo' %}
+            <span class="badge bg-success">Separado completo</span>
+            {% else %}
+            <span class="badge bg-primary">Embalado</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if lote.status in ('separado_completo', 'separado_com_falta') %}
+            <button class="btn btn-sm btn-primary" onclick="Expedicao.Embalagem.embalar({{ lote.id }})">
+              <i class="bi bi-box-seam"></i> Embalar
+            </button>
+            {% elif lote.status == 'embalado' %}
+            <button class="btn btn-sm btn-success" onclick="Expedicao.Embalagem.faturar({{ lote.id }})">
+              <i class="bi bi-receipt"></i> Enviar para Faturamento
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small text-muted mb-0">
+      <i class="bi bi-info-circle"></i> "Enviar para Faturamento" apenas registra o handoff (usuário/data-hora).
+      Integração real com o sistema de faturamento (ACERT) está fora do escopo desta versão.
+    </p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/expedicao.js') }}"></script>
+{% endblock %}

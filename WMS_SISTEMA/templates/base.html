@@ -144,8 +144,9 @@
             background: rgba(255,255,255,0.08);
         }
         .nav-link.active {
-            color: white !important;
-            background: rgba(255,255,255,0.12);
+            color: var(--c-blue) !important;
+            background: transparent !important;
+            font-weight: 600;
         }
 
         /* CTA pill na nav — Novo Pedido */
@@ -681,6 +682,13 @@
                 </li>
                 {% endif %}
                 {% if can_access_confirmations_history %}
+                {% endif %}
+                {% if can_access_expedicao %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('expedicao.index') }}">
+                        <i class="bi bi-truck"></i> Expedição
+                    </a>
+                </li>
                 {% endif %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">

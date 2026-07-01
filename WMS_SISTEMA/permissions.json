@@ -132,6 +132,48 @@
       "description": "Acesso às configurações do sistema",
       "icon": "bi-gear",
       "created_at": "2024-01-01T00:00:00"
+    },
+    {
+      "id": "expedicao",
+      "name": "Expedição",
+      "description": "Acesso ao módulo de Expedição (botão na barra de navegação)",
+      "icon": "bi-truck",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "expedicao_checkin",
+      "name": "Expedição - Checkin de Entrada",
+      "description": "Aba de leitura do ID Master e fechamento de lotes na Expedição",
+      "icon": "bi-upc-scan",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "expedicao_picking",
+      "name": "Expedição - Onda de Picking",
+      "description": "Aba de geração de onda de picking por horário na Expedição",
+      "icon": "bi-signpost-split",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "expedicao_doublecheck",
+      "name": "Expedição - Picking com Doublecheck",
+      "description": "Aba de conferência cega (doublecheck) de picking na Expedição",
+      "icon": "bi-check2-square",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "expedicao_embalagem",
+      "name": "Expedição - Embala e Fatura",
+      "description": "Aba de embalagem e envio para faturamento na Expedição",
+      "icon": "bi-box-seam-fill",
+      "created_at": "2026-07-01T00:00:00"
+    },
+    {
+      "id": "shelf_level_clients",
+      "name": "Prateleira - Vincular Cliente por Andar",
+      "description": "Vincular/editar o cliente fixo de cada andar das prateleiras (engrenagem no dashboard, setor Expedição)",
+      "icon": "bi-person-badge",
+      "created_at": "2026-07-01T00:00:00"
     }
   ]
 }

@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 import re
+import json
 from functools import lru_cache
 try:
     from werkzeug.security import generate_password_hash, check_password_hash as _check_hash
@@ -275,6 +276,15 @@ def _ensure_unit_schema(conn):
                     import logging
                     logging.warning(f"Nao foi possivel adicionar [row_heights] em shelves: {_e}")
 
+        # Mapa JSON {andar: client_number} - vinculo fixo cliente->andar (Expedicao).
+        if not _column_exists(cursor, 'shelves', 'level_clients'):
+            try:
+                _run_ddl_on_conn(conn, "ALTER TABLE shelves ADD COLUMN level_clients LONGTEXT")
+            except Exception as _e:
+                if not _column_exists(cursor, 'shelves', 'level_clients'):
+                    import logging
+                    logging.warning(f"Nao foi possivel adicionar [level_clients] em shelves: {_e}")
+
         # Adiciona coluna de atividade para relatorios e normaliza legado.
         if not _column_exists(cursor, 'orders', 'ativo_inativo'):
             try:
@@ -314,6 +324,7 @@ def _ensure_unit_schema(conn):
             ('movements', 'unit'),
             ('shelves', 'sector'),
             ('shelves', 'row_heights'),
+            ('shelves', 'level_clients'),
             ('orders', 'sector'),
             ('movements', 'sector'),
             ('orders', 'ativo_inativo'),
@@ -623,6 +634,58 @@ def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DE
         (zone, module, levels, columns, slots, row_heights, unit, sector)
     )
     conn.commit()
+
+def get_shelf_level_clients(zone, module, unit=None, sector=None):
+    """Retorna o dict {andar(str): client_number} vinculado a esta prateleira."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["zone = ?", "module = ?"]
+    params = [zone, module]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        params.append(sector)
+    cursor.execute(f"SELECT level_clients FROM shelves WHERE {' AND '.join(conditions)}", params)
+    row = cursor.fetchone()
+    if not row or not row[0]:
+        return {}
+    try:
+        parsed = json.loads(row[0])
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+def set_shelf_level_client(zone, module, level, client_number, unit=None, sector=None):
+    """Vincula (ou remove, se client_number vazio) um client_number a um andar fixo."""
+    level_clients = get_shelf_level_clients(zone, module, unit=unit, sector=sector)
+    level_key = str(level)
+    client_number = (client_number or '').strip()
+    if client_number:
+        level_clients[level_key] = client_number
+    else:
+        level_clients.pop(level_key, None)
+    conn = get_connection()
+    cursor = conn.cursor()
+    conditions = ["zone = ?", "module = ?"]
+    params = [json.dumps(level_clients, ensure_ascii=False)]
+    where_params = [zone, module]
+    if unit is not None:
+        conditions.append("[unit] = ?")
+        where_params.append(normalize_unit(unit))
+    if sector is not None:
+        conditions.append("[sector] = ?")
+        where_params.append(sector)
+    cursor.execute(
+        f"UPDATE shelves SET level_clients = ? WHERE {' AND '.join(conditions)}",
+        params + where_params
+    )
+    rows_affected = cursor.rowcount
+    conn.commit()
+    if rows_affected == 0:
+        raise ValueError(f"Nenhuma prateleira encontrada para zone={zone}, module={module}, unit={unit}, sector={sector} (nenhum registro atualizado).")
+    return level_clients
 
 def delete_shelf(zone, module, unit=None):
     """Remove uma prateleira"""
