@@ -14,9 +14,11 @@
         <div class="strip-item strip-item-cli">
           <span class="strip-meta"><b>CLI:</b> {{ label.numero_cliente }}</span>
         </div>
-        <div class="strip-item strip-item-rot">
-          <span class="strip-meta"><b>ROT:</b> {{ label.cor_roteiro }}</span>
+        {% if label.tipo_lente %}
+        <div class="strip-item strip-item-tipo-lente">
+          <span class="strip-meta"><b>TIPO:</b> {{ label.tipo_lente }}</span>
         </div>
+        {% endif %}
         {% if label.entregador %}
         <div class="strip-item strip-item-ent">
           <span class="strip-meta strip-entregador"><b>ENT:</b> {{ label.entregador }}</span>
