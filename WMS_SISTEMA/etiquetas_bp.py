@@ -349,6 +349,49 @@ def _get_legacy_labels_path() -> Path:
     return _DATA_DIR / LEGACY_XLS_FILENAME
 
 
+def _import_integrador_opto():
+    if getattr(sys, "frozen", False):
+        opto_dir = Path(sys.executable).resolve().parent / "OPTO_INTEGRATIONS"
+    else:
+        opto_dir = (Path(__file__).resolve().parent.parent / "OPTO_INTEGRATIONS").resolve()
+    if str(opto_dir) not in sys.path:
+        sys.path.insert(0, str(opto_dir))
+    import importlib
+    import integrador_opto as _m  # type: ignore
+    return importlib.reload(_m) if getattr(_m, "__spec__", None) else _m
+
+
+def _fetch_tipo_lente_from_opto(os_id: str) -> str:
+    os_id = str(os_id or "").strip()
+    if not os_id:
+        return ""
+    try:
+        opto = _import_integrador_opto()
+        opto.init_database()
+        if hasattr(opto, "resolve_txt_fields"):
+            _, fields = opto.resolve_txt_fields(os_id)
+        else:
+            txt_path = opto.find_txt(os_id)
+            fields = opto.parse_txt(txt_path)
+        bd_prod = getattr(opto, "BD_PROD", {}) or {}
+        fallback_codigo = ""
+        for field_idx in (35, 36):
+            codigo = str(fields.get(field_idx, "") or "").strip()
+            if not codigo:
+                continue
+            if not fallback_codigo:
+                fallback_codigo = codigo
+            tipo_lente = str((bd_prod.get(codigo) or {}).get("C", "") or "").strip()
+            if tipo_lente:
+                return tipo_lente
+        if fallback_codigo:
+            return f"COD {fallback_codigo}"
+        row = opto.build_row(fields)
+        return str(row[4] or "").strip() if len(row) > 4 else ""
+    except Exception:
+        return ""
+
+
 def _ensure_labels_schema(conn: Any) -> None:
     cursor = conn.cursor()
     if not _table_exists(cursor, LABEL_CLIENTS_TABLE):
@@ -865,11 +908,16 @@ def build_label_data(numero_cliente: int, persist_print_date: bool = True) -> di
     }
 
 
-def build_label_data_by_os(os_id: int, numero_cliente: int, persist_print_date: bool = True) -> dict[str, Any] | None:
+def build_label_data_by_os(os_id: int, numero_cliente: int, persist_print_date: bool = True, fetch_tipo: bool = True) -> dict[str, Any] | None:
     label_data = build_label_data(numero_cliente, persist_print_date=persist_print_date)
     if not label_data:
         return None
     label_data["os_id"] = os_id
+    label_data["show_tipo_lente"] = fetch_tipo
+    if fetch_tipo:
+        label_data["tipo_lente"] = _fetch_tipo_lente_from_opto(str(os_id))
+    else:
+        label_data["tipo_lente"] = ""
     return label_data
 
 
@@ -1231,7 +1279,8 @@ def label_by_os_id():
         barcode_type = request.args.get("barcode_type", "CODE128").strip().upper()
         if barcode_type not in {"CODE128", "CODE39", "EAN13", "EAN8", "UPC", "QRCODE"}:
             barcode_type = "CODE128"
-        label_data = build_label_data_by_os(os_id, numero_cliente, persist_print_date=True)
+        show_tipo = request.args.get("show_tipo_lente", "1").strip().lower() in {"1", "true", "yes"}
+        label_data = build_label_data_by_os(os_id, numero_cliente, persist_print_date=True, fetch_tipo=show_tipo)
         if not label_data:
             return redirect(url_for("etiquetas.index", error="Cliente nao encontrado."))
         return render_template(
@@ -1252,7 +1301,8 @@ def label_preview_by_os_id():
         os_id = int(request.args.get("os_id", "").strip())
         numero_cliente = int(request.args.get("numero_cliente", "").strip())
         label_size = request.args.get("label_size", "80x20").strip()
-        label_data = build_label_data_by_os(os_id, numero_cliente, persist_print_date=False)
+        show_tipo = request.args.get("show_tipo_lente", "1").strip().lower() in {"1", "true", "yes"}
+        label_data = build_label_data_by_os(os_id, numero_cliente, persist_print_date=False, fetch_tipo=show_tipo)
         if not label_data:
             return "Cliente nao encontrado.", 404
         return render_template(

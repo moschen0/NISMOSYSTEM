@@ -69,6 +69,29 @@ _SCRIPT_DIR = Path(__file__).parent
 BD_PROD_PATH = _SCRIPT_DIR / "BD_PROD.xlsx"
 DB_TRAT_PATH = _SCRIPT_DIR / "DB_TRAT.xlsx"
 
+
+def _lookup_workbook_paths(filename: str) -> list[Path]:
+    paths = [(_SCRIPT_DIR / filename).resolve()]
+    server_copy = (_SCRIPT_DIR.parent / "WMS_Server" / "OPTO_INTEGRATIONS" / filename).resolve()
+    if server_copy not in paths:
+        paths.append(server_copy)
+    return paths
+
+
+def _load_lookup_workbook(filename: str):
+    errors: list[str] = []
+    for path in _lookup_workbook_paths(filename):
+        if not path.exists():
+            errors.append(f"{path}: nao encontrado")
+            continue
+        try:
+            return openpyxl.load_workbook(path, read_only=True, data_only=True)
+        except PermissionError as exc:
+            errors.append(f"{path}: sem permissao ({exc})")
+        except Exception as exc:
+            errors.append(f"{path}: {exc}")
+    raise RuntimeError(f"Nao foi possivel abrir {filename}. " + " | ".join(errors))
+
 # ---------------------------------------------------------------------------
 # Destino das planilhas por empresa (prefixo da "OS OPTO")
 # ---------------------------------------------------------------------------
@@ -93,9 +116,7 @@ MESES_PT = [
 
 def _load_bd_prod() -> dict[str, dict[str, str]]:
     """Carrega BD_PROD.xlsx → {codigo: {"C": tipo_lente, "D": foto, "E": material}}."""
-    if not BD_PROD_PATH.exists():
-        raise FileNotFoundError(f"BD_PROD.xlsx não encontrado em {BD_PROD_PATH}")
-    wb = openpyxl.load_workbook(BD_PROD_PATH, read_only=True, data_only=True)
+    wb = _load_lookup_workbook("BD_PROD.xlsx")
     ws = wb.active
     result: dict[str, dict[str, str]] = {}
     for i, row in enumerate(ws.iter_rows(values_only=True)):
@@ -115,9 +136,7 @@ def _load_bd_prod() -> dict[str, dict[str, str]]:
 
 def _load_db_trat() -> dict[str, str]:
     """Carrega DB_TRAT.xlsx → {codigo: valor_col_C (TRAT OPTO)}."""
-    if not DB_TRAT_PATH.exists():
-        raise FileNotFoundError(f"DB_TRAT.xlsx não encontrado em {DB_TRAT_PATH}")
-    wb = openpyxl.load_workbook(DB_TRAT_PATH, read_only=True, data_only=True)
+    wb = _load_lookup_workbook("DB_TRAT.xlsx")
     ws = wb.active
     result: dict[str, str] = {}
     for i, row in enumerate(ws.iter_rows(values_only=True)):
@@ -172,7 +191,7 @@ COLUMN_SPEC: list[Union[int, str, LookupSpec, MapSpec, MultiLookupSpec]] = [
     MultiLookupSpec((66, 67, 68, 69, 70), "DB_TRAT", "C", required=True),  # Tratamento → primeiro cod_trat que existir no DB_TRAT
     MapSpec(1, _QTD_MAP, default=""),      # Quantidade            → 1→"1" | 2→"0.5" | 3→"0.5 Esquerdo"
     "Outros",                        # Fabricante            → literal fixo
-    LookupSpec(35, "BD_PROD", "C"),  # Tipo de Lente         → codigo_produto_od → col C BD_PROD
+    MultiLookupSpec((35, 36), "BD_PROD", "C"),  # Tipo de Lente → codigo_produto_od / codigo_produto_oe → col C BD_PROD
     "Sem Observações",               # Observação Lente/Serv → observacoes
     LookupSpec(35, "BD_PROD", "D"),  # Fotossensibilidade    → codigo_produto_od → col D BD_PROD
     "Inteira",                       # Inteira/Recortada     → tipo_armacao

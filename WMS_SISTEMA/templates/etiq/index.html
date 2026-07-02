@@ -159,6 +159,11 @@
                 </select>
               </label>
 
+              <label class="toggle-line" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="show_tipo_lente" value="1" checked>
+                <span>Mostrar Tipo de Lente</span>
+              </label>
+
               <div class="actions-row form-actions">
                 <button type="submit">Gerar etiqueta</button>
                 <button type="button" id="print-btn" class="ghost" disabled>Imprimir</button>
@@ -295,6 +300,7 @@
       const formData = new FormData(form);
       const osId = String(formData.get("os_id") || "").trim();
       const numeroCliente = String(formData.get("numero_cliente") || "").trim();
+      const showTipoLente = formData.has("show_tipo_lente") ? "1" : "0";
       currentLabelSize = String(formData.get("label_size") || "80x20").trim();
       currentBarcodeType = String(formData.get("barcode_type") || "CODE128").trim();
 
@@ -302,7 +308,7 @@
         return;
       }
 
-      const query = new URLSearchParams({ os_id: osId, numero_cliente: numeroCliente, label_size: currentLabelSize, barcode_type: currentBarcodeType });
+      const query = new URLSearchParams({ os_id: osId, numero_cliente: numeroCliente, label_size: currentLabelSize, barcode_type: currentBarcodeType, show_tipo_lente: showTipoLente });
       const response = await fetch(`/etiq/etiquetas/os/preview?${query.toString()}`);
       const html = await response.text();
 
