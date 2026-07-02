@@ -381,6 +381,76 @@ def _today_str() -> str:
     return datetime.now().strftime("%d/%m/%Y")
 
 
+def _get_table_columns(cursor, table_name: str) -> set[str]:
+    return {str(row.column_name).lower() for row in cursor.columns(table=table_name)}
+
+
+def get_expedicao_client_label_data(client_code: Any) -> dict[str, str]:
+    """Retorna dados da etiqueta de expedição usando codigo_cliente/numero_cliente.
+
+    Importante: não usa o id interno de etiq_clients como vínculo de cliente.
+    """
+    codigo = str(client_code or '').strip()
+    data = {
+        "cliente_codigo": codigo,
+        "cliente_nome": "",
+        "cliente_endereco": "",
+        "cliente_cidade": "",
+        "cliente_estado": "",
+        "cliente_cep": "",
+        "cliente_cnpj_cpf": "",
+        "cliente_setor": "",
+        "cliente_rota": "",
+    }
+    if not codigo:
+        return data
+
+    conn = db_mdb.get_connection()
+    cur = conn.cursor()
+    columns = _get_table_columns(cur, "etiq_clients")
+    optional_fields = {
+        "cnpj_cpf": "cliente_cnpj_cpf",
+        "setor": "cliente_setor",
+    }
+    optional_selects = [col for col in optional_fields if col in columns]
+
+    select_cols = [
+        "nome_cliente", "endereco", "numero", "complemento", "bairro",
+        "cidade", "estado", "cep", "cor_roteiro", "horario_roteiro",
+        *optional_selects,
+    ]
+    sql = f"SELECT TOP 1 {', '.join(select_cols)} FROM etiq_clients WHERE codigo_cliente = ? ORDER BY id DESC"
+    cur.execute(sql, (codigo,))
+    row = cur.fetchone()
+    if not row and codigo.isdigit():
+        sql = f"SELECT TOP 1 {', '.join(select_cols)} FROM etiq_clients WHERE numero_cliente = ? ORDER BY id DESC"
+        cur.execute(sql, (int(codigo),))
+        row = cur.fetchone()
+    if not row:
+        return data
+
+    values = {select_cols[i]: row[i] for i in range(len(select_cols))}
+    endereco_partes = [
+        values.get("endereco"),
+        values.get("numero"),
+        values.get("complemento"),
+        values.get("bairro"),
+    ]
+    data.update({
+        "cliente_nome": str(values.get("nome_cliente") or "").strip(),
+        "cliente_endereco": " ".join(str(v).strip() for v in endereco_partes if str(v or "").strip()),
+        "cliente_cidade": str(values.get("cidade") or "").strip(),
+        "cliente_estado": str(values.get("estado") or "").strip(),
+        "cliente_cep": str(values.get("cep") or "").strip(),
+        "cliente_rota": str(values.get("horario_roteiro") or "").strip(),
+        "cliente_setor": str(values.get("setor") or values.get("cor_roteiro") or "").strip(),
+    })
+    for column_name, data_key in optional_fields.items():
+        if column_name in values:
+            data[data_key] = str(values.get(column_name) or "").strip()
+    return data
+
+
 # ---------------------------------------------------------------------------
 # CRUD — Lotes (Checkin de Entrada)
 # ---------------------------------------------------------------------------
@@ -474,6 +544,42 @@ def lote_item_exists(lote_id, order_id) -> bool:
     )
     row = cursor.fetchone()
     return bool(row and row[0])
+
+
+def lote_item_exists_for_order(order_id, unit, sector) -> bool:
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"SELECT COUNT(*) FROM {LOTE_ITEMS_TABLE} WHERE order_id = ? AND [unit] = ? AND [sector] = ?",
+        (order_id, unit, sector),
+    )
+    row = cursor.fetchone()
+    return bool(row and row[0])
+
+
+def get_lote_for_order(order_id, unit, sector):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""SELECT TOP 1 l.*
+            FROM {LOTES_TABLE} AS l
+            INNER JOIN {LOTE_ITEMS_TABLE} AS i ON l.id = i.lote_id
+            WHERE (i.order_id = ? OR Trim(i.order_id) = ?) AND i.[unit] = ? AND i.[sector] = ?
+            ORDER BY i.id DESC""",
+        (order_id, order_id, unit, sector),
+    )
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute(
+            f"""SELECT TOP 1 l.*
+                FROM {LOTES_TABLE} AS l
+                INNER JOIN {LOTE_ITEMS_TABLE} AS i ON l.id = i.lote_id
+                WHERE i.order_id = ? OR Trim(i.order_id) = ?
+                ORDER BY i.id DESC""",
+            (order_id, order_id),
+        )
+        row = cursor.fetchone()
+    return db_mdb.dict_from_row(cursor, row)
 
 
 def get_lote_items(lote_id):
@@ -674,6 +780,20 @@ def get_onda_lotes(onda_id):
     return db_mdb.dicts_from_rows(cursor, rows)
 
 
+def get_lote_onda_horario(lote_id):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""SELECT TOP 1 o.horario FROM {ONDAS_TABLE} o
+            INNER JOIN {ONDA_LOTES_TABLE} ol ON ol.onda_id = o.id
+            WHERE ol.lote_id = ?
+            ORDER BY o.id DESC""",
+        (lote_id,),
+    )
+    row = cursor.fetchone()
+    return str(row[0]).strip() if row and row[0] else ""
+
+
 def get_lotes_armazenados_by_clients(client_numbers, unit, sector):
     if not client_numbers:
         return []
@@ -788,6 +908,35 @@ def api_checkin_scan():
     sector = get_current_sector()
     user = get_current_user()
 
+    existing_lote = get_lote_for_order(order_id, unit, sector)
+    if existing_lote:
+        lote_status = str(existing_lote.get("status") or "").strip()
+        if lote_status == "faturado":
+            error_message = "Este ID Master já foi embalado e faturado. Não pode retornar ao Checkin de Entrada."
+        elif lote_status == "embalado":
+            error_message = "Este ID Master já foi embalado e aguarda faturamento. Não pode retornar ao Checkin de Entrada."
+        else:
+            error_message = "Este ID Master já foi bipado no Checkin de Entrada."
+        return jsonify({
+            "success": False,
+            "blocked": True,
+            "error": error_message,
+            "message": error_message,
+            "lote_id": existing_lote.get("id"),
+            "lote_status": lote_status,
+        }), 409
+
+    existing_order = db_mdb.get_order_by_id(order_id, unit=unit, sector=sector) or db_mdb.get_order_by_id(order_id)
+    if existing_order:
+        error_message = "Este ID Master já existe no sistema e não pode retornar ao Checkin de Entrada."
+        return jsonify({
+            "success": False,
+            "blocked": True,
+            "error": error_message,
+            "message": error_message,
+            "order_id": order_id,
+        }), 409
+
     # Fonte da verdade do client_number: arquivo {order_id}.txt do SIOU
     # (campo 2 = codigo_cliente). Sem cache — relido a cada bipagem.
     client_number = _resolve_client_number_from_txt(order_id)
@@ -799,19 +948,17 @@ def api_checkin_scan():
             }), 404
         client_number = client_number_input
 
-    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=sector)
-    if not order:
-        db_mdb.add_order(
-            position="PENDENTE",
-            order_id=order_id,
-            box=client_number,
-            date=_now_str(),
-            timestamp=_now_str(),
-            created_by=user,
-            status="add",
-            unit=unit,
-            sector=sector,
-        )
+    db_mdb.add_order(
+        position="PENDENTE",
+        order_id=order_id,
+        box=client_number,
+        date=_now_str(),
+        timestamp=_now_str(),
+        created_by=user,
+        status="add",
+        unit=unit,
+        sector=sector,
+    )
 
     lote = get_or_create_open_lote(client_number, unit, sector, user)
     if lote_item_exists(lote["id"], order_id):
@@ -1046,6 +1193,28 @@ def picking_select_lote(onda_id, lote_id):
 # Rotas — Picking com Doublecheck
 # ---------------------------------------------------------------------------
 
+@expedicao_bp.route("/label-preview", methods=["GET"])
+@login_required
+@_expedicao_feature_required("expedicao_doublecheck")
+def expedicao_label_preview_page():
+    """Página de prévia da etiqueta de expedição (expedicao_label_100x150.html).
+    Acessível a quem tem permissão de doublecheck."""
+    return render_template(
+        "etiq/expedicao_label_100x150.html",
+        cliente_nome=request.args.get("cliente_nome", ""),
+        cliente_codigo=request.args.get("cliente_codigo", ""),
+        cliente_endereco=request.args.get("cliente_endereco", ""),
+        cliente_cnpj_cpf=request.args.get("cliente_cnpj_cpf", ""),
+        cliente_cidade=request.args.get("cliente_cidade", ""),
+        cliente_estado=request.args.get("cliente_estado", ""),
+        cliente_cep=request.args.get("cliente_cep", ""),
+        cliente_setor=request.args.get("cliente_setor", ""),
+        cliente_rota=request.args.get("cliente_rota", ""),
+        usuario_entrada=request.args.get("usuario_entrada", ""),
+        usuario_embalagem=request.args.get("usuario_embalagem", ""),
+    )
+
+
 @expedicao_bp.route("/doublecheck", methods=["GET"])
 @login_required
 @_expedicao_feature_required("expedicao_doublecheck")
@@ -1114,10 +1283,13 @@ def api_doublecheck_finalizar():
     if status == "separado_completo":
         try:
             cliente = lote.get("client_number")
-            endereco = lote.get("endereco") or ""
             if cliente:
-                label_url = url_for("etiquetas.label_envio_pdf_quick", id_master=cliente, endereco=endereco)
-                response["label_url"] = label_url
+                label_data = get_expedicao_client_label_data(cliente)
+                if not label_data.get("cliente_rota"):
+                    label_data["cliente_rota"] = get_lote_onda_horario(lote_id)
+                label_data["usuario_entrada"] = str(lote.get("created_by") or "").strip()
+                label_data["usuario_embalagem"] = str(lote.get("embalado_by") or "").strip()
+                response["label_data"] = label_data
         except Exception:
             pass
         # Also, free the shelf positions for the orders in this lote so they don't keep occupying space

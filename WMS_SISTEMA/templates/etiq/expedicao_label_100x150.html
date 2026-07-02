@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Etiqueta Expedição 150×100 mm{% endblock %}
+
+{% block content %}
+<style>
+  /* Print page size for the label */
+  @media print {
+    @page { size: 150mm 100mm landscape; margin: 0; }
+    body * { visibility: hidden; }
+    #labelPreview, #labelPreview * { visibility: visible; }
+    #labelPreview {
+      position: fixed; inset: 2mm;
+      width: 146mm; height: 96mm;
+      border: 3px solid #000;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .label-code { font-size: 64pt; }
+    .label-info { padding: 5mm 10mm; gap: 1.7mm; }
+    .label-line { font-size: 9.5pt; }
+  }
+
+  .exp-shell { max-width: 900px; margin: 20px auto; font-family: "Space Grotesk", sans-serif; }
+  .exp-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 18px; }
+  .form-row { display:flex; gap:12px; flex-wrap:wrap; }
+  .form-row label { flex:1 1 220px; display:flex; flex-direction:column; font-weight:600; font-size:.95rem; }
+  .form-row input { padding:8px 10px; border-radius:8px; border:1px solid #c6cdd5; font:inherit; }
+  .btns { margin-top:12px; display:flex; gap:10px; }
+  .btn-primary, .btn-secondary { padding:10px 16px; border-radius:8px; border:0; cursor:pointer; font-weight:700; }
+  .btn-primary { background:linear-gradient(120deg,#1a73d9,#0e57b4); color:#fff; }
+  .btn-secondary { background:#e8edf2; }
+
+  .preview-wrap { margin-top:18px; }
+  #labelPreview { width:150mm; height:100mm; border:0; border-radius:0; padding:0; background:#fff; box-shadow:none; box-sizing:border-box; }
+
+  #labelPreview {
+    display:grid; grid-template-rows:1fr 1fr;
+    padding:0; border:3px solid #000;
+    overflow:hidden;
+  }
+  .label-code {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-bottom:3px solid #000;
+    font-family:Arial, Helvetica, sans-serif;
+    font-size:10rem;
+    font-weight:900;
+    letter-spacing:.02em;
+    line-height:.85;
+    color:#000;
+  }
+  .label-info {
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:5px;
+    padding:12px 22px;
+    box-sizing:border-box;
+    overflow:hidden;
+  }
+  .label-line {
+    font-family:Arial, Helvetica, sans-serif;
+    font-size:1.05rem;
+    font-weight:500;
+    line-height:1.15;
+    text-transform:uppercase;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    color:#000;
+  }
+
+</style>
+
+<div class="exp-shell">
+  <div class="exp-card">
+    <h2>Etiqueta — Expedição (150 × 100 mm)</h2>
+
+    <form id="expLabelForm" onsubmit="return false;">
+      <div class="form-row">
+        <label>Nome do Cliente
+          <input type="text" name="cliente_nome" id="cliente_nome" value="{{ cliente_nome or '' }}" placeholder="Nome do Cliente">
+        </label>
+        <label>Código do Cliente
+          <input type="text" name="cliente_codigo" id="cliente_codigo" value="{{ cliente_codigo or '' }}" placeholder="123456">
+        </label>
+        <label>CNPJ/CPF
+          <input type="text" name="cliente_cnpj_cpf" id="cliente_cnpj_cpf" value="{{ cliente_cnpj_cpf or '' }}" placeholder="00.000.000/0000-00">
+        </label>
+        <label>Endereço do Cliente
+          <input type="text" name="cliente_endereco" id="cliente_endereco" value="{{ cliente_endereco or '' }}" placeholder="Rua, nº / Prateleira">
+        </label>
+        <label>Cidade
+          <input type="text" name="cliente_cidade" id="cliente_cidade" value="{{ cliente_cidade or '' }}" placeholder="Cidade">
+        </label>
+        <label>UF
+          <input type="text" name="cliente_estado" id="cliente_estado" value="{{ cliente_estado or '' }}" placeholder="UF">
+        </label>
+        <label>CEP
+          <input type="text" name="cliente_cep" id="cliente_cep" value="{{ cliente_cep or '' }}" placeholder="00000-000">
+        </label>
+        <label>Setor
+          <input type="text" name="cliente_setor" id="cliente_setor" value="{{ cliente_setor or '' }}" placeholder="16">
+        </label>
+        <label>Rota
+          <input type="text" name="cliente_rota" id="cliente_rota" value="{{ cliente_rota or '' }}" placeholder="14:30">
+        </label>
+        <label>Usuário Entrada
+          <input type="text" name="usuario_entrada" id="usuario_entrada" value="{{ usuario_entrada or '' }}" placeholder="Usuário">
+        </label>
+        <label>Usuário Embalagem
+          <input type="text" name="usuario_embalagem" id="usuario_embalagem" value="{{ usuario_embalagem or '' }}" placeholder="Usuário">
+        </label>
+      </div>
+
+      <div class="btns">
+        <button class="btn-primary" id="previewBtn">&#128065; Atualizar Preview</button>
+        <button class="btn-primary" id="printBtn">&#128424; Imprimir Etiqueta</button>
+        <button class="btn-secondary" id="resetBtn" type="button">Limpar</button>
+        <a href="/expedicao/embalagem" class="btn-secondary" style="padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700;">&#9654; Continuar para Embalagem</a>
+      </div>
+    </form>
+
+    <div class="preview-wrap">
+      <h3>Preview</h3>
+      <div id="labelPreview" aria-label="Preview da etiqueta">
+        <div class="label-code" id="preview_codigo">—</div>
+        <div class="label-info">
+          <div class="label-line" id="preview_cnpj_cpf">CNPJ/CPF —</div>
+          <div class="label-line" id="preview_nome">—</div>
+          <div class="label-line" id="preview_endereco">—</div>
+          <div class="label-line" id="preview_cidade_uf">—</div>
+          <div class="label-line" id="preview_cep_rota">—</div>
+          <div class="label-line" id="preview_meta">ENTRADA —  EMBALAGEM —  IMPRESSO —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function (){
+  const nomeInp = document.getElementById('cliente_nome');
+  const codigoInp = document.getElementById('cliente_codigo');
+  const cnpjCpfInp = document.getElementById('cliente_cnpj_cpf');
+  const enderecoInp = document.getElementById('cliente_endereco');
+  const cidadeInp = document.getElementById('cliente_cidade');
+  const estadoInp = document.getElementById('cliente_estado');
+  const cepInp = document.getElementById('cliente_cep');
+  const setorInp = document.getElementById('cliente_setor');
+  const rotaInp = document.getElementById('cliente_rota');
+  const entradaInp = document.getElementById('usuario_entrada');
+  const embalagemInp = document.getElementById('usuario_embalagem');
+  const previewNome = document.getElementById('preview_nome');
+  const previewCodigo = document.getElementById('preview_codigo');
+  const previewCnpjCpf = document.getElementById('preview_cnpj_cpf');
+  const previewEndereco = document.getElementById('preview_endereco');
+  const previewCidadeUf = document.getElementById('preview_cidade_uf');
+  const previewCepRota = document.getElementById('preview_cep_rota');
+  const previewMeta = document.getElementById('preview_meta');
+  const previewBtn = document.getElementById('previewBtn');
+  const printBtn = document.getElementById('printBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  function formatPrintDateTime(date){
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function updatePreview(){
+    const n = nomeInp.value.trim() || 'NOME DO CLIENTE';
+    const c = codigoInp.value.trim() || 'CODIGO DO CLIENTE';
+    const e = enderecoInp.value.trim() || 'ENDEREÇO DO CLIENTE';
+    const cnpjCpf = cnpjCpfInp.value.trim() ? `CNPJ/CPF ${cnpjCpfInp.value.trim()}` : 'CNPJ/CPF —';
+    const cidadeUf = [cidadeInp.value.trim(), estadoInp.value.trim()].filter(Boolean).join('  ') || 'CIDADE UF';
+    const setor = setorInp.value.trim() ? ` SETOR: ${setorInp.value.trim()}` : '';
+    const rota = rotaInp.value.trim() ? `-ROTA ${rotaInp.value.trim()}` : '';
+    const entrada = entradaInp.value.trim() || '—';
+    const embalagem = embalagemInp.value.trim() || '—';
+    previewNome.textContent = n.toUpperCase();
+    previewCodigo.textContent = c.toUpperCase();
+    previewCnpjCpf.textContent = cnpjCpf.toUpperCase();
+    previewEndereco.textContent = e.toUpperCase();
+    previewCidadeUf.textContent = cidadeUf.toUpperCase();
+    previewCepRota.textContent = (`${cepInp.value.trim()}${setor}${rota}`.trim() || 'CEP SETOR/ROTA').toUpperCase();
+    previewMeta.textContent = `ENTRADA ${entrada}  EMBALAGEM ${embalagem}  IMPRESSO ${previewMeta.dataset.printedAt || '—'}`.toUpperCase();
+  }
+
+  previewBtn.addEventListener('click', function(){ updatePreview(); });
+  resetBtn.addEventListener('click', function(){ nomeInp.value=''; codigoInp.value=''; enderecoInp.value=''; updatePreview(); });
+  printBtn.addEventListener('click', function(){ previewMeta.dataset.printedAt = formatPrintDateTime(new Date()); updatePreview(); window.print(); });
+
+  // initialize
+  updatePreview();
+})();
+</script>
+
+{% endblock %}

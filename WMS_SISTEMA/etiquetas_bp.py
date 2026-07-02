@@ -707,6 +707,24 @@ def label_100x150_pdf(id: int):
     )
 
 
+@etq_bp.route("/etiquetas/expedicao/preview")
+@_etiq_feature_required("etiq_envio")
+def expedicao_label_preview():
+    """Preview rápido da etiqueta de expedição criada para o módulo de expedição.
+
+    Aceita query params: `cliente_nome`, `cliente_codigo`, `cliente_endereco`.
+    """
+    cliente_nome = request.args.get("cliente_nome", "")
+    cliente_codigo = request.args.get("cliente_codigo", "")
+    cliente_endereco = request.args.get("cliente_endereco", "")
+    return render_template(
+        "etiq/expedicao_label_100x150.html",
+        cliente_nome=cliente_nome,
+        cliente_codigo=cliente_codigo,
+        cliente_endereco=cliente_endereco,
+    )
+
+
 @etq_bp.route("/etiquetas/impressos")
 @_etiq_feature_required("etiq_reimprimir")
 def impressos_list():

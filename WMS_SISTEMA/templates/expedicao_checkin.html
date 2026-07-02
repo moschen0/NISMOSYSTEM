@@ -96,9 +96,9 @@
       <div class="card-header">
         <h6 class="mb-0"><i class="bi bi-folder2-open"></i> Lotes abertos</h6>
       </div>
-      <div class="card-body">
+      <div class="card-body" id="open-lotes-container">
         {% if not open_lotes %}
-        <p class="text-muted small mb-0">Nenhum lote aberto no momento.</p>
+        <p class="text-muted small mb-0" id="open-lotes-empty">Nenhum lote aberto no momento.</p>
         {% endif %}
         {% for lote in open_lotes %}
         <div class="border rounded p-3 mb-3" data-lote-id="{{ lote.id }}">
@@ -153,7 +153,24 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/expedicao.js') }}"></script>
+<div class="modal fade" id="checkin-block-modal" tabindex="-1" aria-labelledby="checkin-block-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="checkin-block-modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Checkin bloqueado</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0 fw-semibold" id="checkin-block-modal-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Entendi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/expedicao.js', v='checkin-auto-reload-endereco') }}"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => Expedicao.Checkin.init());
 </script>
