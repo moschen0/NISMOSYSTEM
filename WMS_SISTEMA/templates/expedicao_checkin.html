@@ -20,6 +20,11 @@
     <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
   </li>
   {% endif %}
+  {% if expedicao_can_access('expedicao_ondas_historico') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.ondas_historico_page') }}"><i class="bi bi-clock-history"></i> Histórico de Ondas</a>
+  </li>
+  {% endif %}
   {% if expedicao_can_access('expedicao_doublecheck') %}
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>

@@ -129,7 +129,7 @@
         }
         .navbar-toggler:focus { box-shadow: none !important; }
         .navbar-nav { align-items: center; }
-        .nav-link {
+        .navbar .nav-link {
             color: rgba(255,255,255,0.72) !important;
             font-size: 0.8125rem;
             font-weight: 400;
@@ -139,18 +139,35 @@
             transition: color .14s, background .14s;
             white-space: nowrap;
         }
-        .nav-link:hover {
+        .navbar .nav-link:hover {
             color: rgba(255,255,255,1) !important;
             background: rgba(255,255,255,0.08);
         }
-        .nav-link.active {
+        .navbar .nav-link.active {
             color: var(--c-blue) !important;
             background: transparent !important;
             font-weight: 600;
         }
 
+        .nav-tabs .nav-link {
+            color: var(--c-ink) !important;
+            border-radius: var(--r-sm) var(--r-sm) 0 0;
+            font-weight: 500;
+        }
+        .nav-tabs .nav-link:hover {
+            color: var(--c-blue) !important;
+            background: var(--c-surface);
+            border-color: var(--c-hairline) var(--c-hairline) var(--c-divider);
+        }
+        .nav-tabs .nav-link.active {
+            color: var(--c-blue) !important;
+            background: var(--c-canvas) !important;
+            border-color: var(--c-hairline) var(--c-hairline) var(--c-canvas);
+            font-weight: 600;
+        }
+
         /* CTA pill na nav — Novo Pedido */
-        .nav-link-cta {
+        .navbar .nav-link-cta {
             background: var(--c-blue) !important;
             color: #fff !important;
             border-radius: var(--r-pill) !important;
@@ -158,11 +175,11 @@
             font-weight: 500 !important;
             margin-left: 4px;
         }
-        .nav-link-cta:hover {
+        .navbar .nav-link-cta:hover {
             background: var(--c-blue-focus) !important;
             color: #fff !important;
         }
-        .nav-link-cta:active { transform: scale(0.96); }
+        .navbar .nav-link-cta:active { transform: scale(0.96); }
 
         /* Sector chip */
         .nav-sector-chip {
@@ -521,8 +538,8 @@
                 padding: 10px 16px 14px;
                 border-top: 1px solid rgba(255,255,255,0.07);
             }
-            .nav-link { padding: 8px 12px !important; }
-            .nav-link-cta { margin: 6px 0 0; display: inline-block; }
+            .navbar .nav-link { padding: 8px 12px !important; }
+            .navbar .nav-link-cta { margin: 6px 0 0; display: inline-block; }
         }
         @media (max-width: 575.98px) {
             .container-content { border-radius: var(--r-lg); padding: 16px; }

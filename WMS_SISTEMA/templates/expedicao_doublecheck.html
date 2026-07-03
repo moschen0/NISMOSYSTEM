@@ -20,6 +20,11 @@
     <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
   </li>
   {% endif %}
+  {% if expedicao_can_access('expedicao_ondas_historico') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.ondas_historico_page') }}"><i class="bi bi-clock-history"></i> Histórico de Ondas</a>
+  </li>
+  {% endif %}
   {% if expedicao_can_access('expedicao_doublecheck') %}
   <li class="nav-item">
     <a class="nav-link active" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
@@ -87,11 +92,44 @@
           style="display: {{ 'block' if progress and progress.total and progress.confirmed >= progress.total else 'none' }};">
           <i class="bi bi-flag"></i> Finalizar Separação
         </button>
+        <button type="button" id="dc-finalizar-falta-btn" class="btn btn-outline-danger w-100 mt-2" onclick="Expedicao.Doublecheck.openLeaderAuthModal()"
+          style="display: {{ 'block' if progress and progress.total and progress.missing > 0 else 'none' }};">
+          <i class="bi bi-person-check"></i> Finalizar com Falta (Líder)
+        </button>
       </div>
     </div>
   </div>
 </div>
 {% endif %}
+
+<div class="modal fade" id="dcLeaderAuthModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-person-check"></i> Autorização do líder</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small">
+          Existe OS faltando neste lote. Para finalizar com falta, informe o login e a senha de um líder autorizado do setor.
+        </div>
+        <div id="dc-leader-auth-alert" class="alert" role="alert" style="display:none;"></div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Login do líder</label>
+          <input type="text" id="dc-leader-username" class="form-control" autocomplete="username">
+        </div>
+        <div class="mb-0">
+          <label class="form-label fw-bold">Senha do líder</label>
+          <input type="password" id="dc-leader-password" class="form-control" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" onclick="Expedicao.Doublecheck.finalizarComFalta()">Autorizar e finalizar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════════
      MODAL ETIQUETA DE EXPEDIÇÃO
@@ -201,7 +239,8 @@
         <div class="dc-label-line" id="dcLabelAddress">—</div>
         <div class="dc-label-line" id="dcLabelCityState">—</div>
         <div class="dc-label-line" id="dcLabelCepRota">—</div>
-        <div class="dc-label-line" id="dcLabelMeta">ENTRADA —  EMBALAGEM —  IMPRESSO —</div>
+        <div class="dc-label-line" id="dcLabelEntrada">ENTRADA —</div>
+        <div class="dc-label-line" id="dcLabelMeta">EMBALAGEM —  IMPRESSO —</div>
       </div>
     </div>
 
@@ -213,7 +252,7 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/expedicao.js', v='doublecheck-finalizar-after-all') }}"></script>
+<script src="{{ url_for('static', filename='js/expedicao.js', v='doublecheck-leader-missing-auth') }}"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     Expedicao.Doublecheck.init();

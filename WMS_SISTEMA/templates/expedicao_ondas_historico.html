@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Histórico de Ondas - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Histórico de Ondas — lotes, OS adicionadas, responsáveis, faltas e autorizações</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_ondas_historico') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.ondas_historico_page') }}"><i class="bi bi-clock-history"></i> Histórico de Ondas</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="bi bi-clock-history"></i> Últimas ondas</h6>
+    {% if onda_id %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('expedicao.ondas_historico_page') }}">Ver todas</a>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if not ondas %}
+    <p class="text-muted small mb-0">Nenhuma onda encontrada.</p>
+    {% endif %}
+
+    <div class="accordion" id="ondasHistoryAccordion">
+      {% for onda in ondas %}
+      <div class="accordion-item mb-3 border rounded overflow-hidden">
+        <h2 class="accordion-header" id="onda-heading-{{ onda.id }}">
+          <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#onda-collapse-{{ onda.id }}"
+                  aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="onda-collapse-{{ onda.id }}">
+            <div class="w-100 d-flex flex-wrap gap-2 align-items-center justify-content-between pe-3">
+              <div>
+                <strong>Onda #{{ onda.id }}</strong>
+                <span class="text-muted">{{ onda.horario or 'Sem horário' }}</span>
+                <span class="badge bg-secondary ms-2">{{ onda.status or 'sem status' }}</span>
+                {% if onda.summary.sent_with_missing_count %}
+                <span class="badge bg-danger ms-1">enviada com falta</span>
+                {% endif %}
+              </div>
+              <div class="small text-muted">
+                Criada por <strong>{{ onda.created_by or '—' }}</strong> em {{ onda.created_at or '—' }}
+              </div>
+            </div>
+          </button>
+        </h2>
+        <div id="onda-collapse-{{ onda.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}"
+             aria-labelledby="onda-heading-{{ onda.id }}" data-bs-parent="#ondasHistoryAccordion">
+          <div class="accordion-body">
+            <div class="row g-2 mb-3">
+              <div class="col-md-3"><div class="border rounded p-2"><small class="text-muted">Lotes</small><br><strong>{{ onda.summary.total_lotes }}</strong></div></div>
+              <div class="col-md-3"><div class="border rounded p-2"><small class="text-muted">OS adicionadas</small><br><strong>{{ onda.summary.total_items }}</strong></div></div>
+              <div class="col-md-3"><div class="border rounded p-2"><small class="text-muted">Confirmadas</small><br><strong>{{ onda.summary.confirmed }}</strong></div></div>
+              <div class="col-md-3"><div class="border rounded p-2"><small class="text-muted">Faltando</small><br><strong class="{{ 'text-danger' if onda.summary.missing else '' }}">{{ onda.summary.missing }}</strong></div></div>
+            </div>
+
+            {% if not onda.lotes %}
+            <p class="text-muted small mb-0">Nenhum lote vinculado a esta onda.</p>
+            {% endif %}
+
+            {% for lote in onda.lotes %}
+            <div class="border rounded p-3 mb-3">
+              <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                <div>
+                  <strong class="font-monospace">{{ lote.lote_code }}</strong>
+                  <span class="badge bg-info">Cliente {{ lote.client_number }}</span>
+                  <span class="badge bg-secondary">{{ lote.status }}</span>
+                  {% if lote.sent_with_missing %}
+                  <span class="badge bg-danger">enviado com falta</span>
+                  {% endif %}
+                </div>
+                <div class="small text-muted">
+                  {{ lote['progress'].confirmed }}/{{ lote['progress'].total }} confirmadas
+                </div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-lg-6">
+                  <h6 class="small text-uppercase text-muted">OS adicionadas na onda</h6>
+                  {% if not lote['items'] %}
+                  <p class="text-muted small mb-0">Nenhuma OS adicionada.</p>
+                  {% endif %}
+                  <div class="d-flex flex-wrap gap-1">
+                    {% for item in lote['items'] %}
+                    {% set is_missing = item.order_id in lote['missing_items'] | map(attribute='order_id') | list %}
+                    <span class="badge {{ 'bg-danger' if is_missing else 'bg-light text-dark border' }} font-monospace">{{ item.order_id }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-lg-6">
+                  <h6 class="small text-uppercase text-muted">Doublecheck</h6>
+                  {% if lote['missing_items'] %}
+                  <div class="mb-2">
+                    <span class="fw-semibold text-danger">Faltando:</span>
+                    {% for item in lote['missing_items'] %}
+                    <span class="badge bg-danger font-monospace">{{ item.order_id }}</span>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <p class="small text-success mb-2">Sem faltas registradas.</p>
+                  {% endif %}
+
+                  {% if lote.doublecheck_missing_authorized_by %}
+                  <p class="small mb-2">
+                    <i class="bi bi-person-check"></i>
+                    Falta autorizada por <strong>{{ lote.doublecheck_missing_authorized_by }}</strong>
+                    em {{ lote.doublecheck_missing_authorized_at or '—' }}
+                  </p>
+                  {% endif %}
+
+                  {% if lote['invalid_scans'] %}
+                  <details class="small">
+                    <summary>Scans inválidos / não pertencentes ({{ lote['invalid_scans']|length }})</summary>
+                    <ul class="mb-0 mt-2">
+                      {% for scan in lote['invalid_scans'] %}
+                      <li><span class="font-monospace">{{ scan.order_id }}</span> por {{ scan.username or '—' }} em {{ scan.created_at or '—' }}</li>
+                      {% endfor %}
+                    </ul>
+                  </details>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

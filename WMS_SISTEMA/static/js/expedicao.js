@@ -343,8 +343,30 @@ const Expedicao = (() => {
 
     _updateFinalizeButton(confirmed, total) {
       const finalizeBtn = document.getElementById('dc-finalizar-btn');
-      if (!finalizeBtn) return;
-      finalizeBtn.style.display = total > 0 && confirmed >= total ? 'block' : 'none';
+      const finalizeMissingBtn = document.getElementById('dc-finalizar-falta-btn');
+      const isComplete = total > 0 && confirmed >= total;
+      if (finalizeBtn) finalizeBtn.style.display = isComplete ? 'block' : 'none';
+      if (finalizeMissingBtn) finalizeMissingBtn.style.display = total > 0 && !isComplete ? 'block' : 'none';
+    },
+
+    openLeaderAuthModal() {
+      const modalEl = document.getElementById('dcLeaderAuthModal');
+      if (!modalEl || !window.bootstrap) return;
+      const alertEl = document.getElementById('dc-leader-auth-alert');
+      if (alertEl) alertEl.style.display = 'none';
+      const usernameInput = document.getElementById('dc-leader-username');
+      const passwordInput = document.getElementById('dc-leader-password');
+      if (usernameInput) usernameInput.value = '';
+      if (passwordInput) passwordInput.value = '';
+      const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+      modal.show();
+      setTimeout(() => { if (usernameInput) usernameInput.focus(); }, 250);
+    },
+
+    async finalizarComFalta() {
+      const username = document.getElementById('dc-leader-username').value.trim();
+      const password = document.getElementById('dc-leader-password').value;
+      await this.finalizar({ leaderUsername: username, leaderPassword: password });
     },
 
     _formatPrintDateTime(date) {
@@ -397,18 +419,36 @@ const Expedicao = (() => {
       showAlert('doublecheck-alert', 'ID confirmado.', 'success');
     },
 
-    async finalizar() {
+    async finalizar(auth) {
       const loteId = document.getElementById('dc-lote-id').value;
+      const payload = { lote_id: parseInt(loteId, 10) };
+      if (auth) {
+        payload.leader_username = auth.leaderUsername || '';
+        payload.leader_password = auth.leaderPassword || '';
+      }
       const { ok, data } = await postJson('/expedicao/api/doublecheck/finalizar', {
-        lote_id: parseInt(loteId, 10),
+        ...payload,
       });
       if (!ok) {
+        if (data.needs_leader_auth) {
+          const alertEl = document.getElementById('dc-leader-auth-alert');
+          if (alertEl) {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = data.error || 'Autorização do líder obrigatória.';
+            alertEl.style.display = 'block';
+            return;
+          }
+          this.openLeaderAuthModal();
+          return;
+        }
         showAlert('doublecheck-alert', data.error || 'Erro ao finalizar separação.', 'danger');
         return;
       }
       // Notify user about status
       if (data.status === 'separado_com_falta') {
-        showAlert('doublecheck-alert', `ATENÇÃO: faltam ${data.progress.missing} ID(s) neste lote!`, 'danger');
+        const modalEl = document.getElementById('dcLeaderAuthModal');
+        if (modalEl && window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        showAlert('doublecheck-alert', `Finalizado com falta por ${data.authorized_by || 'líder autorizado'}. Faltam ${data.progress.missing} ID(s).`, 'warning');
         // Redirect to embalagem page so user can handle missing items there
         window.location.href = '/expedicao/embalagem';
         return;
@@ -437,7 +477,8 @@ const Expedicao = (() => {
           document.getElementById('dcLabelAddress').textContent = (ld.cliente_endereco || '—').toUpperCase();
           document.getElementById('dcLabelCityState').textContent = (cidadeUf || '—').toUpperCase();
           document.getElementById('dcLabelCepRota').textContent = (`${ld.cliente_cep || ''}${setor}${rota}`.trim() || '—').toUpperCase();
-          document.getElementById('dcLabelMeta').innerHTML = `ENTRADA ${entrada}  EMBALAGEM ${embalagem}  IMPRESSO <span id="dcLabelPrintedAt">—</span>`;
+          document.getElementById('dcLabelEntrada').textContent = `ENTRADA ${entrada}`;
+          document.getElementById('dcLabelMeta').innerHTML = `EMBALAGEM ${embalagem}  IMPRESSO <span id="dcLabelPrintedAt">—</span>`;
           modalBg.classList.add('active');
           return; // stay on this page; user clicks Continue or Print
         }

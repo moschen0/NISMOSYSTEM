@@ -53,7 +53,9 @@
       "expedicao",
       "expedicao_checkin",
       "expedicao_picking",
+      "expedicao_ondas_historico",
       "expedicao_doublecheck",
+      "expedicao_doublecheck_autorizar_falta",
       "expedicao_embalagem",
       "shelf_level_clients"
     ]

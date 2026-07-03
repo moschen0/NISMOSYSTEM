@@ -39,6 +39,8 @@ LOTE_ITEMS_TABLE = "expedicao_lote_items"
 ONDAS_TABLE = "expedicao_ondas"
 ONDA_LOTES_TABLE = "expedicao_onda_lotes"
 PICKING_SCANS_TABLE = "expedicao_picking_scans"
+AUTHORIZE_DOUBLECHECK_MISSING_PERMISSION = "expedicao_doublecheck_autorizar_falta"
+SECTORS_PATH = os.path.join(os.path.dirname(__file__), "sectors.json")
 
 _SCHEMA_LOCK = Lock()
 _schema_ready = False
@@ -120,6 +122,56 @@ def can_access_feature(feature: str) -> bool:
     return feature in permissions if isinstance(permissions, list) else False
 
 
+def parse_user_sectors(sector_value: Any) -> list[str]:
+    raw = str(sector_value or "").strip()
+    if not raw:
+        return []
+    for separator in (";", "|"):
+        raw = raw.replace(separator, ",")
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def load_sector_permissions() -> dict[str, set[str]]:
+    try:
+        with open(SECTORS_PATH, "r", encoding="utf-8") as file:
+            sectors = json.load(file)
+    except Exception:
+        sectors = {}
+    result = {}
+    if isinstance(sectors, dict):
+        for sector_key, sector in sectors.items():
+            permissions = sector.get("permissions", []) if isinstance(sector, dict) else []
+            result[str(sector_key)] = set(permissions if isinstance(permissions, list) else [])
+    return result
+
+
+def user_has_sector_permission(user: dict[str, Any], permission: str) -> bool:
+    username = str(user.get("username") or "").strip().lower()
+    if username == "admin":
+        return True
+    sector_permissions = load_sector_permissions()
+    for sector in parse_user_sectors(user.get("sector")):
+        if permission in sector_permissions.get(sector, set()):
+            return True
+    return False
+
+
+def validate_doublecheck_missing_leader(username, password, unit) -> tuple[bool, str, dict[str, Any] | None]:
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        return False, "Informe login e senha do líder do setor.", None
+
+    user = db_mdb.get_user_by_username(username, unit=unit) or db_mdb.get_user_by_username(username)
+    if not user or not db_mdb.verify_password(password, user.get("password", "")):
+        return False, "Login ou senha do líder inválidos.", None
+    if str(user.get("active", "1")) in ("0", "False", "false"):
+        return False, "Usuário líder está inativo.", None
+    if not user_has_sector_permission(user, AUTHORIZE_DOUBLECHECK_MISSING_PERMISSION):
+        return False, "Usuário informado não tem permissão para autorizar falta no Doublecheck.", None
+    return True, "", user
+
+
 @expedicao_bp.before_request
 def _check_expedicao_access():
     if request.endpoint and "static" in request.endpoint:
@@ -145,6 +197,8 @@ def _first_accessible_expedicao_redirect():
         return redirect(url_for("expedicao.checkin_page"))
     if can_access_feature("expedicao_picking"):
         return redirect(url_for("expedicao.picking_page"))
+    if can_access_feature("expedicao_ondas_historico"):
+        return redirect(url_for("expedicao.ondas_historico_page"))
     if can_access_feature("expedicao_doublecheck"):
         return redirect(url_for("expedicao.doublecheck_page"))
     if can_access_feature("expedicao_embalagem"):
@@ -215,6 +269,18 @@ def _ensure_expedicao_schema(conn: Any) -> None:
                 [sector] TEXT(50)
             )
         """)
+
+    lote_columns = _get_table_columns(cursor, LOTES_TABLE) if _table_exists(cursor, LOTES_TABLE) else set()
+    if "doublecheck_missing_authorized_by" not in lote_columns:
+        try:
+            _run_ddl_on_conn(conn, f"ALTER TABLE {LOTES_TABLE} ADD COLUMN doublecheck_missing_authorized_by TEXT(100)")
+        except Exception:
+            pass
+    if "doublecheck_missing_authorized_at" not in lote_columns:
+        try:
+            _run_ddl_on_conn(conn, f"ALTER TABLE {LOTES_TABLE} ADD COLUMN doublecheck_missing_authorized_at TEXT(50)")
+        except Exception:
+            pass
 
     if not _table_exists(cursor, LOTE_ITEMS_TABLE):
         _run_ddl_on_conn(conn, f"""
@@ -590,6 +656,131 @@ def get_lote_items(lote_id):
     return db_mdb.dicts_from_rows(cursor, rows)
 
 
+def update_lote_endereco_if_empty(lote_id, endereco):
+    if not endereco:
+        return
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"UPDATE {LOTES_TABLE} SET endereco = ? WHERE id = ? AND (endereco IS NULL OR endereco = '')",
+        (endereco, lote_id),
+    )
+    conn.commit()
+
+
+def get_client_code_aliases(client_number):
+    aliases = set()
+    raw_client = str(client_number or "").strip()
+    if not raw_client:
+        return aliases
+
+    def add_alias(value):
+        text = str(value or "").strip()
+        if not text:
+            return
+        aliases.add(text)
+        aliases.add(text.lstrip("0") or text)
+
+    add_alias(raw_client)
+    try:
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        columns = _get_table_columns(cursor, "etiq_clients")
+        if "codigo_cliente" not in columns and "numero_cliente" not in columns:
+            return aliases
+
+        select_cols = [col for col in ("codigo_cliente", "numero_cliente") if col in columns]
+        where_parts = []
+        params = []
+        if "codigo_cliente" in columns:
+            where_parts.append("codigo_cliente = ?")
+            params.append(raw_client)
+        if "numero_cliente" in columns and raw_client.isdigit():
+            where_parts.append("numero_cliente = ?")
+            params.append(int(raw_client))
+        if not where_parts:
+            return aliases
+
+        cursor.execute(
+            f"SELECT TOP 1 {', '.join(select_cols)} FROM etiq_clients WHERE {' OR '.join(where_parts)} ORDER BY id DESC",
+            params,
+        )
+        row = cursor.fetchone()
+        if row:
+            values = {select_cols[i]: row[i] for i in range(len(select_cols))}
+            add_alias(values.get("codigo_cliente"))
+            add_alias(values.get("numero_cliente"))
+    except Exception:
+        pass
+    return aliases
+
+
+def suggest_lote_endereco_for_client(client_number, unit, sector):
+    wanted_clients = get_client_code_aliases(client_number)
+    if not wanted_clients:
+        return None
+
+    def normalize_client(value):
+        text = str(value or "").strip()
+        return text.lstrip("0") or text
+
+    wanted_clients = {normalize_client(value) for value in wanted_clients if str(value or "").strip()}
+    candidate_sectors = []
+    for candidate_sector in (sector, "EXPEDICAO", None):
+        if candidate_sector not in candidate_sectors:
+            candidate_sectors.append(candidate_sector)
+
+    seen_shelves = set()
+    for candidate_sector in candidate_sectors:
+        position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=candidate_sector)
+        for shelf in db_mdb.get_all_shelves(unit=unit, sector=candidate_sector):
+            shelf_key = (shelf.get("id"), shelf.get("zone"), shelf.get("module"), shelf.get("sector"))
+            if shelf_key in seen_shelves:
+                continue
+            seen_shelves.add(shelf_key)
+
+            suggested = suggest_lote_endereco_in_shelf(shelf, wanted_clients, position_counts)
+            if suggested:
+                return suggested
+    return None
+
+
+def suggest_lote_endereco_in_shelf(shelf, wanted_clients, position_counts):
+    try:
+        level_clients = json.loads(shelf.get("level_clients") or "{}")
+    except Exception:
+        level_clients = {}
+    if not isinstance(level_clients, dict):
+        return None
+
+    def normalize_client(value):
+        text = str(value or "").strip()
+        return text.lstrip("0") or text
+
+    levels = int(shelf.get("levels") or 1)
+    columns = int(shelf.get("columns") or 1)
+    slots = int(shelf.get("slots") or 7)
+    zone = str(shelf.get("zone") or "").strip()
+    module = str(shelf.get("module") or "").strip().zfill(2)
+
+    for level in range(levels, 0, -1):
+        linked_client = level_clients.get(str(level)) or level_clients.get(f"{level:02d}")
+        if normalize_client(linked_client) not in wanted_clients:
+            continue
+
+        positions = []
+        if columns == 1:
+            positions.append(f"{zone}-{module}-{level:02d}")
+        else:
+            for col in range(1, columns + 1):
+                positions.append(f"{zone}-{module}-{level:02d}-{col:02d}")
+
+        for position in positions:
+            if position_counts.get(position, 0) < slots:
+                return position
+    return None
+
+
 def close_lote(lote_id, endereco, closed_by):
     conn = db_mdb.get_connection()
     cursor = conn.cursor()
@@ -622,6 +813,18 @@ def update_lote_status(lote_id, status):
     conn = db_mdb.get_connection()
     cursor = conn.cursor()
     cursor.execute(f"UPDATE {LOTES_TABLE} SET [status] = ? WHERE id = ?", (status, lote_id))
+    conn.commit()
+
+
+def update_lote_missing_authorization(lote_id, username):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""UPDATE {LOTES_TABLE}
+            SET doublecheck_missing_authorized_by = ?, doublecheck_missing_authorized_at = ?
+            WHERE id = ?""",
+        (username, _now_str(), lote_id),
+    )
     conn.commit()
 
 
@@ -778,6 +981,84 @@ def get_onda_lotes(onda_id):
     )
     rows = cursor.fetchall()
     return db_mdb.dicts_from_rows(cursor, rows)
+
+
+def get_recent_ondas(unit, sector, limit=50):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    limit = max(1, min(int(limit or 50), 200))
+    cursor.execute(
+        f"SELECT TOP {limit} * FROM {ONDAS_TABLE} WHERE [unit] = ? AND [sector] = ? ORDER BY id DESC",
+        (unit, sector),
+    )
+    rows = cursor.fetchall()
+    return db_mdb.dicts_from_rows(cursor, rows)
+
+
+def get_lote_picking_scans(lote_id, onda_id=None):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    if onda_id:
+        cursor.execute(
+            f"""SELECT * FROM {PICKING_SCANS_TABLE}
+                WHERE lote_id = ? AND onda_id = ? ORDER BY id ASC""",
+            (lote_id, onda_id),
+        )
+    else:
+        cursor.execute(f"SELECT * FROM {PICKING_SCANS_TABLE} WHERE lote_id = ? ORDER BY id ASC", (lote_id,))
+    rows = cursor.fetchall()
+    return db_mdb.dicts_from_rows(cursor, rows)
+
+
+def build_onda_history(ondas):
+    history = []
+    for onda in ondas:
+        lotes = get_onda_lotes(onda.get("id"))
+        onda_total_items = 0
+        onda_confirmed = 0
+        onda_missing = 0
+        sent_with_missing_count = 0
+
+        for lote in lotes:
+            items = get_lote_items(lote.get("id"))
+            scans = get_lote_picking_scans(lote.get("id"), onda.get("id"))
+            ok_scans = [scan for scan in scans if str(scan.get("result") or "") == "ok"]
+            invalid_scans = [scan for scan in scans if str(scan.get("result") or "") != "ok"]
+            ok_order_ids = {str(scan.get("order_id") or "").strip() for scan in ok_scans}
+            missing_items = [item for item in items if str(item.get("order_id") or "").strip() not in ok_order_ids]
+            authorized_by = str(lote.get("doublecheck_missing_authorized_by") or "").strip()
+            sent_with_missing = bool(missing_items) and (
+                bool(authorized_by)
+                or str(lote.get("status") or "") in ("separado_com_falta", "embalado", "faturado")
+            )
+
+            lote["items"] = items
+            lote["scans"] = scans
+            lote["invalid_scans"] = invalid_scans
+            lote["missing_items"] = missing_items
+            lote["progress"] = {
+                "total": len(items),
+                "confirmed": len(ok_order_ids),
+                "missing": len(missing_items),
+            }
+            lote["sent_with_missing"] = sent_with_missing
+
+            onda_total_items += len(items)
+            onda_confirmed += len(ok_order_ids)
+            onda_missing += len(missing_items)
+            if sent_with_missing:
+                sent_with_missing_count += 1
+
+        onda["lotes"] = lotes
+        onda["summary"] = {
+            "total_lotes": len(lotes),
+            "total_items": onda_total_items,
+            "confirmed": onda_confirmed,
+            "missing": onda_missing,
+            "sent_with_missing_count": sent_with_missing_count,
+        }
+        history.append(onda)
+    return history
 
 
 def get_lote_onda_horario(lote_id):
@@ -966,49 +1247,12 @@ def api_checkin_scan():
 
     add_lote_item(lote["id"], order_id, user, unit, sector)
     lote = get_lote(lote["id"])
-    # Compute a non-persistent suggested endereco (do NOT write it to DB).
     suggested_endereco = None
     try:
         if not (lote.get('endereco')):
-            # Find shelf level linked to this client and choose a free position on it
-            position_counts = db_mdb.count_all_orders_in_positions(unit=unit, sector=sector)
-            for shelf in db_mdb.get_all_shelves(unit=unit, sector=sector):
-                try:
-                    level_clients = json.loads(shelf.get('level_clients') or '{}')
-                except Exception:
-                    level_clients = {}
-                if not isinstance(level_clients, dict):
-                    continue
-                levels = int(shelf.get('levels') or 1)
-                columns = int(shelf.get('columns') or 1)
-                slots = int(shelf.get('slots') or 7)
-                zone = shelf.get('zone')
-                module = str(shelf.get('module') or '').zfill(2)
-                for level_key, linked_client in level_clients.items():
-                    if linked_client != str(client_number):
-                        continue
-                    # generate positions for this shelf (levels desc, columns asc)
-                    try:
-                        lvl_num = int(level_key)
-                    except Exception:
-                        lvl_num = None
-                    positions = []
-                    if columns == 1:
-                        positions.append(f"{zone}-{module}-{int(level_key):02d}")
-                    else:
-                        for col in range(1, columns + 1):
-                            positions.append(f"{zone}-{module}-{int(level_key):02d}-{col:02d}")
-
-                    # pick first position with available slot
-                    for pos in positions:
-                        count = position_counts.get(pos, 0)
-                        if count < slots:
-                            suggested_endereco = pos
-                            break
-                    if suggested_endereco:
-                        break
-                if suggested_endereco:
-                    break
+            suggested_endereco = suggest_lote_endereco_for_client(client_number, unit, sector)
+            update_lote_endereco_if_empty(lote["id"], suggested_endereco)
+            lote = get_lote(lote["id"])
     except Exception:
         suggested_endereco = None
     items = get_lote_items(lote["id"])
@@ -1175,6 +1419,27 @@ def picking_onda_detail(onda_id):
     )
 
 
+@expedicao_bp.route("/ondas-historico", methods=["GET"])
+@login_required
+@_expedicao_feature_required("expedicao_ondas_historico")
+def ondas_historico_page():
+    unit = get_current_unit()
+    sector = get_current_sector()
+    onda_id = request.args.get("onda_id", type=int)
+    if onda_id:
+        onda = get_onda(onda_id)
+        if onda and (onda.get("unit") != unit or onda.get("sector") != sector):
+            onda = None
+        ondas = [onda] if onda else []
+    else:
+        ondas = get_recent_ondas(unit, sector, limit=50)
+    return render_template(
+        "expedicao_ondas_historico.html",
+        ondas=build_onda_history(ondas),
+        onda_id=onda_id,
+    )
+
+
 @expedicao_bp.route("/picking/onda/<int:onda_id>/lote/<int:lote_id>/selecionar", methods=["POST"])
 @login_required
 @_expedicao_feature_required("expedicao_picking")
@@ -1271,14 +1536,32 @@ def api_doublecheck_scan():
 def api_doublecheck_finalizar():
     data = request.get_json(force=True, silent=True) or {}
     lote_id = data.get("lote_id")
+    leader_username = str(data.get("leader_username", "")).strip()
+    leader_password = str(data.get("leader_password", ""))
     lote = get_lote(lote_id)
     if not lote:
         return jsonify({"error": "Lote não encontrado."}), 404
 
     progress = get_lote_picking_progress(lote_id)
+    if progress["missing"] > 0:
+        valid_leader, leader_error, leader_user = validate_doublecheck_missing_leader(
+            leader_username,
+            leader_password,
+            get_current_unit(),
+        )
+        if not valid_leader:
+            return jsonify({
+                "error": leader_error,
+                "needs_leader_auth": True,
+                "progress": progress,
+            }), 403
+            update_lote_missing_authorization(lote_id, leader_user.get("username") if leader_user else leader_username)
+
     status = "separado_completo" if progress["missing"] == 0 else "separado_com_falta"
     update_lote_status(lote_id, status)
     response = {"success": True, "status": status, "progress": progress}
+    if progress["missing"] > 0:
+        response["authorized_by"] = leader_user.get("username") if leader_user else leader_username
     # If the lote was completely separated, provide a quick label URL for the cliente
     if status == "separado_completo":
         try:

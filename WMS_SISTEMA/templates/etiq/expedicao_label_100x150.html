@@ -133,7 +133,8 @@
           <div class="label-line" id="preview_endereco">—</div>
           <div class="label-line" id="preview_cidade_uf">—</div>
           <div class="label-line" id="preview_cep_rota">—</div>
-          <div class="label-line" id="preview_meta">ENTRADA —  EMBALAGEM —  IMPRESSO —</div>
+          <div class="label-line" id="preview_entrada">ENTRADA —</div>
+          <div class="label-line" id="preview_meta">EMBALAGEM —  IMPRESSO —</div>
         </div>
       </div>
     </div>
@@ -159,6 +160,7 @@
   const previewEndereco = document.getElementById('preview_endereco');
   const previewCidadeUf = document.getElementById('preview_cidade_uf');
   const previewCepRota = document.getElementById('preview_cep_rota');
+  const previewEntrada = document.getElementById('preview_entrada');
   const previewMeta = document.getElementById('preview_meta');
   const previewBtn = document.getElementById('previewBtn');
   const printBtn = document.getElementById('printBtn');
@@ -185,7 +187,8 @@
     previewEndereco.textContent = e.toUpperCase();
     previewCidadeUf.textContent = cidadeUf.toUpperCase();
     previewCepRota.textContent = (`${cepInp.value.trim()}${setor}${rota}`.trim() || 'CEP SETOR/ROTA').toUpperCase();
-    previewMeta.textContent = `ENTRADA ${entrada}  EMBALAGEM ${embalagem}  IMPRESSO ${previewMeta.dataset.printedAt || '—'}`.toUpperCase();
+    previewEntrada.textContent = `ENTRADA ${entrada}`.toUpperCase();
+    previewMeta.textContent = `EMBALAGEM ${embalagem}  IMPRESSO ${previewMeta.dataset.printedAt || '—'}`.toUpperCase();
   }
 
   previewBtn.addEventListener('click', function(){ updatePreview(); });
