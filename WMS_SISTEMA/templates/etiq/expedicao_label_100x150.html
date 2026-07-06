@@ -5,20 +5,10 @@
 <style>
   /* Print page size for the label */
   @media print {
-    @page { size: 150mm 100mm landscape; margin: 0; }
+    @page { size: 100mm 150mm portrait; margin: 0; }
     body * { visibility: hidden; }
     #labelPreview, #labelPreview * { visibility: visible; }
-    #labelPreview {
-      position: fixed; inset: 2mm;
-      width: 146mm; height: 96mm;
-      border: 3px solid #000;
-      box-sizing: border-box;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .label-code { font-size: 64pt; }
-    .label-info { padding: 5mm 10mm; gap: 1.7mm; }
-    .label-line { font-size: 9.5pt; }
+    #labelPreview { position: fixed; inset: 0; width: 100mm; height: 150mm; }
   }
 
   .exp-shell { max-width: 900px; margin: 20px auto; font-family: "Space Grotesk", sans-serif; }
@@ -34,43 +24,65 @@
   .preview-wrap { margin-top:18px; }
   #labelPreview { width:150mm; height:100mm; border:0; border-radius:0; padding:0; background:#fff; box-shadow:none; box-sizing:border-box; }
 
-  #labelPreview {
-    display:grid; grid-template-rows:1fr 1fr;
-    padding:0; border:3px solid #000;
-    overflow:hidden;
-  }
-  .label-code {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    border-bottom:3px solid #000;
-    font-family:Arial, Helvetica, sans-serif;
-    font-size:10rem;
-    font-weight:900;
-    letter-spacing:.02em;
-    line-height:.85;
-    color:#000;
-  }
-  .label-info {
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-    gap:5px;
-    padding:12px 22px;
-    box-sizing:border-box;
-    overflow:hidden;
-  }
-  .label-line {
-    font-family:Arial, Helvetica, sans-serif;
-    font-size:1.05rem;
-    font-weight:500;
-    line-height:1.15;
-    text-transform:uppercase;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    color:#000;
-  }
+  /* Inner label layout sized to 100x150mm at screen scale */
+  .label-inner { width: 100%; height: 100%; display:grid; grid-template-rows:90px 1fr; box-sizing:border-box; }
+    /* Top: two boxed fields; Bottom: single boxed address field */
+    #labelPreview { border:4px solid #000; }
+    .label-top { display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:8px; box-sizing:border-box; }
+    .label-top > div {
+      border:2px solid #000;
+      box-sizing:border-box;
+      padding:10px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      background:#fff;
+      height:100%;
+      color:#000;
+    }
+
+    .label-client-code {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:50px 10px; 
+      height:100%;
+      font-size:3.4rem; /* slightly reduced to fit with padding */
+      font-weight:900;
+      letter-spacing:0.02em;
+      text-transform:uppercase;
+      color:#000;
+    }
+
+    .label-client-name {
+      display:flex;
+      justify-content:flex-end;
+      align-items:flex-start;
+      font-size:1.1rem;
+      font-weight:400;
+      text-transform:uppercase;
+      text-align:right;
+      padding-top:6px;
+      color:#000;
+    }
+
+    .label-middle { padding:0; }
+    .label-address {
+      border:2px solid #000;
+      box-sizing:border-box;
+      padding:18px 14px;
+      font-size:2.2rem;
+      font-weight:500;
+      text-transform:uppercase;
+      text-align:left;
+      line-height:1.25;
+      height:100%;
+      display:block;
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:#fff;
+      color:#000;
+    }
 
 </style>
 
@@ -86,32 +98,8 @@
         <label>Código do Cliente
           <input type="text" name="cliente_codigo" id="cliente_codigo" value="{{ cliente_codigo or '' }}" placeholder="123456">
         </label>
-        <label>CNPJ/CPF
-          <input type="text" name="cliente_cnpj_cpf" id="cliente_cnpj_cpf" value="{{ cliente_cnpj_cpf or '' }}" placeholder="00.000.000/0000-00">
-        </label>
         <label>Endereço do Cliente
           <input type="text" name="cliente_endereco" id="cliente_endereco" value="{{ cliente_endereco or '' }}" placeholder="Rua, nº / Prateleira">
-        </label>
-        <label>Cidade
-          <input type="text" name="cliente_cidade" id="cliente_cidade" value="{{ cliente_cidade or '' }}" placeholder="Cidade">
-        </label>
-        <label>UF
-          <input type="text" name="cliente_estado" id="cliente_estado" value="{{ cliente_estado or '' }}" placeholder="UF">
-        </label>
-        <label>CEP
-          <input type="text" name="cliente_cep" id="cliente_cep" value="{{ cliente_cep or '' }}" placeholder="00000-000">
-        </label>
-        <label>Setor
-          <input type="text" name="cliente_setor" id="cliente_setor" value="{{ cliente_setor or '' }}" placeholder="16">
-        </label>
-        <label>Rota
-          <input type="text" name="cliente_rota" id="cliente_rota" value="{{ cliente_rota or '' }}" placeholder="14:30">
-        </label>
-        <label>Usuário Entrada
-          <input type="text" name="usuario_entrada" id="usuario_entrada" value="{{ usuario_entrada or '' }}" placeholder="Usuário">
-        </label>
-        <label>Usuário Embalagem
-          <input type="text" name="usuario_embalagem" id="usuario_embalagem" value="{{ usuario_embalagem or '' }}" placeholder="Usuário">
         </label>
       </div>
 
@@ -126,15 +114,14 @@
     <div class="preview-wrap">
       <h3>Preview</h3>
       <div id="labelPreview" aria-label="Preview da etiqueta">
-        <div class="label-code" id="preview_codigo">—</div>
-        <div class="label-info">
-          <div class="label-line" id="preview_cnpj_cpf">CNPJ/CPF —</div>
-          <div class="label-line" id="preview_nome">—</div>
-          <div class="label-line" id="preview_endereco">—</div>
-          <div class="label-line" id="preview_cidade_uf">—</div>
-          <div class="label-line" id="preview_cep_rota">—</div>
-          <div class="label-line" id="preview_entrada">ENTRADA —</div>
-          <div class="label-line" id="preview_meta">EMBALAGEM —  IMPRESSO —</div>
+        <div class="label-inner">
+          <div class="label-top">
+            <div class="label-client-code" id="preview_codigo">{{ cliente_codigo or 'CODIGO DO CLIENTE' }}</div>
+            <div class="label-client-name" id="preview_nome">{{ cliente_nome or 'NOME DO CLIENTE' }}</div>
+          </div>
+          <div class="label-middle">
+            <div class="label-address" id="preview_endereco">{{ cliente_endereco or 'ENDEREÇO DO CLIENTE' }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -145,55 +132,26 @@
 (function (){
   const nomeInp = document.getElementById('cliente_nome');
   const codigoInp = document.getElementById('cliente_codigo');
-  const cnpjCpfInp = document.getElementById('cliente_cnpj_cpf');
   const enderecoInp = document.getElementById('cliente_endereco');
-  const cidadeInp = document.getElementById('cliente_cidade');
-  const estadoInp = document.getElementById('cliente_estado');
-  const cepInp = document.getElementById('cliente_cep');
-  const setorInp = document.getElementById('cliente_setor');
-  const rotaInp = document.getElementById('cliente_rota');
-  const entradaInp = document.getElementById('usuario_entrada');
-  const embalagemInp = document.getElementById('usuario_embalagem');
   const previewNome = document.getElementById('preview_nome');
   const previewCodigo = document.getElementById('preview_codigo');
-  const previewCnpjCpf = document.getElementById('preview_cnpj_cpf');
   const previewEndereco = document.getElementById('preview_endereco');
-  const previewCidadeUf = document.getElementById('preview_cidade_uf');
-  const previewCepRota = document.getElementById('preview_cep_rota');
-  const previewEntrada = document.getElementById('preview_entrada');
-  const previewMeta = document.getElementById('preview_meta');
   const previewBtn = document.getElementById('previewBtn');
   const printBtn = document.getElementById('printBtn');
   const resetBtn = document.getElementById('resetBtn');
-
-  function formatPrintDateTime(date){
-    const pad = (value) => String(value).padStart(2, '0');
-    return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
 
   function updatePreview(){
     const n = nomeInp.value.trim() || 'NOME DO CLIENTE';
     const c = codigoInp.value.trim() || 'CODIGO DO CLIENTE';
     const e = enderecoInp.value.trim() || 'ENDEREÇO DO CLIENTE';
-    const cnpjCpf = cnpjCpfInp.value.trim() ? `CNPJ/CPF ${cnpjCpfInp.value.trim()}` : 'CNPJ/CPF —';
-    const cidadeUf = [cidadeInp.value.trim(), estadoInp.value.trim()].filter(Boolean).join('  ') || 'CIDADE UF';
-    const setor = setorInp.value.trim() ? ` SETOR: ${setorInp.value.trim()}` : '';
-    const rota = rotaInp.value.trim() ? `-ROTA ${rotaInp.value.trim()}` : '';
-    const entrada = entradaInp.value.trim() || '—';
-    const embalagem = embalagemInp.value.trim() || '—';
     previewNome.textContent = n.toUpperCase();
     previewCodigo.textContent = c.toUpperCase();
-    previewCnpjCpf.textContent = cnpjCpf.toUpperCase();
     previewEndereco.textContent = e.toUpperCase();
-    previewCidadeUf.textContent = cidadeUf.toUpperCase();
-    previewCepRota.textContent = (`${cepInp.value.trim()}${setor}${rota}`.trim() || 'CEP SETOR/ROTA').toUpperCase();
-    previewEntrada.textContent = `ENTRADA ${entrada}`.toUpperCase();
-    previewMeta.textContent = `EMBALAGEM ${embalagem}  IMPRESSO ${previewMeta.dataset.printedAt || '—'}`.toUpperCase();
   }
 
   previewBtn.addEventListener('click', function(){ updatePreview(); });
   resetBtn.addEventListener('click', function(){ nomeInp.value=''; codigoInp.value=''; enderecoInp.value=''; updatePreview(); });
-  printBtn.addEventListener('click', function(){ previewMeta.dataset.printedAt = formatPrintDateTime(new Date()); updatePreview(); window.print(); });
+  printBtn.addEventListener('click', function(){ updatePreview(); window.print(); });
 
   // initialize
   updatePreview();

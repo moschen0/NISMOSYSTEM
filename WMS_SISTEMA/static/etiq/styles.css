@@ -349,10 +349,31 @@ input,
 textarea,
 select {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.95);
   transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+/* Compact styles when inside modal */
+.modal-box label {
+  gap: 4px;
+  font-size: 0.92rem;
+}
+.modal-box input,
+.modal-box textarea,
+.modal-box select {
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+@media (max-width: 480px) {
+  .modal-box {
+    width: 92vw;
+    padding: 12px;
+    border-radius: 12px;
+    max-height: 96vh;
+  }
 }
 
 input:focus,
@@ -973,8 +994,10 @@ body.print-50x30 .print-sheet {
   background: var(--page-soft);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
-  padding: 24px;
-  width: min(400px, 100%);
+  padding: 16px;
+  width: min(640px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
   animation: rise 200ms ease;
 }
 

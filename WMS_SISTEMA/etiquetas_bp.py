@@ -415,6 +415,14 @@ def _ensure_labels_schema(conn: Any) -> None:
     expected_columns = {
         "numero_cliente": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN numero_cliente LONG",
         "nome_cliente": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN nome_cliente TEXT(255)",
+        "endereco": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN endereco TEXT(255)",
+        "numero": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN numero TEXT(50)",
+        "complemento": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN complemento TEXT(100)",
+        "bairro": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN bairro TEXT(100)",
+        "cidade": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN cidade TEXT(100)",
+        "estado": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN estado TEXT(50)",
+        "cep": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN cep TEXT(20)",
+        "cnpj": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN cnpj TEXT(50)",
         "cor_roteiro": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN cor_roteiro TEXT(100)",
         "horario_roteiro": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN horario_roteiro TEXT(20)",
         "entregador": f"ALTER TABLE {LABEL_CLIENTS_TABLE} ADD COLUMN entregador TEXT(100)",
@@ -429,6 +437,44 @@ def _ensure_labels_schema(conn: Any) -> None:
             except Exception:
                 pass
     conn.commit()
+
+    # Ensure 'roteiros' table exists to persist created routes
+    try:
+        if not _table_exists(cursor, 'roteiros'):
+            _run_ddl_on_conn(
+                conn,
+                f"""
+                CREATE TABLE roteiros (
+                    id COUNTER PRIMARY KEY,
+                    nome TEXT(255),
+                    cor TEXT(100),
+                    horario TEXT(20),
+                    entregador TEXT(100),
+                    created_at TEXT(50),
+                    updated_at TEXT(50)
+                )
+                """,
+            )
+    except Exception:
+        # ignore failures here; table creation is best-effort
+        pass
+    # Ensure 'roteiro_cores' table exists to persist custom route colors
+    try:
+        if not _table_exists(cursor, 'roteiro_cores'):
+            _run_ddl_on_conn(
+                conn,
+                f"""
+                CREATE TABLE roteiro_cores (
+                    id COUNTER PRIMARY KEY,
+                    nome TEXT(100),
+                    hex TEXT(20),
+                    created_at TEXT(50),
+                    updated_at TEXT(50)
+                )
+                """,
+            )
+    except Exception:
+        pass
 
 
 def _import_legacy_labels_if_needed(conn: Any) -> None:
@@ -811,7 +857,21 @@ def delete_client(numero_cliente: int) -> None:
         _invalidate_clients_cache()
 
 
-def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, nome_cliente: str = "", entregador: str = "") -> None:
+def upsert_client(
+    numero_cliente: int,
+    cor_roteiro: str,
+    horario_roteiro: str,
+    nome_cliente: str = "",
+    entregador: str = "",
+    endereco: str = "",
+    numero: str = "",
+    complemento: str = "",
+    bairro: str = "",
+    cidade: str = "",
+    estado: str = "",
+    cep: str = "",
+    cnpj: str = "",
+) -> None:
     ensure_database_ready()
     with DB_FILE_LOCK:
         conn = db_mdb.get_connection()
@@ -831,7 +891,9 @@ def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, n
             cursor.execute(
                 f"""
                 UPDATE {LABEL_CLIENTS_TABLE}
-                SET nome_cliente = ?, cor_roteiro = ?, horario_roteiro = ?, entregador = ?, updated_at = ?
+                SET nome_cliente = ?, cor_roteiro = ?, horario_roteiro = ?, entregador = ?,
+                    endereco = ?, numero = ?, complemento = ?, bairro = ?, cidade = ?, estado = ?, cep = ?, cnpj = ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -839,6 +901,14 @@ def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, n
                     cor_roteiro.upper(),
                     horario_roteiro or None,
                     entregador or None,
+                    endereco or None,
+                    numero or None,
+                    complemento or None,
+                    bairro or None,
+                    cidade or None,
+                    estado or None,
+                    cep or None,
+                    cnpj or None,
                     now_str,
                     int(row[0]),
                 ),
@@ -848,8 +918,9 @@ def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, n
                 f"""
                 INSERT INTO {LABEL_CLIENTS_TABLE} (
                     numero_cliente, nome_cliente, cor_roteiro, horario_roteiro,
-                    entregador, data_impressao, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    entregador, endereco, numero, complemento, bairro, cidade, estado, cep, cnpj,
+                    data_impressao, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(numero_cliente),
@@ -857,6 +928,14 @@ def upsert_client(numero_cliente: int, cor_roteiro: str, horario_roteiro: str, n
                     cor_roteiro.upper(),
                     horario_roteiro or None,
                     entregador or None,
+                    endereco or None,
+                    numero or None,
+                    complemento or None,
+                    bairro or None,
+                    cidade or None,
+                    estado or None,
+                    cep or None,
+                    cnpj or None,
                     None,
                     now_str,
                     now_str,
@@ -888,6 +967,73 @@ def _persist_print_date(numero_cliente: int, print_dt: datetime) -> None:
         )
         conn.commit()
         _invalidate_clients_cache()
+
+
+def _create_or_get_roteiro(cor: str, entregador: str, horario: str, nome: str | None = None) -> int | None:
+    """Create a roteiro row if not exists and return its id (or None on error)."""
+    try:
+        ensure_database_ready()
+        with DB_FILE_LOCK:
+            conn = db_mdb.get_connection()
+            cursor = conn.cursor()
+            # normalize
+            cor_n = (cor or "").strip()
+            entregador_n = (entregador or "").strip()
+            horario_n = (horario or "").strip()
+            nome_n = (nome or "").strip() or None
+
+            # try to find an existing roteiro with same cor+entregador+horario
+            cursor.execute(
+                "SELECT TOP 1 id FROM roteiros WHERE cor = ? AND entregador = ? AND horario = ?",
+                (cor_n, entregador_n, horario_n),
+            )
+            row = cursor.fetchone()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if row:
+                return int(row[0])
+            # insert new
+            cursor.execute(
+                "INSERT INTO roteiros (nome, cor, horario, entregador, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (nome_n, cor_n or None, horario_n or None, entregador_n or None, now, now),
+            )
+            conn.commit()
+            # fetch id of last inserted
+            cursor.execute("SELECT TOP 1 id FROM roteiros ORDER BY id DESC")
+            r = cursor.fetchone()
+            return int(r[0]) if r else None
+    except Exception:
+        return None
+
+
+def _create_or_get_cor(nome: str, hex_value: str | None = None) -> dict | None:
+    """Create or return existing color record. Returns dict with id,nome,hex or None on error."""
+    try:
+        ensure_database_ready()
+        with DB_FILE_LOCK:
+            conn = db_mdb.get_connection()
+            cursor = conn.cursor()
+            nome_n = (nome or "").strip()
+            hex_n = (hex_value or "").strip()
+            if not nome_n:
+                return None
+            # try to find existing by name (case-insensitive)
+            cursor.execute("SELECT TOP 1 id, nome, hex FROM roteiro_cores WHERE LCASE(nome) = ?", (nome_n.lower(),))
+            row = cursor.fetchone()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if row:
+                return {"id": int(row[0]), "nome": row[1], "hex": row[2]}
+            cursor.execute(
+                "INSERT INTO roteiro_cores (nome, hex, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (nome_n, hex_n or None, now, now),
+            )
+            conn.commit()
+            cursor.execute("SELECT TOP 1 id, nome, hex FROM roteiro_cores ORDER BY id DESC")
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return {"id": int(r[0]), "nome": r[1], "hex": r[2]}
+    except Exception:
+        return None
 
 
 def build_label_data(numero_cliente: int, persist_print_date: bool = True) -> dict[str, Any] | None:
@@ -1221,14 +1367,51 @@ def add_or_update_client():
     try:
         numero_cliente = int(request.form["numero_cliente"])
         nome_cliente = request.form.get("nome_cliente", "").strip()
-        cor_roteiro = request.form["cor_roteiro"].strip()
+        cor_roteiro = request.form.get("cor_roteiro", "").strip()
         horario_roteiro = request.form.get("horario_roteiro", "").strip()
         entregador = request.form.get("entregador", "").strip()
-        if not cor_roteiro:
-            raise ValueError("Cor do roteiro e obrigatoria.")
-        if not entregador:
-            raise ValueError("Entregador e obrigatorio.")
-        upsert_client(numero_cliente, cor_roteiro, horario_roteiro, nome_cliente, entregador)
+        endereco = request.form.get("endereco", "").strip()
+        numero = request.form.get("numero", "").strip()
+        complemento = request.form.get("complemento", "").strip()
+        bairro = request.form.get("bairro", "").strip()
+        cidade = request.form.get("cidade", "").strip()
+        estado = request.form.get("estado", "").strip()
+        cnpj = request.form.get("cnpj", "").strip()
+        cep = request.form.get("cep", "").strip()
+        create_roteiro = request.form.get("create_roteiro", "") == "1"
+
+        # address validation: require main address fields
+        if not endereco or not bairro or not cidade or not estado or not cep:
+            raise ValueError("Endereço completo (rua, bairro, cidade, estado, CEP) e obrigatório.")
+
+        # if user asked to create a roteiro, ensure cor and entregador present
+        if create_roteiro:
+            if not cor_roteiro:
+                raise ValueError("Cor do roteiro é obrigatória quando cadastrar roteiro.")
+            if not entregador:
+                raise ValueError("Entregador é obrigatório quando cadastrar roteiro.")
+
+        # proceed to upsert client with address fields
+        upsert_client(
+            numero_cliente,
+            cor_roteiro,
+            horario_roteiro,
+            nome_cliente,
+            entregador,
+            endereco=endereco,
+            numero=numero,
+            complemento=complemento,
+            bairro=bairro,
+            cidade=cidade,
+            estado=estado,
+            cep=cep,
+            cnpj=cnpj,
+        )
+        # If requested, create a roteiro record (route) so user can manage routes separately
+        if create_roteiro:
+            # nome for roteiro: prefer entregador or fallback to 'Roteiro {cor}'
+            roteiro_nome = entregador or f"Roteiro {cor_roteiro}"
+            _create_or_get_roteiro(cor_roteiro, entregador, horario_roteiro, nome=roteiro_nome)
         return redirect(url_for("etiquetas.index", success="Cliente salvo com sucesso."))
     except Exception as exc:
         return redirect(url_for("etiquetas.index", error=str(exc)))
@@ -1256,6 +1439,57 @@ def roteiro_info():
     if fallback is not None:
         return jsonify(fallback)
     return jsonify({"entregador": "", "horario": ""})
+
+
+
+@etq_bp.post("/clientes/roteiros")
+@_etiq_feature_required("etiq_adicionar_cliente")
+def create_roteiro_endpoint():
+    try:
+        payload = None
+        if request.is_json:
+            payload = request.get_json()
+        else:
+            payload = request.form
+
+        cor = (payload.get("cor") or "").strip()
+        entregador = (payload.get("entregador") or "").strip()
+        horario = (payload.get("horario") or "").strip()
+        nome = (payload.get("nome") or "").strip() or None
+
+        if not cor:
+            return jsonify({"ok": False, "error": "Cor é obrigatória."}), 400
+        if not entregador:
+            return jsonify({"ok": False, "error": "Entregador é obrigatório."}), 400
+
+        roteiro_id = _create_or_get_roteiro(cor, entregador, horario, nome=nome)
+        if roteiro_id is None:
+            return jsonify({"ok": False, "error": "Não foi possível criar o roteiro."}), 500
+        return jsonify({"ok": True, "id": roteiro_id})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+
+@etq_bp.post("/clientes/cores")
+@_etiq_feature_required("etiq_adicionar_cliente")
+def create_roteiro_cor_endpoint():
+    try:
+        payload = None
+        if request.is_json:
+            payload = request.get_json()
+        else:
+            payload = request.form
+        nome = (payload.get("nome") or "").strip()
+        hexv = (payload.get("hex") or "").strip()
+        if not nome:
+            return jsonify({"ok": False, "error": "Nome da cor é obrigatório."}), 400
+        rec = _create_or_get_cor(nome, hexv)
+        if not rec:
+            return jsonify({"ok": False, "error": "Não foi possível criar a cor."}), 500
+        return jsonify({"ok": True, "id": rec.get("id"), "nome": rec.get("nome"), "hex": rec.get("hex")})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @etq_bp.post("/clientes/excluir/<int:numero_cliente>")

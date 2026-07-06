@@ -12,18 +12,6 @@ const Expedicao = (() => {
     el.style.display = 'block';
   }
 
-  function showCheckinBlockModal(message) {
-    const modalEl = document.getElementById('checkin-block-modal');
-    const messageEl = document.getElementById('checkin-block-modal-message');
-    if (!modalEl || !messageEl || !window.bootstrap) {
-      showAlert('checkin-alert', message, 'danger');
-      return;
-    }
-    messageEl.textContent = message;
-    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
-    modal.show();
-  }
-
   // Very loud warning for doublecheck invalid scans
   function showLoudWarning(message) {
     // Create overlay if not present (template includes it on doublecheck page)
@@ -78,8 +66,7 @@ const Expedicao = (() => {
     });
     let data = {};
     try {
-      const text = await response.text();
-      data = text ? JSON.parse(text) : {};
+      data = await response.json();
     } catch (e) {
       data = {};
     }
@@ -88,63 +75,7 @@ const Expedicao = (() => {
 
   // ── CHECKIN DE ENTRADA ──────────────────────────────────────
   const Checkin = {
-    applyPendingSuggestedEndereco() {
-      let pending = null;
-      try {
-        pending = JSON.parse(sessionStorage.getItem('expedicaoCheckinSuggestedEndereco') || 'null');
-      } catch (e) {
-        pending = null;
-      }
-      if (!pending || !pending.loteId || !pending.endereco) return;
-
-      const enderecoEl = document.getElementById(`endereco-${pending.loteId}`);
-      if (enderecoEl && !enderecoEl.value) {
-        enderecoEl.value = pending.endereco;
-      }
-      sessionStorage.removeItem('expedicaoCheckinSuggestedEndereco');
-    },
-
-    upsertLoteCard(lote, items, suggestedEndereco) {
-      if (!lote || !lote.id) return false;
-
-      const container = document.getElementById('open-lotes-container');
-      if (!container) return false;
-
-      const empty = document.getElementById('open-lotes-empty');
-      if (empty) empty.remove();
-
-      let card = document.querySelector(`[data-lote-id="${lote.id}"]`);
-      if (!card) {
-        card = document.createElement('div');
-        card.className = 'border rounded p-3 mb-3';
-        card.dataset.loteId = lote.id;
-        container.prepend(card);
-      }
-
-      const enderecoValue = lote.endereco || suggestedEndereco || '';
-      const itemRows = (items || []).map((item) => (
-        `<li class="list-group-item px-0 py-1 font-monospace">${item.order_id || ''}</li>`
-      )).join('');
-
-      card.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <strong class="font-monospace">${lote.lote_code || ''}</strong>
-          <span class="badge bg-info">Cliente ${lote.client_number || ''}</span>
-        </div>
-        <ul class="list-group list-group-flush mb-2">${itemRows}</ul>
-        <div class="input-group">
-          <input type="text" class="form-control form-control-sm" id="endereco-${lote.id}" placeholder="Endereçamento (ex: A01)" value="${enderecoValue}">
-          <button class="btn btn-sm btn-success" onclick="Expedicao.Checkin.fechar(${lote.id})">
-            <i class="bi bi-lock"></i> Fechar Lote
-          </button>
-        </div>`;
-
-      return true;
-    },
-
     init() {
-      Checkin.applyPendingSuggestedEndereco();
-
       const input = document.getElementById('master-id-input');
       if (input) {
         input.addEventListener('keydown', (e) => {
@@ -233,37 +164,48 @@ const Expedicao = (() => {
         return;
       }
 
-      const { ok, status, data } = await postJson('/expedicao/api/checkin/scan', {
+      const { ok, data } = await postJson('/expedicao/api/checkin/scan', {
         order_id: orderId,
         client_number: clientNumber,
       });
 
       if (!ok) {
-        const errorMessage = data.error || data.message || (status === 409
-          ? 'Este ID Master já foi processado e não pode retornar ao Checkin de Entrada.'
-          : 'Erro ao bipar ID Master.');
         if (data.needs_client_number) {
-          const clientWrapper = document.getElementById('client-number-wrapper');
-          if (clientWrapper) clientWrapper.style.display = 'block';
+          document.getElementById('client-number-wrapper').style.display = 'block';
         }
-        showAlert('checkin-alert', errorMessage, 'danger');
-        if (status === 409) {
-          showCheckinBlockModal(errorMessage);
-        }
-        masterInput.focus();
-        masterInput.select();
+        showAlert('checkin-alert', data.error || 'Erro ao bipar ID Master.', 'danger');
         return;
       }
 
       masterInput.value = '';
       if (clientInput) clientInput.value = '';
-      if (data.suggested_endereco && data.lote && data.lote.id) {
-        sessionStorage.setItem('expedicaoCheckinSuggestedEndereco', JSON.stringify({
-          loteId: data.lote.id,
-          endereco: data.suggested_endereco,
-        }));
+      // If server suggested an endereco for this lote, fill the input.
+      try {
+        const lote = data.lote;
+        if (data.suggested_endereco && lote && lote.id) {
+          const enderecoEl = document.getElementById(`endereco-${lote.id}`);
+          if (enderecoEl && !enderecoEl.value) {
+            enderecoEl.value = data.suggested_endereco;
+          }
+          // Append the scanned order to the lote items list if present in DOM
+          const container = document.querySelector(`[data-lote-id="${lote.id}"]`);
+          if (container) {
+            const ul = container.querySelector('.list-group');
+            if (ul) {
+              const li = document.createElement('li');
+              li.className = 'list-group-item px-0 py-1 font-monospace';
+              li.textContent = data.items && data.items.length ? data.items[data.items.length-1].order_id : '';
+              ul.appendChild(li);
+            }
+          }
+        } else {
+          // No suggestion — do a full reload to reflect server state
+          window.location.reload();
+        }
+      } catch (e) {
+        // On error, fallback to reload
+        window.location.reload();
       }
-      window.location.reload();
     },
 
     async fechar(loteId) {
@@ -338,52 +280,6 @@ const Expedicao = (() => {
       const pct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
       bar.style.width = `${pct}%`;
       bar.textContent = `${pct}%`;
-      this._updateFinalizeButton(confirmed, total);
-    },
-
-    _updateFinalizeButton(confirmed, total) {
-      const finalizeBtn = document.getElementById('dc-finalizar-btn');
-      const finalizeMissingBtn = document.getElementById('dc-finalizar-falta-btn');
-      const isComplete = total > 0 && confirmed >= total;
-      if (finalizeBtn) finalizeBtn.style.display = isComplete ? 'block' : 'none';
-      if (finalizeMissingBtn) finalizeMissingBtn.style.display = total > 0 && !isComplete ? 'block' : 'none';
-    },
-
-    openLeaderAuthModal() {
-      const modalEl = document.getElementById('dcLeaderAuthModal');
-      if (!modalEl || !window.bootstrap) return;
-      const alertEl = document.getElementById('dc-leader-auth-alert');
-      if (alertEl) alertEl.style.display = 'none';
-      const usernameInput = document.getElementById('dc-leader-username');
-      const passwordInput = document.getElementById('dc-leader-password');
-      if (usernameInput) usernameInput.value = '';
-      if (passwordInput) passwordInput.value = '';
-      const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
-      modal.show();
-      setTimeout(() => { if (usernameInput) usernameInput.focus(); }, 250);
-    },
-
-    async finalizarComFalta() {
-      const username = document.getElementById('dc-leader-username').value.trim();
-      const password = document.getElementById('dc-leader-password').value;
-      await this.finalizar({ leaderUsername: username, leaderPassword: password });
-    },
-
-    _formatPrintDateTime(date) {
-      const pad = (value) => String(value).padStart(2, '0');
-      return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    },
-
-    _updateLabelPrintedAt() {
-      const printedAtEl = document.getElementById('dcLabelPrintedAt');
-      if (printedAtEl) {
-        printedAtEl.textContent = this._formatPrintDateTime(new Date()).toUpperCase();
-      }
-    },
-
-    printLabel() {
-      this._updateLabelPrintedAt();
-      window.print();
     },
 
     async scan() {
@@ -419,36 +315,18 @@ const Expedicao = (() => {
       showAlert('doublecheck-alert', 'ID confirmado.', 'success');
     },
 
-    async finalizar(auth) {
+    async finalizar() {
       const loteId = document.getElementById('dc-lote-id').value;
-      const payload = { lote_id: parseInt(loteId, 10) };
-      if (auth) {
-        payload.leader_username = auth.leaderUsername || '';
-        payload.leader_password = auth.leaderPassword || '';
-      }
       const { ok, data } = await postJson('/expedicao/api/doublecheck/finalizar', {
-        ...payload,
+        lote_id: parseInt(loteId, 10),
       });
       if (!ok) {
-        if (data.needs_leader_auth) {
-          const alertEl = document.getElementById('dc-leader-auth-alert');
-          if (alertEl) {
-            alertEl.className = 'alert alert-danger';
-            alertEl.textContent = data.error || 'Autorização do líder obrigatória.';
-            alertEl.style.display = 'block';
-            return;
-          }
-          this.openLeaderAuthModal();
-          return;
-        }
         showAlert('doublecheck-alert', data.error || 'Erro ao finalizar separação.', 'danger');
         return;
       }
       // Notify user about status
       if (data.status === 'separado_com_falta') {
-        const modalEl = document.getElementById('dcLeaderAuthModal');
-        if (modalEl && window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-        showAlert('doublecheck-alert', `Finalizado com falta por ${data.authorized_by || 'líder autorizado'}. Faltam ${data.progress.missing} ID(s).`, 'warning');
+        showAlert('doublecheck-alert', `ATENÇÃO: faltam ${data.progress.missing} ID(s) neste lote!`, 'danger');
         // Redirect to embalagem page so user can handle missing items there
         window.location.href = '/expedicao/embalagem';
         return;
@@ -456,35 +334,13 @@ const Expedicao = (() => {
 
       // separado_completo
       showAlert('doublecheck-alert', 'Separação completa! Gerando etiqueta...', 'success');
-      // separado_completo — show the expedition label as a modal on this page
-      showAlert('doublecheck-alert', 'Separação completa! Etiqueta gerada.', 'success');
-
-      const ld = data.label_data;
-      if (ld) {
-        const modalBg = document.getElementById('dcLabelModalBg');
-        if (modalBg) {
-          const codigo = (ld.cliente_codigo || '').toString();
-          const cnpjCpf = ld.cliente_cnpj_cpf ? `CNPJ/CPF ${ld.cliente_cnpj_cpf}` : 'CNPJ/CPF —';
-          const cidadeUf = [ld.cliente_cidade, ld.cliente_estado].filter(Boolean).join('  ');
-          const setor = ld.cliente_setor ? ` SETOR: ${ld.cliente_setor}` : '';
-          const rota = ld.cliente_rota ? `-ROTA ${ld.cliente_rota}` : '';
-          const entrada = (ld.usuario_entrada || '—').toString().toUpperCase();
-          const embalagem = (ld.usuario_embalagem || '—').toString().toUpperCase();
-
-          document.getElementById('dcLabelCode').textContent = codigo.toUpperCase();
-          document.getElementById('dcLabelCnpjCpf').textContent = cnpjCpf.toUpperCase();
-          document.getElementById('dcLabelName').textContent = (ld.cliente_nome || '—').toUpperCase();
-          document.getElementById('dcLabelAddress').textContent = (ld.cliente_endereco || '—').toUpperCase();
-          document.getElementById('dcLabelCityState').textContent = (cidadeUf || '—').toUpperCase();
-          document.getElementById('dcLabelCepRota').textContent = (`${ld.cliente_cep || ''}${setor}${rota}`.trim() || '—').toUpperCase();
-          document.getElementById('dcLabelEntrada').textContent = `ENTRADA ${entrada}`;
-          document.getElementById('dcLabelMeta').innerHTML = `EMBALAGEM ${embalagem}  IMPRESSO <span id="dcLabelPrintedAt">—</span>`;
-          modalBg.classList.add('active');
-          return; // stay on this page; user clicks Continue or Print
-        }
+      // Redirect current tab to the label preview page.
+      // Using window.location.href avoids popup blockers (window.open in async is blocked).
+      if (data.label_url) {
+        window.location.href = data.label_url;
+      } else {
+        window.location.href = '/expedicao/embalagem';
       }
-      // fallback if modal elements not found (e.g. on a different page)
-      window.location.href = '/expedicao/embalagem';
     },
   };
 
