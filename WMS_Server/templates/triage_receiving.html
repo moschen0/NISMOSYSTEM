@@ -175,6 +175,20 @@
         overflow-y: visible !important;
     }
 
+    .triage-edit-banner {
+        border: 1px solid #f0c36d;
+        background: #fff8e8;
+        color: #6a4a00;
+        border-radius: 14px;
+        padding: 0.95rem 1rem;
+    }
+
+    .triage-row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
     .triage-form-card .card-header {
         border: 0;
         background: linear-gradient(90deg, #1663d7 0%, #1f74f8 45%, #2f90ff 100%);
@@ -241,6 +255,10 @@
         box-shadow: 0 14px 30px rgba(79, 90, 196, 0.34);
     }
 
+    #activeServicesWarning {
+        white-space: pre-line;
+    }
+
     #triageActiveServicesModal .modal-dialog {
         max-width: 760px;
     }
@@ -282,7 +300,7 @@
     }
 
     #triageActiveServicesModal .modal-body {
-        padding: 0.7rem 1rem 1rem;
+        padding: 0.9rem 1rem 1rem;
         background: transparent;
     }
 
@@ -294,14 +312,99 @@
 
     #triageActiveServicesModalText {
         margin: 0;
-        font-size: 1.1rem;
-        line-height: 1.5;
-        font-weight: 700;
         color: #3b4453;
+    }
+
+    .triage-warning-modal-summary {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.85rem 0.95rem;
         background: #fff;
         border: 1px solid #f2dcc0;
-        border-radius: 12px;
-        padding: 0.9rem 1rem;
+        border-radius: 14px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        margin-bottom: 0.8rem;
+    }
+
+    .triage-warning-modal-summary-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        background: #ffe8c6;
+        color: #c86b00;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-top: 0.05rem;
+    }
+
+    .triage-warning-modal-summary-copy {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .triage-warning-modal-summary-title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #7a4200;
+    }
+
+    .triage-warning-modal-summary-text {
+        margin: 0.2rem 0 0;
+        font-size: 0.92rem;
+        line-height: 1.4;
+        font-weight: 600;
+        color: #5e6470;
+    }
+
+    .triage-warning-modal-items {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .triage-warning-modal-item {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr);
+        gap: 0.75rem;
+        align-items: stretch;
+        background: linear-gradient(180deg, #fff 0%, #fffaf2 100%);
+        border: 1px solid #f0dcc1;
+        border-radius: 14px;
+        padding: 0.8rem 0.9rem;
+    }
+
+    .triage-warning-modal-field {
+        min-width: 0;
+    }
+
+    .triage-warning-modal-field span {
+        display: block;
+        margin-bottom: 0.28rem;
+        font-size: 0.77rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #a06a22;
+    }
+
+    .triage-warning-modal-field strong {
+        display: block;
+        font-size: 1rem;
+        line-height: 1.35;
+        font-weight: 800;
+        color: #374151;
+        word-break: break-word;
+    }
+
+    .triage-warning-modal-field--os strong {
+        color: #1f2937;
+    }
+
+    .triage-warning-modal-field--position strong {
+        color: #5b6472;
     }
 
     #triageActiveServicesModal .modal-footer {
@@ -342,6 +445,11 @@
         #triageActiveServicesModalText {
             font-size: 1rem;
         }
+
+        .triage-warning-modal-item {
+            grid-template-columns: 1fr;
+            gap: 0.45rem;
+        }
     }
 </style>
 
@@ -355,25 +463,44 @@
     <div class="col-lg-12">
         <div class="card h-100 triage-form-card">
             <div class="card-header text-white">
-                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Novo Recebimento</h5>
+                <h5 class="mb-0">
+                    {% if editing_receipt %}
+                    <i class="bi bi-pencil-square"></i> Editar Recebimento
+                    {% else %}
+                    <i class="bi bi-plus-circle"></i> Novo Recebimento
+                    {% endif %}
+                </h5>
             </div>
             <div class="card-body">
+                {% if editing_receipt %}
+                <div class="triage-edit-banner d-flex justify-content-between align-items-center gap-3 mb-3 flex-wrap">
+                    <div>
+                        <strong>Modo de edicao ativo.</strong>
+                        <span class="d-block">Pedido {{ editing_receipt.order_id or '-' }} de {{ editing_receipt.customer_name or '-' }}.</span>
+                    </div>
+                    <a href="{{ return_to }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle"></i> Cancelar edição</a>
+                </div>
+                {% endif %}
                 <form method="POST" action="{{ url_for('triage_receiving') }}" class="triage-form">
-                    <input type="hidden" name="form_action" value="add">
+                    <input type="hidden" name="form_action" value="{{ 'edit' if editing_receipt else 'add' }}">
+                    <input type="hidden" name="return_to" value="{{ return_to }}">
+                    {% if editing_receipt %}
+                    <input type="hidden" name="receipt_id" value="{{ editing_receipt.id }}">
+                    {% endif %}
 
                     <div class="mb-3">
                         <label for="order_id" class="form-label">Pedido (sequencial)</label>
-                        <input type="text" class="form-control" id="order_id" name="order_id" value="{{ next_order_id }}" readonly>
+                        <input type="text" class="form-control" id="order_id" name="order_id" value="{{ form_order_id_value }}" readonly>
                     </div>
 
                     <div class="mb-3">
                         <label for="customer_code" class="form-label">Codigo Cliente *</label>
-                        <input type="text" class="form-control" id="customer_code" name="customer_code" required autocomplete="off">
+                        <input type="text" class="form-control" id="customer_code" name="customer_code" value="{{ form_customer_code_value }}" required autocomplete="off">
                     </div>
 
                     <div class="mb-3">
                         <label for="customer_name" class="form-label">Nome Cliente *</label>
-                        <input type="text" class="form-control" id="customer_name" name="customer_name" required autocomplete="off" readonly>
+                        <input type="text" class="form-control" id="customer_name" name="customer_name" value="{{ form_customer_name_value }}" required autocomplete="off" readonly>
                         <small class="text-muted">Preenchido automaticamente pelo sistema conforme o codigo informado.</small>
                     </div>
 
@@ -382,21 +509,21 @@
                     <div class="row g-2">
                         <div class="col-md-4">
                             <label for="quantity" class="form-label">Quantidade *</label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" value="1" required>
+                            <input type="number" class="form-control" id="quantity" name="quantity" min="1" value="{{ form_quantity_value }}" required>
                         </div>
                         <div class="col-md-8">
                             <label for="received_at" class="form-label">Data Recebimento *</label>
-                            <input type="datetime-local" class="form-control" id="received_at" name="received_at" value="{{ now_iso }}" required>
+                            <input type="datetime-local" class="form-control" id="received_at" name="received_at" value="{{ form_received_at_value }}" required>
                         </div>
                     </div>
 
                     <div class="mt-3 mb-4">
                         <label for="notes" class="form-label">Observacao</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                        <textarea class="form-control" id="notes" name="notes" rows="3">{{ form_notes_value }}</textarea>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100 triage-submit-btn">
-                        <i class="bi bi-save"></i> Salvar Recebimento
+                        <i class="bi bi-save"></i> {% if editing_receipt %}Salvar Alterações{% else %}Salvar Recebimento{% endif %}
                     </button>
                 </form>
             </div>
@@ -551,11 +678,16 @@
                                         </div>
                                     </div>
                                 </th>
+                                <th>
+                                    <div class="triage-header-cell">
+                                        <span><i class="bi bi-gear"></i> Ações</span>
+                                    </div>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in receipts %}
-                            <tr>
+                            <tr{% if editing_receipt and item.id == editing_receipt.id %} class="table-warning"{% endif %}>
                                 <td><span class="badge bg-primary">{{ item.order_id or '-' }}</span></td>
                                 <td><strong>{{ item.customer_code or '-' }}</strong></td>
                                 <td>{{ item.customer_name or '-' }}</td>
@@ -564,12 +696,27 @@
                                 <td><small class="text-muted">{{ item.received_at or '-' }}</small></td>
                                 <td>{{ item.received_by or '-' }}</td>
                                 <td>{{ item.notes or '-' }}</td>
+                                <td>
+                                    <div class="triage-row-actions">
+                                        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('triage_receiving', edit_id=item.id) }}">
+                                            <i class="bi bi-pencil"></i> Editar
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmTriageReceiptDelete('{{ item.id }}', '{{ item.order_id|e }}')">
+                                            <i class="bi bi-trash"></i> Excluir
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                     </form>
                 </div>
+                <form method="POST" action="{{ url_for('triage_receiving') }}" id="triageDeleteForm" class="d-none">
+                    <input type="hidden" name="form_action" value="delete">
+                    <input type="hidden" name="receipt_id" id="triageDeleteReceiptId" value="">
+                    <input type="hidden" name="return_to" value="{{ return_to }}">
+                </form>
                 {% else %}
                 <div class="alert alert-info mb-0">
                     <i class="bi bi-info-circle"></i>
@@ -601,6 +748,20 @@ function applyTriageSuggestion(button, fieldName, value) {
     const form = menu.closest('form');
     if (form) form.submit();
 }
+
+function confirmTriageReceiptDelete(receiptId, orderId) {
+    const form = document.getElementById('triageDeleteForm');
+    const input = document.getElementById('triageDeleteReceiptId');
+    if (!form || !input) return;
+
+    const receiptLabel = orderId ? `pedido ${orderId}` : 'este recebimento';
+    if (!window.confirm(`Excluir ${receiptLabel}? Esta ação não poderá ser desfeita.`)) {
+        return;
+    }
+
+    input.value = receiptId;
+    form.submit();
+}
 </script>
 
 <div class="modal fade" id="triageActiveServicesModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -611,7 +772,7 @@ function applyTriageSuggestion(button, fieldName, value) {
             </div>
             <div class="modal-body">
                 <p class="triage-warning-modal-subtitle">Cliente com servicos aguardando retirada da prateleira:</p>
-                <p id="triageActiveServicesModalText"></p>
+                <div id="triageActiveServicesModalText"></div>
             </div>
             <div class="modal-footer justify-content-center">
                 <button type="button" class="btn btn-lg px-5" id="triageActiveServicesConfirmBtn">Entendi</button>
@@ -631,6 +792,7 @@ const triageActiveServicesModalText = document.getElementById('triageActiveServi
 const triageActiveServicesConfirmBtn = document.getElementById('triageActiveServicesConfirmBtn');
 let triageActiveServicesCount = 0;
 let triageActiveServicesPreview = '';
+let triageActiveServicesItems = [];
 let triageBypassWarningOnSubmit = false;
 let triageLookupTimer;
 let triageActiveServicesModalInstance = null;
@@ -649,6 +811,15 @@ function getTriageActiveServicesModalInstance() {
     return null;
 }
 
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function askActiveServicesConfirmation(code) {
     return new Promise((resolve) => {
         if (!triageActiveServicesModalEl) {
@@ -659,13 +830,42 @@ function askActiveServicesConfirmation(code) {
         const modalInstance = getTriageActiveServicesModalInstance();
 
         const shelfInfo = triageActiveServicesPreview || code;
-        const message = `Este cliente possui servicos prontos aguardando na prateleira: ${shelfInfo}`;
         if (triageActiveServicesModalText) {
-            triageActiveServicesModalText.textContent = message;
+            const items = Array.isArray(triageActiveServicesItems) && triageActiveServicesItems.length > 0
+                ? triageActiveServicesItems
+                : [{ order_id: code || 'SEM_OS', position: shelfInfo || 'SEM_POSICAO' }];
+
+            triageActiveServicesModalText.innerHTML = `
+                <div class="triage-warning-modal-summary">
+                    <div class="triage-warning-modal-summary-icon"><i class="bi bi-box-seam"></i></div>
+                    <div class="triage-warning-modal-summary-copy">
+                        <p class="triage-warning-modal-summary-title">Este cliente possui servicos prontos aguardando retirada.</p>
+                        <p class="triage-warning-modal-summary-text">Confira abaixo a OS e o endereco / posição de cada servico antes de continuar.</p>
+                    </div>
+                </div>
+                <div class="triage-warning-modal-items">
+                    ${items.map((item) => {
+                        const orderId = escapeHtml((item.order_id || 'SEM_OS').trim() || 'SEM_OS');
+                        const position = escapeHtml((item.position || 'SEM_POSICAO').trim() || 'SEM_POSICAO');
+                        return `
+                            <div class="triage-warning-modal-item">
+                                <div class="triage-warning-modal-field triage-warning-modal-field--os">
+                                    <span>OS</span>
+                                    <strong>${orderId}</strong>
+                                </div>
+                                <div class="triage-warning-modal-field triage-warning-modal-field--position">
+                                    <span>Endereco / Posição</span>
+                                    <strong>${position}</strong>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         if (!modalInstance) {
-            window.alert(message);
+            window.alert(`Este cliente possui servicos prontos aguardando na prateleira: ${shelfInfo}`);
             resolve(true);
             return;
         }
@@ -732,19 +932,22 @@ async function fillCustomerNameByCode() {
         if (response.ok && data && Number(data.count || 0) > 0 && triageActiveServicesWarning) {
             triageActiveServicesCount = Number(data.count || 0);
             const items = Array.isArray(data.items) ? data.items : [];
-            const preview = items.slice(0, 4).map((item) => {
+            triageActiveServicesItems = items.map((item) => ({
+                order_id: String(item.order_id || '').trim() || 'SEM_OS',
+                position: String(item.position || '').trim() || 'SEM_POSICAO',
+            }));
+            const preview = items.map((item) => {
                 const os = (item.order_id || 'SEM_OS').trim() || 'SEM_OS';
                 const pos = (item.position || 'SEM_POSICAO').trim() || 'SEM_POSICAO';
                 return `${os} em ${pos}`;
-            }).join('; ');
-            const moreCount = Math.max(0, triageActiveServicesCount - 4);
-            const moreText = moreCount > 0 ? ` e mais ${moreCount}` : '';
-            triageActiveServicesPreview = `${preview}${moreText}`;
-            triageActiveServicesWarning.innerHTML = `<strong>Aviso:</strong> este cliente possui servicos prontos na prateleira: ${preview}${moreText}.`;
+            }).join('\n');
+            triageActiveServicesPreview = preview;
+            triageActiveServicesWarning.textContent = 'Aviso: este cliente possui servicos prontos na prateleira:\n' + preview;
             triageActiveServicesWarning.style.display = 'block';
         } else {
             triageAcknowledgedCode = '';
             triageActiveServicesPreview = '';
+            triageActiveServicesItems = [];
         }
     } catch (error) {
         console.error('Erro ao buscar servicos ativos do cliente:', error);
@@ -807,6 +1010,14 @@ if (triageForm) {
     });
 }
 
-fillNextOrderId();
+const triageEditingMode = {{ 'true' if editing_receipt else 'false' }};
+
+if (!triageEditingMode) {
+    fillNextOrderId();
+}
+
+if (triageCustomerCodeInput && triageCustomerCodeInput.value && triageCustomerCodeInput.value.trim()) {
+    fillCustomerNameByCode();
+}
 </script>
 {% endblock %}

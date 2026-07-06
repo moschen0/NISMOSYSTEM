@@ -37,7 +37,25 @@
     "status": "active",
     "created_at": "12/05/2026 11:41:56",
     "permissions": [
-      "search"
+      "search",
+      "etiquetas",
+      "etiq_criar"
+    ]
+  },
+  "EXPEDICAO": {
+    "name": "EXPEDICAO",
+    "description": "Setor de expedição e saída de mercadoria",
+    "status": "active",
+    "created_at": "01/07/2026 00:00:00",
+    "permissions": [
+      "dashboard",
+      "search",
+      "expedicao",
+      "expedicao_checkin",
+      "expedicao_picking",
+      "expedicao_doublecheck",
+      "expedicao_embalagem",
+      "shelf_level_clients"
     ]
   }
 }

@@ -69,12 +69,27 @@
                         Todos os Pedidos
                     {% endif %}
                 </h5>
-                <span class="badge bg-light text-dark">{{ total }} pedido{% if total != 1 %}s{% endif %}</span>
+                <div class="d-flex align-items-center gap-3 flex-wrap justify-content-end">
+                    <span class="badge bg-light text-dark">{{ total }} pedido{% if total != 1 %}s{% endif %}</span>
+                    <div class="d-flex align-items-center gap-2 px-2 py-0 rounded-pill"
+                         style="background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18);">
+                        <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-white text-success"
+                              style="width: 26px; height: 26px; flex: 0 0 26px;">
+                            <i class="bi bi-funnel-fill"></i>
+                        </span>
+                        <label for="sortFilter" class="text-white-50 small mb-0">Ordenar</label>
+                        <select id="sortFilter" class="form-select form-select-sm border-0 shadow-none text-white"
+                                style="width: 150px; min-width: 150px; background: transparent; color: rgb(0, 0, 0); padding-left: 0.5rem; padding-right: 1.5rem;">
+                            <option value="DESC" {% if sort_order != 'ASC' %}selected{% endif %} style="color: #000;">Mais novo</option>
+                            <option value="ASC" {% if sort_order == 'ASC' %}selected{% endif %} style="color: #000;">Mais velho</option>
+                        </select>
+                    </div>
+                </div>
             </div>
             <div class="card-body p-0">
                 {% if orders %}
                 <div class="table-responsive">
-                    <table class="table table-hover table-striped mb-0">
+                    <table class="table table-hover table-striped mb-0" id="ordersTable">
                         <thead class="table-dark sticky-top">
                             <tr>
                                 <th><i class="bi bi-box"></i> ID do Pedido</th>
@@ -83,6 +98,7 @@
                                 <th><i class="bi bi-diagram-3"></i> Setor</th>
                                 <th><i class="bi bi-person-badge"></i> Código do cliente</th>
                                 <th><i class="bi bi-box2"></i> Caixa</th>
+                                <th><i class="bi bi-building"></i> OS OPTO</th>
                                 <th><i class="bi bi-clipboard-check"></i> Triagem</th>
                                 <th><i class="bi bi-person"></i> Cadastrado por</th>
                                 <th><i class="bi bi-calendar"></i> Entrada</th>
@@ -90,9 +106,9 @@
                                 <th class="text-center"><i class="bi bi-gear"></i> Ações</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="ordersTableBody">
                             {% for order in orders %}
-                            <tr {% if order.get('status') == 'removed' %}class="table-secondary"{% endif %}>
+                            <tr {% if order.get('status') == 'removed' %}class="table-secondary"{% endif %} data-order-timestamp="{{ (order.date or order.timestamp or '')|e }}">
                                 <td>
                                     <strong class="{% if order.get('status') == 'removed' %}text-muted{% else %}text-primary{% endif %}">
                                         {{ order.order_id }}
@@ -118,15 +134,25 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if order.get('triage_customer_code') %}
-                                        <span class="badge bg-primary">{{ order.get('triage_customer_code') }}</span>
+                                    {% set order_sector = order.get('sector', '')|upper %}
+                                    {% set customer_code_value = '' if order_sector == 'AR' else (order.get('box') or order.get('triage_customer_code') or order.get('display_customer_code')) %}
+                                    {% if customer_code_value %}
+                                        <span class="badge bg-primary">{{ customer_code_value }}</span>
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if order.box %}
-                                        <span class="badge bg-info">{{ order.box }}</span>
+                                    {% set box_value = order.get('box') or order.get('display_box') %}
+                                    {% if box_value %}
+                                        <span class="badge bg-info">{{ box_value }}</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if order.get('os_opto') %}
+                                        <span class="badge bg-dark">{{ order.get('os_opto') }}</span>
                                     {% else %}
                                         <span class="text-muted">-</span>
                                     {% endif %}
@@ -254,9 +280,41 @@
 </div>
 
 <script>
+function parseOrderTimestamp(value) {
+    if (!value) return 0;
+    const match = String(value).match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+    if (!match) return 0;
+    const [, day, month, year, hour, minute, second] = match;
+    return new Date(+year, +month - 1, +day, +hour, +minute, +second).getTime();
+}
+
+function sortOrdersTable(direction) {
+    const tbody = document.getElementById('ordersTableBody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((left, right) => {
+        const leftTime = parseOrderTimestamp(left.dataset.orderTimestamp);
+        const rightTime = parseOrderTimestamp(right.dataset.orderTimestamp);
+        return direction === 'ASC' ? leftTime - rightTime : rightTime - leftTime;
+    });
+    rows.forEach((row) => tbody.appendChild(row));
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const initialSort = sortFilter ? sortFilter.value : 'DESC';
+    sortOrdersTable(initialSort);
+});
+
 let debounceTimer;
 const searchInput = document.getElementById('searchInput');
 const suggestionsContainer = document.getElementById('autocomplete-suggestions');
+const sortFilter = document.getElementById('sortFilter');
+
+if (sortFilter) {
+    sortFilter.addEventListener('change', function() {
+        sortOrdersTable(this.value);
+    });
+}
 
 // Autocomplete
 searchInput.addEventListener('input', function() {

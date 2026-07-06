@@ -2,8 +2,40 @@
 Script para rodar o WMS em modo produção usando Waitress
 """
 from waitress import serve
+import os
+import sys
+
+# Garantir que, ao rodar a partir de outra pasta, a variável de ambiente
+# `WMS_MDB_PATH_PROD` seja carregada do `.env` localizado em ../WMS_Server/.env
+try:
+    env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'WMS_Server', '.env'))
+    if os.path.exists(env_path):
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line or line.strip().startswith('#'):
+                    continue
+                if '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k == 'WMS_MDB_PATH_PROD' and v:
+                    os.environ.setdefault('WMS_MDB_PATH_PROD', v)
+                    break
+except Exception:
+    pass
+
 from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers, start_opto_scheduler, apply_db_mode, save_db_mode
 import db_mdb
+
+# Forçar o banco ativo para a variável de ambiente `WMS_MDB_PATH_PROD` (se definida)
+# Isto assegura que o caminho usado no início seja o esperado pelo administrador.
+try:
+    prod_env = os.environ.get('WMS_MDB_PATH_PROD', '').strip()
+    if prod_env:
+        db_mdb.switch_database(prod_env)
+except Exception:
+    pass
 import socket
 import sys
 import traceback

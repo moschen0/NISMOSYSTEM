@@ -28,7 +28,7 @@ try:
         if getattr(sys, 'frozen', False)
         else os.path.dirname(os.path.abspath(__file__))
     )
-    load_dotenv(os.path.join(_env_base, '.env'), override=False)
+    load_dotenv(os.path.join(_env_base, '.env'), override=True)
 except ImportError:
     pass  # python-dotenv opcional; use variáveis de ambiente do sistema
 

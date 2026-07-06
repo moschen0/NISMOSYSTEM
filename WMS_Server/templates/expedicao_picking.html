@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Onda de Picking - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Geração de Onda de Picking — seleciona horário, identifica clientes e lotes vinculados</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_ondas_historico') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.ondas_historico_page') }}"><i class="bi bi-clock-history"></i> Histórico de Ondas</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="row">
+  <div class="col-lg-5">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-clock"></i> Gerar Onda</h5>
+      </div>
+      <div class="card-body">
+        <div id="picking-alert" class="alert" role="alert" style="display: none;"></div>
+        <label class="form-label fw-bold">Horário</label>
+        <select id="horario-select" class="form-select form-select-lg mb-3">
+          <option value="">Selecione um horário...</option>
+          {% for horario in horarios %}
+          <option value="{{ horario }}">{{ horario }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn btn-primary btn-lg w-100" onclick="Expedicao.Picking.gerarOnda()">
+          <i class="bi bi-signpost-split"></i> Gerar Onda de Picking
+        </button>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> Ondas geradas</h6>
+      </div>
+      <div class="card-body">
+        {% if not ondas %}
+        <p class="text-muted small mb-0">Nenhuma onda gerada ainda.</p>
+        {% endif %}
+        <div class="list-group">
+          {% for onda in ondas %}
+          {% if onda.status == 'fechada' %}
+          <div class="list-group-item d-flex justify-content-between align-items-center text-muted">
+            <div>
+              Onda #{{ onda.id }} — {{ onda.horario }}
+            </div>
+            <span class="badge bg-danger">fechada</span>
+          </div>
+          {% else %}
+          <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+             href="{{ url_for('expedicao.picking_onda_detail', onda_id=onda.id) }}">
+            Onda #{{ onda.id }} — {{ onda.horario }}
+            <span class="badge bg-secondary">{{ onda.status }}</span>
+          </a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">
+        <h6 class="mb-0">
+          <i class="bi bi-box2"></i>
+          {% if onda_atual %}Lotes da Onda #{{ onda_atual.id }} ({{ onda_atual.horario }}){% else %}Selecione uma onda{% endif %}
+        </h6>
+      </div>
+      <div class="card-body">
+        {% if onda_atual %}
+          {% if not onda_lotes %}
+          <p class="text-muted small mb-0">Nenhum lote nesta onda.</p>
+          {% endif %}
+          {% for lote in onda_lotes %}
+          <div class="border rounded p-3 mb-3 d-flex justify-content-between align-items-center">
+            <div>
+              <strong class="font-monospace">{{ lote.lote_code }}</strong><br>
+              <span class="badge bg-info">Cliente {{ lote.client_number }}</span>
+              <span class="badge bg-secondary">{{ lote.status }}</span>
+            </div>
+            <form method="POST" action="{{ url_for('expedicao.picking_select_lote', onda_id=onda_atual.id, lote_id=lote.id) }}">
+              <button type="submit" class="btn btn-sm btn-primary">
+                <i class="bi bi-check2-square"></i> Selecionar para Doublecheck
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        {% else %}
+        <p class="text-muted small mb-0">Escolha uma onda na lista ao lado para ver os lotes vinculados.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/expedicao.js') }}"></script>
+{% endblock %}

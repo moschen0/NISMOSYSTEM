@@ -30,34 +30,51 @@
 
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-auto">
+          {% if etiq_can_access('etiq_adicionar_cliente') %}
           <li class="nav-item">
             <button type="button" id="open-add-client-btn" class="nav-link nav-link-cta">+ Adicionar Cliente</button>
           </li>
+          <!-- 'Criar Roteiro' button moved outside collapse for persistent visibility -->
+          {% endif %}
+          {% if etiq_can_access('etiq_criar') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.index') }}" class="nav-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">
               <i class="bi bi-tag-fill"></i> Criar
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_caixinhas') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.barcode_code128') }}" class="nav-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">
               <i class="bi bi-upc-scan"></i> Caixinhas
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_envio') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="nav-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">
               <i class="bi bi-box-seam"></i> Etiq. Envio
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_reimprimir') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.impressos_list') }}" class="nav-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">
               <i class="bi bi-printer"></i> Reimprimir
             </a>
           </li>
+          {% endif %}
         </ul>
       </div>
+      {% if etiq_can_access('etiq_adicionar_cliente') %}
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button type="button" id="open-create-roteiro-btn" class="nav-link" title="Criar roteiro">Criar Roteiro</button>
+      </div>
+      {% endif %}
     </div>
   </nav>
 
+  {% if etiq_can_access('etiq_adicionar_cliente') %}
   <!-- Modal Adicionar Cliente -->
   <div id="add-client-modal" class="modal-backdrop" hidden>
     <div class="modal-box">
@@ -72,7 +89,39 @@
         </label>
         <label>
           Nome do cliente
-          <input type="text" name="nome_cliente" placeholder="Ex: Joao da Silva">
+          <input type="text" name="nome_cliente" placeholder="Ex: Joao da Silva" required>
+        </label>
+        <label>
+          CNPJ
+          <input type="text" name="cnpj" placeholder="00.000.000/0000-00">
+        </label>
+        <label>
+          Endereço (rua)
+          <input type="text" name="endereco" placeholder="Rua Exemplo" required>
+        </label>
+        <label>
+          Número
+          <input type="text" name="numero" placeholder="123" required>
+        </label>
+        <label>
+          Complemento
+          <input type="text" name="complemento" placeholder="Apto / Bloco">
+        </label>
+        <label>
+          Bairro
+          <input type="text" name="bairro" placeholder="Bairro Exemplo" required>
+        </label>
+        <label>
+          Cidade
+          <input type="text" name="cidade" placeholder="Cidade" required>
+        </label>
+        <label>
+          Estado
+          <input type="text" name="estado" placeholder="UF" required>
+        </label>
+        <label>
+          CEP
+          <input type="text" name="cep" placeholder="00000-000" required>
         </label>
         <label>
           Cor do roteiro
@@ -83,20 +132,71 @@
             {% endfor %}
           </select>
         </label>
+        <!-- checkbox and inline create button removed; use navbar 'Criar Roteiro' modal -->
         <div id="roteiro-preview" class="roteiro-preview" hidden>
           <span id="roteiro-preview-chip" class="roteiro-preview-chip"></span>
           <span id="roteiro-preview-horario" class="roteiro-preview-label"></span>
         </div>
         <label>
           Entregador / Rota
-          <input type="text" name="entregador" id="entregador-input" placeholder="Ex: ROTA 1" required>
+          <input type="text" name="entregador" id="entregador-input" placeholder="Ex: ROTA 1">
         </label>
         <input type="hidden" name="horario_roteiro" id="horario-roteiro-input">
-        <button type="submit" class="btn-green" style="width:100%;margin-top:4px;" id="save-client-btn">Salvar cliente</button>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <button type="submit" class="btn-green" id="save-client-btn" style="flex:1;">Salvar cliente</button>
+        </div>
         <p id="save-client-notice" style="display:none;text-align:center;font-size:0.85rem;color:var(--muted);margin-top:6px;">Aguarde, salvando... isso pode levar alguns segundos.</p>
       </form>
     </div>
   </div>
+  {% endif %}
+
+    {% if etiq_can_access('etiq_adicionar_cliente') %}
+    <!-- Modal Criar Roteiro (nav) -->
+    <div id="create-roteiro-modal" class="modal-backdrop" hidden>
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2>Criar Roteiro</h2>
+          <button type="button" id="close-create-roteiro-btn" class="modal-close" aria-label="Fechar">&times;</button>
+        </div>
+        <div class="form">
+          <label>
+            Cor do roteiro
+            <select id="create-cor-select">
+              <option value="" disabled selected>Selecione a cor</option>
+              {% for cor_nome, cor_hex in route_colors %}
+              <option value="{{ cor_nome }}" data-hex="{{ cor_hex }}">{{ cor_nome | title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+            <button type="button" id="toggle-new-cor" class="btn-link">+ Nova cor</button>
+            <div id="new-cor-row" style="display:none;flex:1;gap:6px;">
+              <input type="text" id="new-cor-nome" placeholder="Nome da cor (ex: Azul Claro)" style="padding:6px;border-radius:6px;border:1px solid var(--line);width:55%;">
+              <input type="text" id="new-cor-hex" placeholder="#RRGGBB" style="padding:6px;border-radius:6px;border:1px solid var(--line);width:30%;">
+              <button type="button" id="create-cor-btn" class="btn-green" style="padding:6px 8px;">Criar</button>
+            </div>
+          </div>
+          <label>
+            Entregador / Rota
+            <input type="text" id="create-entregador-input" placeholder="Ex: ROTA 1">
+          </label>
+          <label>
+            Horário (opcional)
+            <input type="text" id="create-horario-input" placeholder="Ex: 09:00">
+          </label>
+          <label>
+            Nome do roteiro (opcional)
+            <input type="text" id="create-nome-input" placeholder="Nome do roteiro">
+          </label>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+            <button type="button" id="create-roteiro-submit" class="btn-green">Criar</button>
+            <div id="create-roteiro-nav-msg" style="min-width:160px;font-size:0.9rem;color:var(--muted);display:none;align-items:center;justify-content:center;padding:6px;border-radius:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
 
   <main class="shell">
@@ -147,6 +247,11 @@
                 </select>
               </label>
 
+              <label class="toggle-line" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="show_tipo_lente" value="1" checked>
+                <span>Mostrar Tipo de Lente</span>
+              </label>
+
               <div class="actions-row form-actions">
                 <button type="submit">Gerar etiqueta</button>
                 <button type="button" id="print-btn" class="ghost" disabled>Imprimir</button>
@@ -164,7 +269,30 @@
   </main>
 
   <script>
-    const STORAGE_KEY = "etiquetas:label-layout:v1";
+    // Ensure address fields are required when opening modal; toggle entregador/cor requirements when Cadastrar roteiro unchecked
+    (function(){
+      const modal = document.getElementById('add-client-modal');
+      const openBtn = document.getElementById('open-add-client-btn');
+      const closeBtn = document.getElementById('close-add-client-btn');
+      const createRoteiro = document.getElementById('create-roteiro-checkbox');
+      const corSelect = document.getElementById('cor-roteiro-select');
+      const entregadorInput = document.getElementById('entregador-input');
+      openBtn && openBtn.addEventListener('click', ()=>{ modal.hidden = false; });
+      closeBtn && closeBtn.addEventListener('click', ()=>{ modal.hidden = true; });
+      function toggleRoteiroRequirements(){
+        if(createRoteiro && !createRoteiro.checked){
+          corSelect.removeAttribute('required');
+          entregadorInput.removeAttribute('required');
+        } else {
+          corSelect.setAttribute('required','');
+          entregadorInput.setAttribute('required','');
+        }
+      }
+      createRoteiro && createRoteiro.addEventListener('change', toggleRoteiroRequirements);
+      toggleRoteiroRequirements();
+    })();
+    const STORAGE_KEYS = ["etiquetas:label-layout:v2", "etiquetas:label-layout:v1"];
+    const SERVER_LAYOUT_URL = "/etiq/etiquetas/layout";
     const AUTO_PRINT_SCALE_PERCENT = 90;
     const form = document.getElementById("label-form");
     const previewArea = document.getElementById("inline-label-area");
@@ -182,7 +310,7 @@
     // Restore saved barcode type preference
     (function() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
         if (raw) {
           const cfg = JSON.parse(raw);
           if (cfg.barcodeType && barcodeTypeSelect) {
@@ -196,10 +324,10 @@
     barcodeTypeSelect && barcodeTypeSelect.addEventListener("change", function() {
       currentBarcodeType = barcodeTypeSelect.value;
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(STORAGE_KEYS[0]);
         const cfg = raw ? JSON.parse(raw) : {};
         cfg.barcodeType = currentBarcodeType;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+        localStorage.setItem(STORAGE_KEYS[0], JSON.stringify(cfg));
       } catch (_) {}
     });
 
@@ -229,15 +357,29 @@
       }
     }
 
-    function applySavedLabelLayout(root = document) {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
+    async function applySavedLabelLayout(root = document) {
+      let cfg = null;
+      try {
+        const res = await fetch(SERVER_LAYOUT_URL);
+        cfg = await res.json();
+      } catch (_) {
+        const raw = STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
+        if (raw) {
+          try {
+            cfg = JSON.parse(raw);
+          } catch (_) {
+            cfg = null;
+          }
+        }
+      }
+
+      if (!cfg || !Object.keys(cfg).length) {
         return;
       }
 
       try {
-        const cfg = JSON.parse(raw);
         const labels = root.querySelectorAll(".strip-label");
+        const hideChip = Boolean(cfg.hide_chip ?? cfg.hideChip);
         labels.forEach(labelEl => {
           labelEl.style.setProperty("--top-x", `${Number(cfg.topX ?? 0)}mm`);
           labelEl.style.setProperty("--top-y", `${Number(cfg.topY ?? 0)}mm`);
@@ -254,7 +396,7 @@
 
           labelEl.classList.toggle("hide-top", Boolean(cfg.hideTop));
           labelEl.classList.toggle("hide-meta", Boolean(cfg.hideMeta));
-          labelEl.classList.toggle("hide-chip", Boolean(cfg.hideChip));
+          labelEl.classList.toggle("hide-chip", hideChip);
           labelEl.classList.toggle("hide-barcode", Boolean(cfg.hideBarcode));
         });
       } catch (_) {
@@ -268,6 +410,7 @@
       const formData = new FormData(form);
       const osId = String(formData.get("os_id") || "").trim();
       const numeroCliente = String(formData.get("numero_cliente") || "").trim();
+      const showTipoLente = formData.has("show_tipo_lente") ? "1" : "0";
       currentLabelSize = String(formData.get("label_size") || "80x20").trim();
       currentBarcodeType = String(formData.get("barcode_type") || "CODE128").trim();
 
@@ -275,7 +418,7 @@
         return;
       }
 
-      const query = new URLSearchParams({ os_id: osId, numero_cliente: numeroCliente, label_size: currentLabelSize, barcode_type: currentBarcodeType });
+      const query = new URLSearchParams({ os_id: osId, numero_cliente: numeroCliente, label_size: currentLabelSize, barcode_type: currentBarcodeType, show_tipo_lente: showTipoLente });
       const response = await fetch(`/etiq/etiquetas/os/preview?${query.toString()}`);
       const html = await response.text();
 
@@ -291,7 +434,7 @@
 
       renderBarcode("os-barcode-inline", osId, currentBarcodeType);
 
-      applySavedLabelLayout(previewContent);
+      await applySavedLabelLayout(previewContent);
 
       printBtn.disabled = false;
 
@@ -351,54 +494,190 @@
     });
 
     // Modal Adicionar Cliente
+    const openAddClientBtn = document.getElementById("open-add-client-btn");
     const modal = document.getElementById("add-client-modal");
-    document.getElementById("open-add-client-btn").addEventListener("click", () => {
-      modal.hidden = false;
-      modal.querySelector('input[name="numero_cliente"]').focus();
-    });
-    document.getElementById("close-add-client-btn").addEventListener("click", () => {
-      modal.hidden = true;
-    });
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) modal.hidden = true;
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !modal.hidden) modal.hidden = true;
-    });
+    if (openAddClientBtn && modal) {
+      openAddClientBtn.addEventListener("click", () => {
+        modal.hidden = false;
+        // keep button highlighted while modal open
+        openAddClientBtn.classList.add('nav-link-cta');
+        modal.querySelector('input[name="numero_cliente"]').focus();
+      });
+      document.getElementById("close-add-client-btn").addEventListener("click", () => {
+        modal.hidden = true;
+        openAddClientBtn.classList.remove('nav-link-cta');
+      });
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) { modal.hidden = true; openAddClientBtn.classList.remove('nav-link-cta'); }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal.hidden) { modal.hidden = true; openAddClientBtn.classList.remove('nav-link-cta'); }
+      });
 
-    document.getElementById("add-client-form").addEventListener("submit", () => {
-      document.getElementById("save-client-btn").disabled = true;
-      document.getElementById("save-client-notice").style.display = "block";
-    });
+      document.getElementById("add-client-form").addEventListener("submit", () => {
+        document.getElementById("save-client-btn").disabled = true;
+        document.getElementById("save-client-notice").style.display = "block";
+      });
 
-    // Preview de roteiro ao selecionar cor
-    const corSelect = document.getElementById("cor-roteiro-select");
-    const roteiroPreview = document.getElementById("roteiro-preview");
-    const previewChip = document.getElementById("roteiro-preview-chip");
-    const previewHorario = document.getElementById("roteiro-preview-horario");
-    const horarioInput = document.getElementById("horario-roteiro-input");
-    const entregadorInput = document.getElementById("entregador-input");
+      // Preview de roteiro ao selecionar cor
+      const corSelect = document.getElementById("cor-roteiro-select");
+      const roteiroPreview = document.getElementById("roteiro-preview");
+      const previewChip = document.getElementById("roteiro-preview-chip");
+      const previewHorario = document.getElementById("roteiro-preview-horario");
+      const horarioInput = document.getElementById("horario-roteiro-input");
+      const entregadorInput = document.getElementById("entregador-input");
 
-    corSelect.addEventListener("change", async () => {
-      const cor = corSelect.value;
-      const hex = corSelect.options[corSelect.selectedIndex].dataset.hex || "#ccc";
-      previewChip.style.background = hex;
-      roteiroPreview.hidden = false;
-      previewHorario.textContent = "";
-      try {
-        const res = await fetch(`/etiq/clientes/roteiro-info?cor=${encodeURIComponent(cor)}`);
-        const data = await res.json();
-        if (data.horario) {
-          previewHorario.textContent = data.horario;
-          horarioInput.value = data.horario;
+      corSelect.addEventListener("change", async () => {
+        const cor = corSelect.value;
+        const hex = corSelect.options[corSelect.selectedIndex].dataset.hex || "#ccc";
+        previewChip.style.background = hex;
+        roteiroPreview.hidden = false;
+        previewHorario.textContent = "";
+        horarioInput.value = "";
+        entregadorInput.value = "";
+        try {
+          const res = await fetch(`/etiq/clientes/roteiro-info?cor=${encodeURIComponent(cor)}`);
+          const data = await res.json();
+          previewHorario.textContent = data.horario || "";
+          horarioInput.value = data.horario || "";
+          entregadorInput.value = data.entregador || "";
+        } catch (_) {
+          // silent
         }
-        if (data.entregador) {
-          entregadorInput.value = data.entregador;
+      });
+
+      // Inline 'Criar roteiro' removed from Add Client modal; use navbar modal instead.
+
+      // Modal Criar Roteiro (nav) behavior
+      const openCreateRoteiroBtn = document.getElementById('open-create-roteiro-btn');
+      const createRoteiroModal = document.getElementById('create-roteiro-modal');
+      if (openCreateRoteiroBtn && createRoteiroModal) {
+        const closeCreateRoteiroBtn = document.getElementById('close-create-roteiro-btn');
+        const createCorSelect = document.getElementById('create-cor-select');
+        const createEntregadorInput = document.getElementById('create-entregador-input');
+        const createHorarioInput = document.getElementById('create-horario-input');
+        const createNomeInput = document.getElementById('create-nome-input');
+        const createSubmitBtn = document.getElementById('create-roteiro-submit');
+        const createNavMsg = document.getElementById('create-roteiro-nav-msg');
+
+        openCreateRoteiroBtn.addEventListener('click', () => {
+          createRoteiroModal.hidden = false;
+          // keep navbar button highlighted while modal open
+          openCreateRoteiroBtn.classList.add('nav-link-cta');
+          createCorSelect && createCorSelect.focus();
+        });
+        closeCreateRoteiroBtn && closeCreateRoteiroBtn.addEventListener('click', () => { createRoteiroModal.hidden = true; openCreateRoteiroBtn.classList.remove('nav-link-cta'); });
+        createRoteiroModal.addEventListener('click', (e) => { if (e.target === createRoteiroModal) { createRoteiroModal.hidden = true; openCreateRoteiroBtn.classList.remove('nav-link-cta'); } });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !createRoteiroModal.hidden) { createRoteiroModal.hidden = true; openCreateRoteiroBtn.classList.remove('nav-link-cta'); } });
+
+        createSubmitBtn && createSubmitBtn.addEventListener('click', async () => {
+          const cor = (createCorSelect && createCorSelect.value) || '';
+          const entregador = (createEntregadorInput && createEntregadorInput.value) || '';
+          const horario = (createHorarioInput && createHorarioInput.value) || '';
+          const nome = (createNomeInput && createNomeInput.value) || '';
+          if (!cor) { alert('Selecione uma cor para o roteiro.'); return; }
+          if (!entregador) { alert('Preencha o entregador.'); return; }
+          createSubmitBtn.disabled = true;
+          createNavMsg.style.display = 'flex';
+          createNavMsg.textContent = 'Criando...';
+          try {
+            const res = await fetch('/etiq/clientes/roteiros', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cor, entregador, horario, nome })
+            });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+              createNavMsg.style.color = 'green';
+              createNavMsg.textContent = 'Roteiro criado';
+              // add color option to client modal select if missing
+              if (corSelect) {
+                let exists = Array.from(corSelect.options).some(o => String(o.value).trim().toLowerCase() === String(cor).trim().toLowerCase());
+                if (!exists) {
+                  const opt = document.createElement('option');
+                  opt.value = cor;
+                  // try to get hex from createCorSelect dataset
+                  const selOpt = createCorSelect.options[createCorSelect.selectedIndex];
+                  opt.dataset.hex = (selOpt && selOpt.dataset && selOpt.dataset.hex) || '#ccc';
+                  opt.textContent = cor;
+                  corSelect.appendChild(opt);
+                }
+                // select the color
+                corSelect.value = cor;
+                // trigger change to update preview
+                corSelect.dispatchEvent(new Event('change'));
+              }
+              // close modal after short delay
+              setTimeout(() => { createRoteiroModal.hidden = true; createNavMsg.style.display = 'none'; }, 900);
+            } else {
+              createNavMsg.style.color = 'crimson';
+              createNavMsg.textContent = data.error || 'Erro ao criar roteiro';
+            }
+          } catch (e) {
+            createNavMsg.style.color = 'crimson';
+            createNavMsg.textContent = 'Erro de conexão';
+          } finally {
+            createSubmitBtn.disabled = false;
+            setTimeout(() => { createNavMsg.style.display = 'none'; createNavMsg.textContent = ''; }, 3000);
+          }
+        });
+        // New color creation inside create-roteiro modal
+        const toggleNewCorBtn = document.getElementById('toggle-new-cor');
+        const newCorRow = document.getElementById('new-cor-row');
+        const newCorNome = document.getElementById('new-cor-nome');
+        const newCorHex = document.getElementById('new-cor-hex');
+        const createCorBtn = document.getElementById('create-cor-btn');
+        if (toggleNewCorBtn && newCorRow) {
+          toggleNewCorBtn.addEventListener('click', () => {
+            newCorRow.style.display = newCorRow.style.display === 'none' || newCorRow.style.display === '' ? 'flex' : 'none';
+            newCorNome && newCorNome.focus();
+          });
         }
-      } catch (_) {
-        // silent
+        if (createCorBtn) {
+          createCorBtn.addEventListener('click', async () => {
+            const nome = (newCorNome && newCorNome.value) || '';
+            const hex = (newCorHex && newCorHex.value) || '';
+            if (!nome) { alert('Informe o nome da cor.'); return; }
+            createCorBtn.disabled = true;
+            try {
+              const res = await fetch('/etiq/clientes/cores', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome, hex })
+              });
+              const data = await res.json();
+              if (res.ok && data.ok) {
+                // add to both selects
+                const addOptionTo = (selectEl, value, hexVal) => {
+                  if (!selectEl) return;
+                  let exists = Array.from(selectEl.options).some(o => String(o.value).trim().toLowerCase() === String(value).trim().toLowerCase());
+                  if (!exists) {
+                    const opt = document.createElement('option');
+                    opt.value = data.nome;
+                    opt.dataset.hex = data.hex || hexVal || '#ccc';
+                    opt.textContent = data.nome;
+                    selectEl.appendChild(opt);
+                  }
+                };
+                addOptionTo(createCorSelect, data.nome, data.hex);
+                if (corSelect) addOptionTo(corSelect, data.nome, data.hex);
+                // select the created color in create modal
+                createCorSelect.value = data.nome;
+                createCorSelect.dispatchEvent(new Event('change'));
+                // reset inputs
+                newCorNome.value = '';
+                newCorHex.value = '';
+                newCorRow.style.display = 'none';
+              } else {
+                alert(data.error || 'Erro ao criar cor');
+              }
+            } catch (e) {
+              alert('Erro de conexão ao criar cor');
+            } finally {
+              createCorBtn.disabled = false;
+            }
+          });
+        }
       }
-    });
+    }
 
   </script>
 </body>

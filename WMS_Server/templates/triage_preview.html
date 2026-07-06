@@ -253,7 +253,7 @@
 
                     <div class="triage-rack-body">
                         {% for row in shelf.rows %}
-                            <div class="triage-rack-level">
+                            <div class="triage-rack-level" style="min-height: {{ row.height_px }}px;">
 
                                 <!-- Level address label -->
                                 {% if row.cells %}

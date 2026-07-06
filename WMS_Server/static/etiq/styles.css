@@ -23,7 +23,6 @@
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
-
 .navbar {
   min-height: 52px;
   background: var(--nav-bg);
@@ -94,7 +93,7 @@
   margin: 0;
   padding: 0;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
 
 .navbar-collapse {
@@ -120,7 +119,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 25px;
   padding: 0 14px;
   border-radius: 9999px;
   text-decoration: none;
@@ -145,9 +144,10 @@
 }
 
 .navbar .nav-link.is-active {
-  color: #fff;
-  background: var(--accent);
-  border-color: transparent;
+  color: var(--c-blue) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  font-weight: 600;
 }
 
 .navbar .nav-link.nav-link-cta {
@@ -170,6 +170,10 @@
 .navbar .navbar-collapse.show,
 .navbar .navbar-collapse.collapsing {
   display: flex;
+}
+
+main {
+  padding-top: 52px;
 }
 
 .brand {
@@ -318,6 +322,22 @@ label {
   font-size: 0.95rem;
 }
 
+.toggle-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  font-weight: 700;
+}
+
+.toggle-line input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 input,
 textarea,
 select,
@@ -329,10 +349,31 @@ input,
 textarea,
 select {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.95);
   transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+/* Compact styles when inside modal */
+.modal-box label {
+  gap: 4px;
+  font-size: 0.92rem;
+}
+.modal-box input,
+.modal-box textarea,
+.modal-box select {
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+@media (max-width: 480px) {
+  .modal-box {
+    width: 92vw;
+    padding: 12px;
+    border-radius: 12px;
+    max-height: 96vh;
+  }
 }
 
 input:focus,
@@ -574,6 +615,7 @@ body.print-50x30 .print-sheet {
   grid-template-columns: 1fr 30mm;
   gap: 1mm;
   align-items: stretch;
+  position: relative;
   overflow: hidden;
   box-sizing: border-box;
   --horario-x: 0mm; --horario-y: 0mm; --horario-scale: 1;
@@ -682,6 +724,7 @@ body.print-50x30 .print-sheet {
 .strip-label .strip-item-cor     { transform: translate(var(--cor-x),     var(--cor-y))     scale(var(--cor-scale));     transform-origin: left top; }
 .strip-label .strip-item-cli     { transform: translate(var(--cli-x),     var(--cli-y))     scale(var(--cli-scale));     transform-origin: left top; }
 .strip-label .strip-item-rot     { transform: translate(var(--rot-x),     var(--rot-y))     scale(var(--rot-scale));     transform-origin: left top; }
+.strip-label .strip-item-tipo-lente { transform: translate(var(--rot-x), var(--rot-y)) scale(var(--rot-scale)); transform-origin: left top; }
 .strip-label .strip-item-ent     { transform: translate(var(--ent-x),     var(--ent-y))     scale(var(--ent-scale));     transform-origin: left top; }
 .strip-label .strip-item-dt      { transform: translate(var(--dt-x),      var(--dt-y))      scale(var(--dt-scale));      transform-origin: left top; }
 
@@ -699,6 +742,7 @@ body.print-50x30 .print-sheet {
 .strip-label.hide-cor     .strip-item-cor     { display: none; }
 .strip-label.hide-cli     .strip-item-cli     { display: none; }
 .strip-label.hide-rot     .strip-item-rot     { display: none; }
+.strip-label.hide-rot     .strip-item-tipo-lente { display: none; }
 .strip-label.hide-ent     .strip-item-ent     { display: none; }
 .strip-label.hide-dt      .strip-item-dt      { display: none; }
 
@@ -843,7 +887,7 @@ body.print-50x30 .print-sheet {
 }
 
 .print-button {
-  margin-top: 14px;
+  margin-top: 0px;
   width: 100%;
 }
 
@@ -891,7 +935,7 @@ body.print-50x30 .print-sheet {
   }
 
   .navbar .nav-link {
-    width: 25%;
+    width: 100%;
     justify-content: center;
   }
 
@@ -905,7 +949,7 @@ body.print-50x30 .print-sheet {
   }
 
   .navbar .nav-link.nav-link-cta {
-    width: 25%;
+    width: 100%;
   }
 }
 
@@ -950,8 +994,10 @@ body.print-50x30 .print-sheet {
   background: var(--page-soft);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
-  padding: 24px;
-  width: min(400px, 100%);
+  padding: 16px;
+  width: min(640px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
   animation: rise 200ms ease;
 }
 
