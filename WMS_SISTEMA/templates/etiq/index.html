@@ -20,8 +20,7 @@
       {% else %}
       <span class="navbar-brand d-flex align-items-center">
       {% endif %}
-        <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="26" style="object-fit: contain;">
-        <span>WMS</span>
+        <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" height="60" style="object-fit: contain;">
       {% if can_access_dashboard %}</a>{% else %}</span>{% endif %}
 
       <button class="navbar-toggler" type="button" id="navbar-toggle" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -280,6 +279,9 @@
       openBtn && openBtn.addEventListener('click', ()=>{ modal.hidden = false; });
       closeBtn && closeBtn.addEventListener('click', ()=>{ modal.hidden = true; });
       function toggleRoteiroRequirements(){
+        if (!corSelect || !entregadorInput) {
+          return;
+        }
         if(createRoteiro && !createRoteiro.checked){
           corSelect.removeAttribute('required');
           entregadorInput.removeAttribute('required');

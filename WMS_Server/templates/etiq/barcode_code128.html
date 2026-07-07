@@ -123,26 +123,34 @@
 
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-auto">
+          {% if etiq_can_access('etiq_criar') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.index') }}" class="nav-link{% if active_tab == 'dashboard' %} is-active{% endif %}" title="Ir para criar etiquetas">
               <i class="bi bi-tag-fill"></i> Criar
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_caixinhas') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.barcode_code128') }}" class="nav-link{% if active_tab == 'code128' %} is-active{% endif %}" title="Gerador de etiquetas das caixinhas">
               <i class="bi bi-upc-scan"></i> Caixinhas
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_envio') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.label_100x150_new') }}" class="nav-link{% if active_tab == 'envio' %} is-active{% endif %}" title="Etiqueta de envio 150×100 mm paisagem">
               <i class="bi bi-box-seam"></i> Etiq. Envio
             </a>
           </li>
+          {% endif %}
+          {% if etiq_can_access('etiq_reimprimir') %}
           <li class="nav-item">
             <a href="{{ url_for('etiquetas.impressos_list') }}" class="nav-link{% if active_tab == 'impressos' %} is-active{% endif %}" title="Reimprimir etiquetas salvas">
               <i class="bi bi-printer"></i> Reimprimir
             </a>
           </li>
+          {% endif %}
         </ul>
       </div>
     </div>

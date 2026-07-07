@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Expedição - Picking com Doublecheck - WMS{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col-md-12">
+    <h1><i class="bi bi-truck"></i> Expedição</h1>
+    <p class="text-muted">Picking com Doublecheck — conferência cega dos IDs separados fisicamente</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  {% if expedicao_can_access('expedicao_checkin') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.checkin_page') }}"><i class="bi bi-upc-scan"></i> Checkin de Entrada</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_picking') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.picking_page') }}"><i class="bi bi-signpost-split"></i> Onda de Picking</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_ondas_historico') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.ondas_historico_page') }}"><i class="bi bi-clock-history"></i> Histórico de Ondas</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_doublecheck') %}
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('expedicao.doublecheck_page') }}"><i class="bi bi-check2-square"></i> Doublecheck</a>
+  </li>
+  {% endif %}
+  {% if expedicao_can_access('expedicao_embalagem') %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('expedicao.embalagem_page') }}"><i class="bi bi-box-seam-fill"></i> Embala e Fatura</a>
+  </li>
+  {% endif %}
+</ul>
+
+{% if not lote %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i> Nenhum lote selecionado. Vá até a
+  <a href="{{ url_for('expedicao.picking_page') }}">Onda de Picking</a> e selecione um lote para iniciar o doublecheck.
+</div>
+{% else %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-check2-square"></i> Lote {{ lote.lote_code }}</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-warning small">
+          <i class="bi bi-eye-slash"></i> <strong>Conferência às cegas:</strong> você não vê os IDs esperados.
+          Bipe fisicamente cada ID separado; o sistema confere automaticamente.
+        </div>
+        <!-- Loud warning modal / overlay for invalid OS scans -->
+        <div id="dc-loud-warning-overlay" style="display:none; position:fixed; inset:0; z-index:2147483647; align-items:center; justify-content:center;">
+          <div style="background:rgba(0,0,0,0.6); position:absolute; inset:0;"></div>
+          <div id="dc-loud-warning-box" style="position:relative; background:#fff; padding:28px 24px; border-radius:8px; max-width:760px; width:100%; box-shadow:0 8px 40px rgba(0,0,0,0.5); text-align:center;">
+            <div style="font-size:36px; color:#c82333; font-weight:700; margin-bottom:8px;">
+              <i class="bi bi-exclamation-triangle-fill"></i> ATENÇÃO
+            </div>
+            <div id="dc-loud-warning-message" style="font-size:20px; color:#111; margin-bottom:18px;"></div>
+            <div style="display:flex; gap:12px; justify-content:center;">
+              <button id="dc-loud-warning-ok" class="btn btn-danger btn-lg">Fechar</button>
+              <button id="dc-loud-warning-repeat" class="btn btn-outline-danger btn-lg">Tentar novamente</button>
+            </div>
+          </div>
+        </div>
+        <div id="doublecheck-alert" class="alert" role="alert" style="display: none;"></div>
+        <input type="hidden" id="dc-lote-id" value="{{ lote.id }}">
+        <input type="hidden" id="dc-onda-id" value="{{ onda_id or '' }}">
+        <div class="mb-3">
+          <label class="form-label fw-bold">ID bipado</label>
+          <input type="text" id="dc-order-id-input" class="form-control form-control-lg font-monospace"
+                 placeholder="Ex: 12345678" autocomplete="off" inputmode="numeric" autofocus>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg w-100 mb-3" onclick="Expedicao.Doublecheck.scan()">
+          <i class="bi bi-upc-scan"></i> Conferir
+        </button>
+
+        <div class="progress mb-2" style="height: 24px;">
+          <div id="dc-progress-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%;">0%</div>
+        </div>
+        <p class="small text-muted mb-3">
+          <span id="dc-confirmed">{{ progress.confirmed if progress else 0 }}</span> de
+          <span id="dc-total">{{ progress.total if progress else 0 }}</span> IDs confirmados
+        </p>
+
+        <button type="button" id="dc-finalizar-btn" class="btn btn-outline-success w-100" onclick="Expedicao.Doublecheck.finalizar()"
+          style="display: {{ 'block' if progress and progress.total and progress.confirmed >= progress.total else 'none' }};">
+          <i class="bi bi-flag"></i> Finalizar Separação
+        </button>
+        <button type="button" id="dc-finalizar-falta-btn" class="btn btn-outline-danger w-100 mt-2" onclick="Expedicao.Doublecheck.openLeaderAuthModal()"
+          style="display: {{ 'block' if progress and progress.total and progress.missing > 0 else 'none' }};">
+          <i class="bi bi-person-check"></i> Finalizar com Falta (Líder)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="dcLeaderAuthModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-person-check"></i> Autorização do líder</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small">
+          Existe OS faltando neste lote. Para finalizar com falta, informe o login e a senha de um líder autorizado do setor.
+        </div>
+        <div id="dc-leader-auth-alert" class="alert" role="alert" style="display:none;"></div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Login do líder</label>
+          <input type="text" id="dc-leader-username" class="form-control" autocomplete="username">
+        </div>
+        <div class="mb-0">
+          <label class="form-label fw-bold">Senha do líder</label>
+          <input type="password" id="dc-leader-password" class="form-control" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" onclick="Expedicao.Doublecheck.finalizarComFalta()">Autorizar e finalizar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL ETIQUETA DE EXPEDIÇÃO
+     ══════════════════════════════════════════════════════════ -->
+<style>
+  #dcLabelModalBg {
+    display: none; position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,.55);
+    align-items: center; justify-content: center;
+  }
+  #dcLabelModalBg.active { display: flex; }
+  #dcLabelModal {
+    background: #fff; border-radius: 14px;
+    padding: 24px 28px; max-width: 620px; width: 96%;
+    box-shadow: 0 24px 64px rgba(0,0,0,.3);
+    font-family: "Space Grotesk", sans-serif;
+  }
+  #dcLabelModal h4 { margin: 0 0 16px; font-size: 1.1rem; }
+
+  /* ── Etiqueta visual 150x100 mm (preview em tela) ── */
+  #dcLabelPreview {
+    width: 100%; aspect-ratio: 150/100;
+    border: 3px solid #000; border-radius: 2px;
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    background: #fff; box-sizing: border-box;
+    overflow: hidden;
+  }
+  .dc-label-code {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 3px solid #000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: clamp(5rem, 15vw, 10rem);
+    font-weight: 900;
+    letter-spacing: .02em;
+    line-height: .85;
+    text-transform: uppercase;
+    background: #fff;
+    color: #000;
+  }
+  .dc-label-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 12px 22px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .dc-label-line {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: clamp(.72rem, 1.55vw, 1.05rem);
+    font-weight: 500;
+    line-height: 1.15;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: #fff; color: #000;
+  }
+  .dc-label-line strong {
+    font-weight: 700;
+  }
+
+  /* ── Print rule: only the label ── */
+  @media print {
+    @page { size: 150mm 100mm landscape; margin: 0; }
+    body * { visibility: hidden; }
+    #dcLabelPreview, #dcLabelPreview * { visibility: visible; }
+    #dcLabelPreview {
+      position: fixed; inset: 2mm;
+      width: 146mm; height: 96mm;
+      border: 3px solid #000; aspect-ratio: unset;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .dc-label-code { font-size: 64pt; }
+    .dc-label-info { padding: 5mm 10mm; gap: 1.7mm; }
+    .dc-label-line {
+      font-size: 9.5pt;
+    }
+  }
+
+  .dc-modal-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .dc-modal-btns button, .dc-modal-btns a {
+    padding: 10px 18px; border-radius: 8px; border: 0;
+    cursor: pointer; font: 700 .95rem "Space Grotesk", sans-serif;
+    text-decoration: none; display: inline-block;
+  }
+  .dc-btn-print   { background: linear-gradient(120deg,#1a73d9,#0e57b4); color: #fff; }
+  .dc-btn-continue{ background: linear-gradient(120deg,#27ae60,#1e8449); color: #fff; }
+  .dc-btn-close   { background: #e8edf2; color: #333; }
+</style>
+
+<div id="dcLabelModalBg">
+  <div id="dcLabelModal">
+    <h4>&#128230; Etiqueta de Expedição</h4>
+
+    <div id="dcLabelPreview">
+      <div class="dc-label-code" id="dcLabelCode">—</div>
+      <div class="dc-label-info">
+        <div class="dc-label-line" id="dcLabelCnpjCpf">CNPJ/CPF —</div>
+        <div class="dc-label-line" id="dcLabelName">—</div>
+        <div class="dc-label-line" id="dcLabelAddress">—</div>
+        <div class="dc-label-line" id="dcLabelCityState">—</div>
+        <div class="dc-label-line" id="dcLabelCepRota">—</div>
+        <div class="dc-label-line" id="dcLabelEntrada">ENTRADA —</div>
+        <div class="dc-label-line" id="dcLabelMeta">EMBALAGEM —  IMPRESSO —</div>
+      </div>
+    </div>
+
+    <div class="dc-modal-btns">
+      <button class="dc-btn-print" onclick="Expedicao.Doublecheck.printLabel()">&#128424; Imprimir Etiqueta</button>
+      <a href="/expedicao/embalagem" class="dc-btn-continue">&#9654; Continuar para Embalagem</a>
+      <button class="dc-btn-close" id="dcLabelModalClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/expedicao.js', v='doublecheck-leader-missing-auth') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    Expedicao.Doublecheck.init();
+    document.getElementById('dcLabelModalClose').addEventListener('click', () => {
+      document.getElementById('dcLabelModalBg').classList.remove('active');
+    });
+  });
+</script>
+{% endblock %}

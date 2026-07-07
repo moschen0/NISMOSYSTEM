@@ -120,6 +120,7 @@
 
 <script>
 const untilIso = {{ until_iso | tojson }};
+const maintenanceStatusUrl = {{ url_for('maintenance_status') | tojson }};
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -146,13 +147,13 @@ function updateCountdown() {
 
 updateCountdown();
 
-// Polling de disponibilidade: a cada 15s tenta acessar /login
-// Se responder 200, recarrega a página
+// Polling de disponibilidade: a cada 10s verifica o status real da manutenção
 setInterval(function () {
-    fetch('/login', { method: 'HEAD', cache: 'no-store' })
-        .then(r => { if (r.ok) location.reload(); })
+    fetch(maintenanceStatusUrl, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data && !data.active) location.reload(); })
         .catch(() => {});
-}, 15000);
+}, 10000);
 </script>
 </body>
 </html>

@@ -117,6 +117,14 @@ LABEL_MODELS_LOCK = Lock()
 
 TRIAGE_SECTOR = "TRIAGEM"
 
+ETIQ_FEATURE_PERMISSIONS = (
+    "etiq_criar",
+    "etiq_adicionar_cliente",
+    "etiq_caixinhas",
+    "etiq_envio",
+    "etiq_reimprimir",
+)
+
 
 # ---------------------------------------------------------------------------
 # Access control
@@ -132,7 +140,7 @@ def _check_etiq_access():
     if session.get("user", "").lower() == "admin":
         return
     permissions = session.get('permissions', [])
-    if 'etiquetas' in permissions:
+    if isinstance(permissions, list) and ('etiquetas' in permissions or any(feature in permissions for feature in ETIQ_FEATURE_PERMISSIONS)):
         return
     flash("Acesso restrito ao setor autorizado para etiquetas ou admin.", "danger")
     return redirect(url_for("dashboard"))
@@ -156,7 +164,7 @@ def etiq_can_access(feature: str) -> bool:
 
 
 def _first_accessible_etiq_redirect():
-    if can_access_feature("etiq_criar"):
+    if can_access_feature("etiq_criar") or can_access_feature("etiq_adicionar_cliente"):
         return redirect(url_for("etiquetas.index"))
     if can_access_feature("etiq_caixinhas"):
         return redirect(url_for("etiquetas.barcode_code128"))

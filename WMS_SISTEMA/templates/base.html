@@ -3,7 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}WMS - Warehouse Management System{% endblock %}</title>
+    <title>{% block title %}NISMO - Warehouse Management System{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/ICONE_NISMO.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/ICONE_NISMO.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
@@ -557,8 +559,7 @@
         {% else %}
         <span class="navbar-brand d-flex align-items-center">
         {% endif %}
-            <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="26" style="object-fit: contain;">
-            <span>WMS</span>
+            <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" height="60" style="object-fit: contain;">
         {% if can_access_dashboard %}</a>{% else %}</span>{% endif %}
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -768,7 +769,7 @@
 {% endblock %}
 
 <footer class="wms-footer">
-    <p class="mb-0">&copy; 2026 WMS &mdash; Warehouse Management System</p>
+    <p class="mb-0">&copy; 2026 NISMO &mdash; Warehouse Management System</p>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

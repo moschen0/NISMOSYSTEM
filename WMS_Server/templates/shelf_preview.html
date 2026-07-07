@@ -231,7 +231,7 @@
 
                     <div class="rack-body">
                         {% for row in shelf.rows %}
-                            <div class="rack-level">
+                            <div class="rack-level" style="min-height: {{ row.height_px }}px;">
 
                                 {# level address label #}
                                 {% if row.cells %}

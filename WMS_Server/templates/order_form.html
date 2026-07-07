@@ -240,10 +240,32 @@ function loadBestPosition(zone) {
         allocationBox.style.display = 'none';
         return;
     }
-
     loadingSpinner.style.display = 'inline-block';
 
-    fetch(`{{ url_for('api_best_position', zone='ZONE') }}`.replace('ZONE', zone))
+    // If bipador is active and a client number is available, prefer positions
+    // linked to that client. For triage zones the client number comes from
+    // the triage_caixa field; otherwise use the regular box input when it
+    // looks like a client number.
+    let clientParam = '';
+    try {
+        if (isBipadorEnabled()) {
+            if (isCurrentZoneTriage()) {
+                const tc = document.getElementById('triage_caixa');
+                if (tc && tc.value.trim()) clientParam = tc.value.trim();
+            }
+            if (!clientParam) {
+                const bv = boxInput.value.trim();
+                if (/^\d{1,5}$/.test(bv)) clientParam = bv;
+            }
+        }
+    } catch (e) {
+        clientParam = '';
+    }
+
+    let url = `{{ url_for('api_best_position', zone='ZONE') }}`.replace('ZONE', zone);
+    if (clientParam) url += `?client_number=${encodeURIComponent(clientParam)}`;
+
+    fetch(url)
         .then(response => response.json())
         .then(data => {
             loadingSpinner.style.display = 'none';
@@ -340,6 +362,7 @@ orderInput.addEventListener('input', function() {
 
 boxInput.addEventListener('input', function() {
     this.value = sanitizeNumericValue(this.value, 5);
+    if (isBipadorEnabled()) loadBestPosition(zoneSelect.value);
 });
 
 (function() {
@@ -352,6 +375,7 @@ boxInput.addEventListener('input', function() {
     });
     tc.addEventListener('input', function() {
         this.value = sanitizeNumericValue(this.value, 5);
+        if (isBipadorEnabled()) loadBestPosition(zoneSelect.value);
     });
 })();
 

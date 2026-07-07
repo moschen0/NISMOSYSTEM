@@ -31,7 +31,11 @@
                         <span class="badge bg-primary">Você</span>
                     {% endif %}
                 </td>
-                <td><span class="badge bg-info">{{ user.sector or 'Geral' }}</span></td>
+                <td>
+                    {% for sec in (user.sector or 'Geral').split(',') %}
+                    <span class="badge bg-info">{{ sec.strip() }}</span>
+                    {% endfor %}
+                </td>
                 <td><small class="text-muted">{{ user.created_at or '-' }}</small></td>
                 <td>
                     {% if user.active %}
@@ -49,7 +53,7 @@
                                 data-bs-target="#editSectorModal"
                                 data-username="{{ user.username }}"
                                 data-sector="{{ user.sector or '' }}"
-                                title="Editar Setor">
+                                title="Editar Setor(es)">
                             <i class="bi bi-pencil"></i>
                         </button>
                         
@@ -112,7 +116,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-info text-white">
-                <h5 class="modal-title"><i class="bi bi-pencil"></i> Editar Setor</h5>
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Editar Setor(es)</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="{{ url_for('edit_user_sector') }}">
@@ -125,13 +129,17 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="editSectorInput" class="form-label">Novo Setor:</label>
-                        <select class="form-select" id="editSectorInput" name="sector">
+                        <label class="form-label">Novo(s) Setor(es):</label>
+                        <div class="border rounded p-2" id="editSectorInput">
                             {% set sectors_list = all_sectors.keys() if all_sectors is defined else ['AR', 'VTA'] %}
                             {% for sec in sectors_list %}
-                            <option value="{{ sec }}">{{ sec }}</option>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="sector" value="{{ sec }}" id="editSector_{{ sec }}">
+                                <label class="form-check-label" for="editSector_{{ sec }}">{{ sec }}</label>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
+                        <small class="text-muted">Marque um ou mais setores para vincular ao usuário.</small>
                     </div>
                     
                     <div class="mb-3">
@@ -269,12 +277,17 @@ editSectorModal.addEventListener('show.bs.modal', function (event) {
     const button = event.relatedTarget;
     const username = button.getAttribute('data-username');
     const sector = button.getAttribute('data-sector');
+    const selectedSectors = sector ? sector.split(',').map(s => s.trim()).filter(s => s) : [];
     
     document.getElementById('editSectorUsername').value = username;
     document.getElementById('editSectorDisplayName').textContent = username;
-    const sectorSelect = document.getElementById('editSectorInput');
-    sectorSelect.value = sector;
-    if (!sectorSelect.value) sectorSelect.value = 'AR';
+    const sectorCheckboxes = document.querySelectorAll('#editSectorInput input[type="checkbox"]');
+    sectorCheckboxes.forEach(function (checkbox) {
+        checkbox.checked = selectedSectors.includes(checkbox.value);
+    });
+    if (!selectedSectors.length && sectorCheckboxes.length) {
+        sectorCheckboxes[0].checked = true;
+    }
 });
 
 // Modal Resetar Senha

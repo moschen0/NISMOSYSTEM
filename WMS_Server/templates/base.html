@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}WMS - Warehouse Management System{% endblock %}</title>
+    <title>{% block title %}NISMO - NISMO SYSTEM{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
@@ -11,7 +11,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         /* ─────────────────────────────────────────────────────────
-           WMS · Design System — inspirado em DESIGN-apple.md
+           NISMO · Design System — inspirado em DESIGN-apple.md
            Tokens, tipografia, componentes e layout unificados.
         ───────────────────────────────────────────────────────── */
 
@@ -129,7 +129,7 @@
         }
         .navbar-toggler:focus { box-shadow: none !important; }
         .navbar-nav { align-items: center; }
-        .nav-link {
+        .navbar .nav-link {
             color: rgba(255,255,255,0.72) !important;
             font-size: 0.8125rem;
             font-weight: 400;
@@ -139,17 +139,35 @@
             transition: color .14s, background .14s;
             white-space: nowrap;
         }
-        .nav-link:hover {
+        .navbar .nav-link:hover {
             color: rgba(255,255,255,1) !important;
             background: rgba(255,255,255,0.08);
         }
-        .nav-link.active {
-            color: white !important;
-            background: rgba(255,255,255,0.12);
+        .navbar .nav-link.active {
+            color: var(--c-blue) !important;
+            background: transparent !important;
+            font-weight: 600;
+        }
+
+        .nav-tabs .nav-link {
+            color: var(--c-ink) !important;
+            border-radius: var(--r-sm) var(--r-sm) 0 0;
+            font-weight: 500;
+        }
+        .nav-tabs .nav-link:hover {
+            color: var(--c-blue) !important;
+            background: var(--c-surface);
+            border-color: var(--c-hairline) var(--c-hairline) var(--c-divider);
+        }
+        .nav-tabs .nav-link.active {
+            color: var(--c-blue) !important;
+            background: var(--c-canvas) !important;
+            border-color: var(--c-hairline) var(--c-hairline) var(--c-canvas);
+            font-weight: 600;
         }
 
         /* CTA pill na nav — Novo Pedido */
-        .nav-link-cta {
+        .navbar .nav-link-cta {
             background: var(--c-blue) !important;
             color: #fff !important;
             border-radius: var(--r-pill) !important;
@@ -157,11 +175,11 @@
             font-weight: 500 !important;
             margin-left: 4px;
         }
-        .nav-link-cta:hover {
+        .navbar .nav-link-cta:hover {
             background: var(--c-blue-focus) !important;
             color: #fff !important;
         }
-        .nav-link-cta:active { transform: scale(0.96); }
+        .navbar .nav-link-cta:active { transform: scale(0.96); }
 
         /* Sector chip */
         .nav-sector-chip {
@@ -520,8 +538,8 @@
                 padding: 10px 16px 14px;
                 border-top: 1px solid rgba(255,255,255,0.07);
             }
-            .nav-link { padding: 8px 12px !important; }
-            .nav-link-cta { margin: 6px 0 0; display: inline-block; }
+            .navbar .nav-link { padding: 8px 12px !important; }
+            .navbar .nav-link-cta { margin: 6px 0 0; display: inline-block; }
         }
         @media (max-width: 575.98px) {
             .container-content { border-radius: var(--r-lg); padding: 16px; }
@@ -539,8 +557,8 @@
         {% else %}
         <span class="navbar-brand d-flex align-items-center">
         {% endif %}
-            <img src="{{ url_for('get_logo') }}" alt="Logo WMS" height="26" style="object-fit: contain;">
-            <span>WMS</span>
+            <img src="{{ url_for('get_logo') }}" alt="Logo NISMO" height="26" style="object-fit: contain;">
+            <span>NISMO</span>
         {% if can_access_dashboard %}</a>{% else %}</span>{% endif %}
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -594,8 +612,25 @@
                         </li>
                     </ul>
                 </li>
+                {% elif user_sectors and user_sectors|length > 1 %}
+                <!-- Seletor de Setor (usuário com múltiplos setores vinculados) -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="sectorDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-diagram-3"></i> {{ current_sector }}
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="sectorDropdown">
+                        {% for key in user_sectors %}
+                        <li>
+                            <a class="dropdown-item {% if key == current_sector %}active{% endif %}" href="{{ url_for('switch_sector', sector_name=key) }}">
+                                <i class="bi bi-arrow-right-circle"></i> {{ key }}
+                                {% if all_sectors.get(key) and all_sectors[key].description %}<small class="text-muted ms-1">{{ all_sectors[key].description }}</small>{% endif %}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </li>
                 {% else %}
-                <!-- Badge de setor para usuário não-admin -->
+                <!-- Badge de setor para usuário não-admin com um único setor -->
                 <li class="nav-item d-flex align-items-center">
                     <span class="nav-sector-chip me-1">
                         <i class="bi bi-diagram-3"></i> {{ current_sector }}
@@ -665,6 +700,13 @@
                 {% endif %}
                 {% if can_access_confirmations_history %}
                 {% endif %}
+                {% if can_access_expedicao %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('expedicao.index') }}">
+                        <i class="bi bi-truck"></i> Expedição
+                    </a>
+                </li>
+                {% endif %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="bi bi-person-circle"></i> {{ session.user }}
@@ -731,6 +773,31 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    (function() {
+        var maintenancePollingEnabled = {{ 'true' if session.get('user') and session.get('user', '').lower() != 'admin' else 'false' }};
+        var maintenanceStatusUrl = {{ url_for('maintenance_status') | tojson }};
+        var maintenancePageUrl = {{ url_for('maintenance_page') | tojson }};
+        var maintenancePollMs = 10000;
+
+        function pollMaintenanceStatus() {
+            if (!maintenancePollingEnabled) return;
+
+            fetch(maintenanceStatusUrl, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function(response) { return response.ok ? response.json() : null; })
+                .then(function(data) {
+                    if (data && data.active) {
+                        window.location.replace(maintenancePageUrl);
+                    }
+                })
+                .catch(function() {});
+        }
+
+        if (maintenancePollingEnabled) {
+            pollMaintenanceStatus();
+            setInterval(pollMaintenanceStatus, maintenancePollMs);
+        }
+    })();
+
     // Bootstrap alerts (usados em templates filhos)
     document.querySelectorAll('.alert:not([data-autodismiss="false"])').forEach(function(el) {
         setTimeout(function() { try { new bootstrap.Alert(el).close(); } catch(e) {} }, 5000);

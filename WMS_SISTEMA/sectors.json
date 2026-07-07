@@ -59,5 +59,15 @@
       "expedicao_embalagem",
       "shelf_level_clients"
     ]
+  },
+  "IMPRESSAO": {
+    "name": "IMPRESSAO",
+    "description": "impressao",
+    "status": "active",
+    "created_at": "07/07/2026 08:35:59",
+    "permissions": [
+      "etiquetas",
+      "etiq_criar"
+    ]
   }
 }

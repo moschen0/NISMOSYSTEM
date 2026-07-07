@@ -28,7 +28,7 @@ try:
         if getattr(sys, 'frozen', False)
         else os.path.dirname(os.path.abspath(__file__))
     )
-    load_dotenv(os.path.join(_env_base, '.env'), override=False)
+    load_dotenv(os.path.join(_env_base, '.env'), override=True)
 except ImportError:
     pass  # python-dotenv opcional; use variáveis de ambiente do sistema
 
@@ -1238,6 +1238,20 @@ def can_access_feature(feature):
     return False
 
 
+def can_access_any_feature(features):
+    return any(can_access_feature(feature) for feature in features)
+
+
+ETIQ_FEATURE_PERMISSIONS = (
+    'etiquetas',
+    'etiq_criar',
+    'etiq_adicionar_cliente',
+    'etiq_caixinhas',
+    'etiq_envio',
+    'etiq_reimprimir',
+)
+
+
 def get_search_sector_scope():
     """Retorna o setor usado na busca; None libera pesquisa em todos os setores."""
     if can_access_feature('search_cross_sector'):
@@ -1281,7 +1295,7 @@ def inject_admin_context():
         'sector_is_all': current_sec == 'ALL',
         'user_sectors': session.get('sectors', []),
         'can_access_triage': can_access_feature('triage'),
-        'can_access_etiquetas': can_access_feature('etiquetas'),
+        'can_access_etiquetas': can_access_any_feature(ETIQ_FEATURE_PERMISSIONS),
         'can_access_dashboard': can_access_feature('dashboard'),
         'can_access_audit': can_access_feature('audit'),
         'can_access_audit_expected_orders': can_access_feature('audit_expected_orders'),
@@ -1525,11 +1539,11 @@ def parse_row_heights(value, levels, default_height=72):
     heights = []
     for item in numbers:
         try:
-            height = int(float(str(item).strip()))
+            height = 50
         except Exception:
             continue
         if height > 0:
-            heights.append(max(32, height))
+            heights.append(max(50, height))
 
     if not heights:
         return [default_height] * total_levels
@@ -2188,25 +2202,30 @@ def api_best_position(zone):
 
 @app.route('/logo')
 def get_logo():
-    """Serve a logo da empresa do diretorio local configurado"""
+    """Serve a logo NISMO a partir do diretório de estáticos do projeto."""
     logo_paths = [
-        r"C:\APPS MASTER\IMG\Master_Logo_1.png",
-        r"C:\APPS MASTER\IMG\Master_logo_1.png",
-        r"\\192.168.1.210\apps master\IMG\Master_Logo_1.png",
-        r"\\192.168.1.210\apps master\IMG\Master_logo_1.png",
+        os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.jpg'),
+        os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.png'),
+        os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.webp'),
     ]
-    
+
     try:
         for logo_path in logo_paths:
             if os.path.exists(logo_path):
-                return send_file(logo_path, mimetype='image/png')
+                mime = 'image/png'
+                lower_path = logo_path.lower()
+                if lower_path.endswith('.jpg') or lower_path.endswith('.jpeg'):
+                    mime = 'image/jpeg'
+                elif lower_path.endswith('.webp'):
+                    mime = 'image/webp'
+                return send_file(logo_path, mimetype=mime)
     except Exception as e:
         print(f"Erro ao acessar logo: {e}")
     
     # Fallback: Retornar SVG inline
     svg_content = '''<svg width="400" height="100" xmlns="http://www.w3.org/2000/svg">
-        <rect width="400" height="100" fill="#ff9800"/>
-        <text x="50%" y="50%" font-size="48" font-weight="bold" fill="white" text-anchor="middle" dy=".3em">WMS</text>
+        <rect width="400" height="100" fill="#111111"/>
+        <text x="50%" y="50%" font-size="48" font-weight="bold" fill="white" text-anchor="middle" dy=".3em">NISMO</text>
     </svg>'''
     
     return Response(svg_content, mimetype='image/svg+xml')

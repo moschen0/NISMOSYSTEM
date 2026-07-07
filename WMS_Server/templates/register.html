@@ -48,15 +48,19 @@
                     </div>
 
                     <div class="mb-4">
-                        <label for="sector" class="form-label">
-                            <i class="bi bi-building"></i> Setor
+                        <label class="form-label">
+                            <i class="bi bi-building"></i> Setor(es)
                         </label>
-                        <select class="form-select" id="sector" name="sector">
+                        <div class="border rounded p-2">
                             {% set sectors_list = available_sectors if available_sectors is defined else ['AR', 'VTA'] %}
                             {% for sec in sectors_list %}
-                            <option value="{{ sec }}" {% if loop.first %}selected{% endif %}>{{ sec }}</option>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="sector" value="{{ sec }}" id="sector_{{ sec }}" {% if loop.first %}checked{% endif %}>
+                                <label class="form-check-label" for="sector_{{ sec }}">{{ sec }}</label>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
+                        <small class="text-muted">Marque um ou mais setores para vincular ao usuário.</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100 mb-3">

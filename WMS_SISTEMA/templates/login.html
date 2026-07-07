@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Login — WMS{% endblock %}
+{% block title %}Login — NISMO{% endblock %}
 
 {% block head %}
 <style>
@@ -61,14 +61,14 @@
     .login-brand-logo {
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: center;
+        padding-bottom: 8px;
     }
-    .login-brand-logo img { height: 32px; object-fit: contain; }
-    .login-brand-logo span {
-        color: rgba(255,255,255,0.9);
-        font-size: 1.05rem;
-        font-weight: 600;
-        letter-spacing: -0.025em;
+    .login-brand-logo img {
+        width: auto;
+        height: 300px;
+        max-width: 100%;
+        object-fit: contain;
     }
     .login-brand-body h2 {
         color: white;
@@ -76,7 +76,7 @@
         font-weight: 600;
         letter-spacing: -0.03em;
         line-height: 1.15;
-        margin-bottom: 10px;
+        margin-bottom: 60px;
     }
     .login-brand-body p {
         color: rgba(255,255,255,0.5);
@@ -230,12 +230,11 @@
     <!-- Painel de branding -->
     <div class="login-brand">
         <div class="login-brand-logo">
-            <img src="{{ url_for('get_logo') }}" alt="Logo WMS">
-            <span>WMS</span>
+            <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" height="120" style="object-fit: contain;">
         </div>
         <div class="login-brand-body">
-            <h2>Gestão de armazém<br>sem complicação.</h2>
-            <p>Rastreabilidade, triagem e controle de estoque integrados em um só lugar.</p>
+            <h2>Gestão da sua indústria<br>sem complicação.</h2>
+            <p>TUDO INTEGRADO EM UM SÓ LUGAR!!</p>
         </div>
         <div class="login-brand-footer">
             <i class="bi bi-shield-check me-1"></i> Acesso criptografado
@@ -287,7 +286,7 @@
                 <p class="login-support-desc">O formulário oficial organiza a solicitação e evita que a demanda se perca em mensagens avulsas no em appd de mensagens.</p>
                 <a class="login-support-link" href="https://forms.office.com/pages/responsepage.aspx?id=F5WWMa5TPkOx7ops3ngGT54bQyxow_pPoGbAr-8LzhRUMFVQQjFITEhUM0pRTTRXOVEzQk1ZNDZVVC4u&route=shorturl" target="_blank" rel="noopener noreferrer">
                     <span class="support-text">
-                        <span class="support-action">Abrir chamado agora</span>
+                        <span class="support-action">Abrir chamado agora!</span>
                         <span class="support-hint">Leva menos de 1 minuto</span>
                     </span>
                     <i class="bi bi-arrow-right-circle-fill"></i>

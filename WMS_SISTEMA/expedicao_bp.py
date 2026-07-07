@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 from datetime import datetime
 from functools import wraps
 from threading import Lock
@@ -502,6 +503,21 @@ def close_lote(lote_id, endereco, closed_by):
     conn.commit()
 
 
+def set_lote_endereco(lote_id, endereco):
+    conn = db_mdb.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT lote_code FROM {LOTES_TABLE} WHERE id = ?", (lote_id,))
+    row = cursor.fetchone()
+    lote_code = row[0] if row else ""
+    if lote_code and lote_code.endswith("-PENDENTE"):
+        lote_code = lote_code.rsplit("-PENDENTE", 1)[0] + f"-{endereco}"
+    cursor.execute(
+        f"UPDATE {LOTES_TABLE} SET endereco = ?, lote_code = ? WHERE id = ?",
+        (endereco, lote_code, lote_id),
+    )
+    conn.commit()
+
+
 def confirm_lote(lote_id, confirmed_by):
     conn = db_mdb.get_connection()
     cursor = conn.cursor()
@@ -856,7 +872,8 @@ def api_checkin_scan():
 
     add_lote_item(lote["id"], order_id, user, unit, sector)
     lote = get_lote(lote["id"])
-    # Compute a non-persistent suggested endereco (do NOT write it to DB).
+    # Compute the suggested endereco and persist it so the lote is shown with
+    # its address immediately after the first scan.
     suggested_endereco = None
     try:
         if not (lote.get('endereco')):
@@ -901,6 +918,9 @@ def api_checkin_scan():
                     break
     except Exception:
         suggested_endereco = None
+    if suggested_endereco and not (lote.get("endereco")):
+        set_lote_endereco(lote["id"], suggested_endereco)
+        lote = get_lote(lote["id"])
     items = get_lote_items(lote["id"])
     return jsonify({"success": True, "lote": lote, "items": items, "suggested_endereco": suggested_endereco})
 
@@ -1089,11 +1109,15 @@ def picking_select_lote(onda_id, lote_id):
 def expedicao_label_preview_page():
     """Página de prévia da etiqueta de expedição (expedicao_label_100x150.html).
     Acessível a quem tem permissão de doublecheck."""
+    cliente_codigo = str(request.args.get("cliente_codigo", "")).strip()
+    cliente_data = _fetch_expedicao_label_client(cliente_codigo)
+    cliente_nome = cliente_data.get("cliente_nome", request.args.get("cliente_nome", ""))
+    cliente_endereco = cliente_data.get("cliente_endereco", request.args.get("cliente_endereco", ""))
     return render_template(
         "etiq/expedicao_label_100x150.html",
-        cliente_nome=request.args.get("cliente_nome", ""),
-        cliente_codigo=request.args.get("cliente_codigo", ""),
-        cliente_endereco=request.args.get("cliente_endereco", ""),
+        cliente_nome=cliente_nome,
+        cliente_codigo=cliente_codigo,
+        cliente_endereco=cliente_endereco,
     )
 
 
@@ -1147,6 +1171,108 @@ def api_doublecheck_scan():
     return jsonify({"success": True, "result": result, "progress": progress})
 
 
+def _user_matches_current_sector(user_sector: str, current_sector: str) -> bool:
+    user_sector = str(user_sector or "").strip().upper()
+    current_sector = str(current_sector or "").strip().upper()
+    if not current_sector:
+        return False
+    if not user_sector:
+        return False
+    if user_sector == "ALL":
+        return True
+    sectors = [part.strip().upper() for part in re.split(r"[;,|/]", user_sector) if part.strip()]
+    return current_sector in sectors or user_sector == current_sector
+
+
+def _validate_doublecheck_leader(username: str, password: str) -> tuple[bool, str]:
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        return False, "Informe login e senha do líder."
+
+    unit = get_current_unit()
+    search_unit = None if username.lower() == "admin" else unit
+    try:
+        user = db_mdb.get_user_by_username(username, unit=search_unit)
+    except Exception:
+        user = None
+    if not user:
+        return False, "Líder não encontrado ou inválido."
+
+    active_value = user.get("active", 1)
+    if str(active_value) in {"0", "False", "false"}:
+        return False, "Usuário líder está inativo."
+
+    if not db_mdb.verify_password(password, user.get("password", "")):
+        return False, "Senha do líder inválida."
+
+    if username.lower() != "admin":
+        if not _user_matches_current_sector(user.get("sector", ""), get_current_sector()):
+            return False, "Líder não pertence ao setor atual."
+
+    return True, "OK"
+
+
+def _fetch_expedicao_label_client(numero_cliente: str | int) -> dict[str, str]:
+    cliente_codigo = str(numero_cliente or "").strip()
+    if not cliente_codigo.isdigit():
+        return {}
+
+    try:
+        conn = db_mdb.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT TOP 1 nome_cliente, endereco, numero, complemento, bairro, cidade, estado, cep, cnpj, cor_roteiro, horario_roteiro, entregador
+            FROM etiq_clients
+            WHERE numero_cliente = ?
+            ORDER BY id DESC
+            """,
+            (int(cliente_codigo),),
+        )
+        row = cursor.fetchone()
+    except Exception:
+        row = None
+
+    if not row:
+        return {}
+
+    nome_cliente = str(row[0] or "").strip()
+    endereco = str(row[1] or "").strip()
+    numero = str(row[2] or "").strip()
+    complemento = str(row[3] or "").strip()
+    bairro = str(row[4] or "").strip()
+    cidade = str(row[5] or "").strip()
+    estado = str(row[6] or "").strip()
+    cep = str(row[7] or "").strip()
+    cnpj = str(row[8] or "").strip()
+    cor_roteiro = str(row[9] or "").strip()
+    horario_roteiro = str(row[10] or "").strip()
+    entregador = str(row[11] or "").strip()
+
+    address_parts = [part for part in [endereco, numero, complemento] if part]
+    city_parts = [part for part in [bairro, "/".join([p for p in [cidade, estado] if p]) if (cidade or estado) else ""] if part]
+    info_parts = [part for part in [
+        cep and f"CEP {cep}",
+        cnpj and f"CNPJ {cnpj}",
+        cor_roteiro and f"Roteiro {cor_roteiro}",
+        horario_roteiro and f"Horário {horario_roteiro}",
+        entregador and f"Entregador {entregador}",
+    ] if part]
+
+    formatted = " | ".join([part for part in [
+        ", ".join(address_parts),
+        ", ".join([part for part in city_parts if part]),
+        *info_parts,
+    ] if part])
+
+    return {
+        "cliente_codigo": cliente_codigo,
+        "cliente_nome": nome_cliente,
+        "cliente_endereco": formatted,
+    }
+
+
 @expedicao_bp.route("/api/doublecheck/finalizar", methods=["POST"])
 @login_required
 @_expedicao_feature_required("expedicao_doublecheck")
@@ -1159,25 +1285,28 @@ def api_doublecheck_finalizar():
 
     progress = get_lote_picking_progress(lote_id)
     status = "separado_completo" if progress["missing"] == 0 else "separado_com_falta"
+    if progress["missing"] > 0:
+        ok, auth_error = _validate_doublecheck_leader(
+            data.get("leader_username", ""),
+            data.get("leader_password", ""),
+        )
+        if not ok:
+            return jsonify({"error": auth_error, "progress": progress}), 403
     update_lote_status(lote_id, status)
     response = {"success": True, "status": status, "progress": progress}
     # If the lote was completely separated, provide a quick label URL for the cliente
     if status == "separado_completo":
         try:
             cliente = lote.get("client_number")
-            endereco = lote.get("endereco") or ""
             if cliente:
-                try:
-                    cliente_nome = db_mdb.get_triage_customer_name_by_code(cliente)
-                except Exception:
-                    cliente_nome = ''
-                label_url = url_for(
+                cliente_codigo = str(cliente).strip()
+                cliente_data = _fetch_expedicao_label_client(cliente_codigo)
+                response["label_url"] = url_for(
                     "expedicao.expedicao_label_preview_page",
-                    cliente_nome=cliente_nome,
-                    cliente_codigo=cliente,
-                    cliente_endereco=endereco,
+                    cliente_codigo=cliente_codigo,
+                    cliente_nome=cliente_data.get("cliente_nome") or db_mdb.get_triage_customer_name_by_code(cliente) or "",
+                    cliente_endereco=cliente_data.get("cliente_endereco") or (lote.get("endereco") or ""),
                 )
-                response["label_url"] = label_url
         except Exception:
             pass
         # Also, free the shelf positions for the orders in this lote so they don't keep occupying space

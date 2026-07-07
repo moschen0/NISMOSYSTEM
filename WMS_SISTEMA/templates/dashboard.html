@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - WMS{% endblock %}
+{% block title %}Dashboard - NISMO{% endblock %}
 
 {% block content %}
 <style>
@@ -174,7 +174,7 @@
 <div class="row mb-4">
     <div class="col-md-12">
         <div class="text-center mb-4">
-            <img src="{{ url_for('get_logo') }}" alt="Logo da Empresa" height="100" loading="lazy" style="object-fit: contain;">
+            <img src="{{ url_for('static', filename='images/nismosystem_logo_png_preto.png') }}" alt="Logo NISMO" height="150" loading="lazy" style="object-fit: contain;">
         </div>
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
             <h1 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h1>
@@ -503,6 +503,17 @@
         {% if can_access_settings %}
         <a href="{{ url_for('settings') }}" class="ms-1" style="font-size:10px;"><i class="bi bi-gear"></i> Configurar</a>
         {% endif %}
+        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-muted">Visualização:</span>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Visualização das prateleiras">
+                <button type="button" class="btn btn-outline-secondary active" data-shelf-display-mode="os" aria-pressed="true">
+                    <i class="bi bi-file-text"></i> OS
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-shelf-display-mode="caixa" aria-pressed="false">
+                    <i class="bi bi-box"></i> Caixa
+                </button>
+            </div>
+        </div>
     </div>
     {% endif %}
     <div class="racks-wrap">
@@ -557,6 +568,7 @@
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
                                                                 data-os-opto="{{ box.os_opto|default('', true)|e }}"
+                                                                data-age-days="{{ box.age_days if box.age_days is not none else '' }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
                                                                  data-added-at="{{ box.created_at|default('', true)|e }}"
                                                                  data-position="{{ cell.position|e }}"
@@ -580,6 +592,7 @@
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
                                                                 data-os-opto="{{ box.os_opto|default('', true)|e }}"
+                                                                data-age-days="{{ box.age_days if box.age_days is not none else '' }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
                                                                  data-added-at="{{ box.created_at|default('', true)|e }}"
                                                                  data-position="{{ only_cell.position|e }}"
@@ -661,6 +674,7 @@
 </div>
 {% endif %}
 
+<script src="{{ url_for('static', filename='js/shelf_display_mode.js') }}"></script>
 <script>
 // Toggle entre tema Lista e Prateleiras
 function setView(view) {

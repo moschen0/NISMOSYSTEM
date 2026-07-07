@@ -217,6 +217,17 @@
         {% if not demo_mode %}
             <a href="{{ url_for('settings') }}" style="font-size:10px;margin-left:4px;"><i class="bi bi-gear"></i> Configurar</a>
         {% endif %}
+        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-muted">Visualização:</span>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Visualização das prateleiras">
+                <button type="button" class="btn btn-outline-secondary active" data-shelf-display-mode="os" aria-pressed="true">
+                    <i class="bi bi-file-text"></i> OS
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-shelf-display-mode="caixa" aria-pressed="false">
+                    <i class="bi bi-box"></i> Caixa
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="racks-wrap">
@@ -250,6 +261,7 @@
                                                         <div class="box-block box-tier-{{ box.tier }}"
                                                              data-order-id="{{ box.order_id|default('', true)|e }}"
                                                              data-box-number="{{ box.box|default('', true)|e }}"
+                                                                 data-age-days="{{ box.age_days if box.age_days is not none else '' }}"
                                                              data-added-by="{{ box.created_by|default('', true)|e }}"
                                                              data-added-at="{{ box.created_at|default('', true)|e }}"
                                                              title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
@@ -273,8 +285,10 @@
                                                             <div class="box-block box-tier-{{ box.tier }}"
                                                                  data-order-id="{{ box.order_id|default('', true)|e }}"
                                                                  data-box-number="{{ box.box|default('', true)|e }}"
+                                                                 data-age-days="{{ box.age_days if box.age_days is not none else '' }}"
                                                                  data-added-by="{{ box.created_by|default('', true)|e }}"
-                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"                                                                 data-position="{{ cell.position|e }}"                                                                 data-position="{{ only_cell.position|e }}"
+                                                                 data-added-at="{{ box.created_at|default('', true)|e }}"
+                                                                 data-position="{{ only_cell.position|e }}"
                                                                  title="{{ box.label }} ({{ box.age_days if box.age_days is not none else '?' }}d)">{{ box.label }}</div>
                                                         {% endfor %}
                                                     </div>
@@ -297,6 +311,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/shelf_display_mode.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     initBoxInfoTooltip();

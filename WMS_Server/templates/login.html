@@ -32,7 +32,7 @@
     .login-wrap {
         display: flex;
         width: 100%;
-        max-width: 860px;
+        max-width: 1040px;
         min-height: 520px;
         border-radius: 26px;
         overflow: hidden;
@@ -46,7 +46,7 @@
         justify-content: space-between;
         padding: 44px 40px;
         background: #161617;
-        flex: 0 0 300px;
+        flex: 0 0 340px;
         position: relative;
         overflow: hidden;
     }
@@ -96,7 +96,7 @@
         display: flex;
         flex-direction: column;
         justify-content: center;
-        padding: 44px 44px 36px;
+        padding: 44px 52px 36px;
     }
     .login-form-panel h3 {
         font-size: 1.2rem;
@@ -127,6 +127,80 @@
         font-size: 0.9375rem;
         font-weight: 500;
     }
+    .login-support-panel {
+        margin-top: 12px;
+        padding: 14px 16px 12px;
+        border-radius: 18px;
+        border: 1px solid var(--c-divider);
+        background: var(--c-surface-pearl);
+    }
+    .login-support-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        border-radius: 9999px;
+        border: 1px solid rgba(0, 113, 227, 0.16);
+        background: rgba(0, 113, 227, 0.06);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--c-blue);
+        margin-bottom: 6px;
+    }
+    .login-support-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+        margin-bottom: 4px;
+        color: var(--c-text);
+    }
+    .login-support-desc {
+        font-size: 0.78rem;
+        line-height: 1.35;
+        color: var(--c-muted);
+        margin: 0 0 10px;
+    }
+    .login-support-link {
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 15px;
+        border-radius: 9999px;
+        background: var(--c-blue);
+        color: white;
+        font-weight: 600;
+        box-shadow: none;
+        transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+    .login-support-link:hover {
+        background: var(--c-blue-hover);
+        color: white;
+        transform: translateY(-1px);
+    }
+    .login-support-link .support-text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+    }
+    .login-support-link .support-action {
+        font-size: 0.88rem;
+        line-height: 1.15;
+    }
+    .login-support-link .support-hint {
+        font-size: 0.72rem;
+        font-weight: 500;
+        opacity: 0.82;
+    }
+    .login-support-link i {
+        flex: 0 0 auto;
+        font-size: 1rem;
+    }
     .login-footer-note {
         margin-top: 20px;
         padding-top: 16px;
@@ -156,12 +230,12 @@
     <!-- Painel de branding -->
     <div class="login-brand">
         <div class="login-brand-logo">
-            <img src="{{ url_for('get_logo') }}" alt="Logo WMS">
-            <span>WMS</span>
+            <img src="{{ url_for('get_logo') }}" alt="Logo NISMO">
+            <span>NISMO</span>
         </div>
         <div class="login-brand-body">
-            <h2>Gestão de armazém<br>sem complicação.</h2>
-            <p>Rastreabilidade, triagem e controle de estoque integrados em um só lugar.</p>
+            <h2>Gestão de Fábrica<br>sem complicação.</h2>
+            <p>TUDO INTEGRADO EM UM SÓ LUGAR.</p>
         </div>
         <div class="login-brand-footer">
             <i class="bi bi-shield-check me-1"></i> Acesso criptografado
@@ -201,6 +275,22 @@
                 </button>
                 <a href="{{ url_for('about') }}" class="btn btn-outline-secondary" title="Ajuda">
                     <i class="bi bi-question-circle"></i>
+                </a>
+            </div>
+
+            <div class="login-support-panel">
+                <div class="login-support-kicker">
+                    <i class="bi bi-headset"></i>
+                    Suporte oficial
+                </div>
+                <div class="login-support-title">Precisa de ajuda? Registre seu chamado de TI</div>
+                <p class="login-support-desc">O formulário oficial organiza a solicitação e evita que a demanda se perca em mensagens avulsas no em app de mensagens.</p>
+                <a class="login-support-link" href="https://forms.office.com/pages/responsepage.aspx?id=F5WWMa5TPkOx7ops3ngGT54bQyxow_pPoGbAr-8LzhRUMFVQQjFITEhUM0pRTTRXOVEzQk1ZNDZVVC4u&route=shorturl" target="_blank" rel="noopener noreferrer">
+                    <span class="support-text">
+                        <span class="support-action">Abrir chamado agora!</span>
+                        <span class="support-hint">Leva menos de 1 minuto</span>
+                    </span>
+                    <i class="bi bi-arrow-right-circle-fill"></i>
                 </a>
             </div>
         </form>

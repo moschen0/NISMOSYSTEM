@@ -81,6 +81,25 @@ def table_columns(cursor, table: str) -> set[str]:
     return {str(row.column_name).lower() for row in cursor.columns(table=table)}
 
 
+def id_requires_manual_value(cursor) -> bool:
+    try:
+        cursor.columns(table="etiq_clients", column="id")
+        row = cursor.fetchone()
+        if not row:
+            return False
+        type_name = str(getattr(row, "type_name", "") or "").upper()
+        return "COUNTER" not in type_name and "AUTOINCREMENT" not in type_name
+    except Exception:
+        return False
+
+
+def next_manual_id(cursor) -> int:
+    cursor.execute("SELECT MAX(id) FROM etiq_clients")
+    row = cursor.fetchone()
+    current = row[0] if row and row[0] is not None else 0
+    return int(current) + 1
+
+
 def add_missing_columns(cursor):
     existing = table_columns(cursor, "etiq_clients")
     for column in TEXT_COLUMNS:
@@ -212,7 +231,7 @@ def update_client(cursor, record: dict, client_id: int):
     )
 
 
-def insert_client(cursor, record: dict):
+def insert_client(cursor, record: dict, manual_id: int | None = None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     columns = [
         "numero_cliente",
@@ -238,6 +257,9 @@ def insert_client(cursor, record: dict):
         "updated_at",
     ]
     values = [record.get(column) for column in columns[:-2]] + [now, now]
+    if manual_id is not None:
+        columns.insert(0, "id")
+        values.insert(0, manual_id)
     placeholders = ", ".join("?" for _ in columns)
     cursor.execute(
         f"INSERT INTO etiq_clients ({', '.join(columns)}) VALUES ({placeholders})",
@@ -300,6 +322,7 @@ def process_db(db_path: Path, records: list[dict]):
     try:
         add_missing_columns(cursor)
         reset_old_client_info(cursor)
+        manual_id = next_manual_id(cursor) if id_requires_manual_value(cursor) else None
         updated = 0
         inserted = 0
         for record in records:
@@ -308,7 +331,9 @@ def process_db(db_path: Path, records: list[dict]):
                 update_client(cursor, record, client_id)
                 updated += 1
             else:
-                insert_client(cursor, record)
+                insert_client(cursor, record, manual_id)
+                if manual_id is not None:
+                    manual_id += 1
                 inserted += 1
         deleted_duplicates, duplicate_codes = cleanup_duplicate_codigo_cliente(cursor)
         conn.commit()
