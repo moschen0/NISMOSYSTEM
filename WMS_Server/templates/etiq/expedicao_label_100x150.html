@@ -3,6 +3,7 @@
 
 {% block content %}
 <style>
+<<<<<<< HEAD
   @media print {
     @page { size: 150mm 100mm landscape; margin: 0; }
     body * { visibility: hidden; }
@@ -16,6 +17,17 @@
   }
 
   .exp-shell { max-width: 980px; margin: 20px auto; font-family: Arial, Helvetica, sans-serif; }
+=======
+  /* Print page size for the label */
+  @media print {
+    @page { size: 100mm 150mm portrait; margin: 0; }
+    body * { visibility: hidden; }
+    #labelPreview, #labelPreview * { visibility: visible; }
+    #labelPreview { position: fixed; inset: 0; width: 100mm; height: 150mm; }
+  }
+
+  .exp-shell { max-width: 900px; margin: 20px auto; font-family: "Space Grotesk", sans-serif; }
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
   .exp-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 18px; }
   .form-row { display:flex; gap:12px; flex-wrap:wrap; }
   .form-row label { flex:1 1 220px; display:flex; flex-direction:column; font-weight:600; font-size:.95rem; }
@@ -26,6 +38,7 @@
   .btn-secondary { background:#e8edf2; }
 
   .preview-wrap { margin-top:18px; }
+<<<<<<< HEAD
   #labelPreview {
     width: 150mm;
     height: 100mm;
@@ -100,6 +113,69 @@
   }
 
   .label-footer strong { font-weight: 700; }
+=======
+  #labelPreview { width:150mm; height:100mm; border:0; border-radius:0; padding:0; background:#fff; box-shadow:none; box-sizing:border-box; }
+
+  /* Inner label layout sized to 100x150mm at screen scale */
+  .label-inner { width: 100%; height: 100%; display:grid; grid-template-rows:90px 1fr; box-sizing:border-box; }
+    /* Top: two boxed fields; Bottom: single boxed address field */
+    #labelPreview { border:4px solid #000; }
+    .label-top { display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:8px; box-sizing:border-box; }
+    .label-top > div {
+      border:2px solid #000;
+      box-sizing:border-box;
+      padding:10px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      background:#fff;
+      height:100%;
+      color:#000;
+    }
+
+    .label-client-code {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:50px 10px; 
+      height:100%;
+      font-size:3.4rem; /* slightly reduced to fit with padding */
+      font-weight:900;
+      letter-spacing:0.02em;
+      text-transform:uppercase;
+      color:#000;
+    }
+
+    .label-client-name {
+      display:flex;
+      justify-content:flex-end;
+      align-items:flex-start;
+      font-size:1.1rem;
+      font-weight:400;
+      text-transform:uppercase;
+      text-align:right;
+      padding-top:6px;
+      color:#000;
+    }
+
+    .label-middle { padding:0; }
+    .label-address {
+      border:2px solid #000;
+      box-sizing:border-box;
+      padding:18px 14px;
+      font-size:2.2rem;
+      font-weight:500;
+      text-transform:uppercase;
+      text-align:left;
+      line-height:1.25;
+      height:100%;
+      display:block;
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:#fff;
+      color:#000;
+    }
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
 
 </style>
 
@@ -133,6 +209,7 @@
       <div id="labelPreview" aria-label="Preview da etiqueta">
         <div class="label-inner">
           <div class="label-top">
+<<<<<<< HEAD
             <div class="label-client-code" id="preview_codigo">{{ cliente_codigo or 'NUMERO DO CLIENTE' }}</div>
           </div>
           <div class="label-bottom">
@@ -142,6 +219,13 @@
               DATA DE ENVIO E NOME DO USUARIO QUE ENVIOU<br>
               <strong><span id="preview_data_envio">{{ data_envio or '—' }}</span></strong> - <strong><span id="preview_usuario">{{ enviado_por or session.get('user', '') if session else '' }}</span></strong>
             </div>
+=======
+            <div class="label-client-code" id="preview_codigo">{{ cliente_codigo or 'CODIGO DO CLIENTE' }}</div>
+            <div class="label-client-name" id="preview_nome">{{ cliente_nome or 'NOME DO CLIENTE' }}</div>
+          </div>
+          <div class="label-middle">
+            <div class="label-address" id="preview_endereco">{{ cliente_endereco or 'ENDEREÇO DO CLIENTE' }}</div>
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
           </div>
         </div>
       </div>
@@ -154,6 +238,10 @@
   const nomeInp = document.getElementById('cliente_nome');
   const codigoInp = document.getElementById('cliente_codigo');
   const enderecoInp = document.getElementById('cliente_endereco');
+<<<<<<< HEAD
+=======
+  const previewNome = document.getElementById('preview_nome');
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
   const previewCodigo = document.getElementById('preview_codigo');
   const previewEndereco = document.getElementById('preview_endereco');
   const previewBtn = document.getElementById('previewBtn');
@@ -161,11 +249,20 @@
   const resetBtn = document.getElementById('resetBtn');
 
   function updatePreview(){
+<<<<<<< HEAD
     const c = codigoInp.value.trim() || 'CODIGO DO CLIENTE';
     const n = nomeInp.value.trim();
     const e = enderecoInp.value.trim();
     previewCodigo.textContent = c.toUpperCase();
     previewEndereco.textContent = [n, e].filter(Boolean).join(' ').toUpperCase() || 'INFORMACOES DO CLIENTE NOME RUA BAIRRO E ETC';
+=======
+    const n = nomeInp.value.trim() || 'NOME DO CLIENTE';
+    const c = codigoInp.value.trim() || 'CODIGO DO CLIENTE';
+    const e = enderecoInp.value.trim() || 'ENDEREÇO DO CLIENTE';
+    previewNome.textContent = n.toUpperCase();
+    previewCodigo.textContent = c.toUpperCase();
+    previewEndereco.textContent = e.toUpperCase();
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
   }
 
   previewBtn.addEventListener('click', function(){ updatePreview(); });

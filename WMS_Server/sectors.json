@@ -53,9 +53,13 @@
       "expedicao",
       "expedicao_checkin",
       "expedicao_picking",
+<<<<<<< HEAD
       "expedicao_ondas_historico",
       "expedicao_doublecheck",
       "expedicao_doublecheck_autorizar_falta",
+=======
+      "expedicao_doublecheck",
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
       "expedicao_embalagem",
       "shelf_level_clients"
     ]

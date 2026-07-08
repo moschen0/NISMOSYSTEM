@@ -18,6 +18,11 @@ echo  *** NAO afeta o banco de producao ***
 echo ============================================================
 echo.
 
+REM Garantir que testes usem banco de teste local; definir producao por seguranca
+set "WMS_MDB_PATH_PROD=\\192.168.1.210\apps master\DATABASE WMS\BD PRODUCAO\wms_database.mdb"
+echo [ENV] WMS_MDB_PATH_PROD=%WMS_MDB_PATH_PROD%
+
+
 set "VENV_PY=%~dp0..\.venv\Scripts\python.exe"
 
 if exist "%VENV_PY%" (

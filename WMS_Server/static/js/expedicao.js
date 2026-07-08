@@ -183,22 +183,37 @@ const Expedicao = (() => {
       try {
         const lote = data.lote;
         if (data.suggested_endereco && lote && lote.id) {
+<<<<<<< HEAD
           const container = document.querySelector(`[data-lote-id="${lote.id}"]`);
           if (!container) {
             window.location.reload();
             return;
           }
+=======
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
           const enderecoEl = document.getElementById(`endereco-${lote.id}`);
           if (enderecoEl && !enderecoEl.value) {
             enderecoEl.value = data.suggested_endereco;
           }
           // Append the scanned order to the lote items list if present in DOM
+<<<<<<< HEAD
           const ul = container.querySelector('.list-group');
           if (ul) {
             const li = document.createElement('li');
             li.className = 'list-group-item px-0 py-1 font-monospace';
             li.textContent = data.items && data.items.length ? data.items[data.items.length-1].order_id : '';
             ul.appendChild(li);
+=======
+          const container = document.querySelector(`[data-lote-id="${lote.id}"]`);
+          if (container) {
+            const ul = container.querySelector('.list-group');
+            if (ul) {
+              const li = document.createElement('li');
+              li.className = 'list-group-item px-0 py-1 font-monospace';
+              li.textContent = data.items && data.items.length ? data.items[data.items.length-1].order_id : '';
+              ul.appendChild(li);
+            }
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
           }
         } else {
           // No suggestion — do a full reload to reflect server state
@@ -269,6 +284,7 @@ const Expedicao = (() => {
         });
         input.focus();
       }
+<<<<<<< HEAD
       this._syncActionButtons();
       this._updateProgressBar();
     },
@@ -294,6 +310,11 @@ const Expedicao = (() => {
       }
     },
 
+=======
+      this._updateProgressBar();
+    },
+
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
     _updateProgressBar() {
       const confirmedEl = document.getElementById('dc-confirmed');
       const totalEl = document.getElementById('dc-total');
@@ -327,7 +348,10 @@ const Expedicao = (() => {
         document.getElementById('dc-confirmed').textContent = data.progress.confirmed;
         document.getElementById('dc-total').textContent = data.progress.total;
         this._updateProgressBar();
+<<<<<<< HEAD
         this._syncActionButtons();
+=======
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
       }
 
       if (!ok || data.result === 'nao_pertence') {
@@ -340,6 +364,7 @@ const Expedicao = (() => {
       showAlert('doublecheck-alert', 'ID confirmado.', 'success');
     },
 
+<<<<<<< HEAD
     openLeaderAuthModal() {
       const alertEl = document.getElementById('dc-leader-auth-alert');
       const userInput = document.getElementById('dc-leader-username');
@@ -403,6 +428,8 @@ const Expedicao = (() => {
       }
     },
 
+=======
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
     async finalizar() {
       const loteId = document.getElementById('dc-lote-id').value;
       const { ok, data } = await postJson('/expedicao/api/doublecheck/finalizar', {
@@ -412,7 +439,10 @@ const Expedicao = (() => {
         showAlert('doublecheck-alert', data.error || 'Erro ao finalizar separação.', 'danger');
         return;
       }
+<<<<<<< HEAD
       this._syncActionButtons();
+=======
+>>>>>>> 57776b87fbeae7d061d5231d8966ba12a9593810
       // Notify user about status
       if (data.status === 'separado_com_falta') {
         showAlert('doublecheck-alert', `ATENÇÃO: faltam ${data.progress.missing} ID(s) neste lote!`, 'danger');

@@ -18,6 +18,10 @@ echo.
 set "VENV_PY=%CD%\..\.venv\Scripts\python.exe"
 set "SYS_PY="
 
+REM Definir caminho do MDB de producao (rede UNC)
+set "WMS_MDB_PATH_PROD=\\192.168.1.210\apps master\DATABASE WMS\BD PRODUCAO\wms_database.mdb"
+echo [ENV] WMS_MDB_PATH_PROD=%WMS_MDB_PATH_PROD%
+
 if exist "%VENV_PY%" (
 	"%VENV_PY%" --version >nul 2>&1
 	if not errorlevel 1 (
