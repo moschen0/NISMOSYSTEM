@@ -1,6 +1,8 @@
 """
-Módulo de acesso ao banco de dados Access MDB para o WMS
-Substitui o sistema JSON por banco de dados relacional
+Módulo de acesso ao banco de dados do WMS.
+
+Mantém compatibilidade com o backend legado em Access MDB e permite usar
+MySQL sem reescrever os módulos consumidores.
 """
 try:
     import pyodbc
@@ -8,12 +10,23 @@ try:
 except Exception as exc:
     pyodbc = None
     _PYODBC_IMPORT_ERROR = exc
+try:
+    import mysql.connector
+    _MYSQL_IMPORT_ERROR = None
+except Exception as exc:
+    mysql = None
+    _MYSQL_IMPORT_ERROR = exc
 import os
 import sys
 import threading
 import re
 import json
 from functools import lru_cache
+
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
 try:
     from werkzeug.security import generate_password_hash, check_password_hash as _check_hash
     _HASH_AVAILABLE = True
@@ -24,6 +37,29 @@ except ImportError:
 # Werkzeug (scrypt) tem ~162 chars e era truncado, quebrando o login.
 _PASSWORD_HASH_METHOD = 'pbkdf2:sha256:260000'
 _PASSWORD_HASH_SALT_LENGTH = 8
+
+ACCESS_BACKEND = 'access'
+MYSQL_BACKEND = 'mysql'
+
+
+def _load_local_env():
+    """Carrega o .env local quando disponível.
+
+    Isso mantém `db_mdb` utilizável de forma isolada em scripts e utilitários,
+    sem depender de `web_app` para preparar o ambiente antes do import.
+    """
+    if load_dotenv is None:
+        return
+
+    base_dir = get_runtime_base_dir()
+    env_candidates = [
+        os.path.join(base_dir, '.env'),
+        os.path.normpath(os.path.join(base_dir, '..', 'WMS_Server', '.env')),
+    ]
+
+    for env_path in env_candidates:
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=False)
 
 
 def hash_password(plain: str) -> str:
@@ -55,11 +91,222 @@ def get_runtime_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def resolve_db_path():
-    """Resolve caminho do MDB de producao.
+_load_local_env()
 
-    Prioridade: WMS_MDB_PATH_PROD (env) → copia local do banco no bundle/exe.
+
+def _get_env_value(*names):
+    """Retorna o primeiro valor de ambiente nao vazio na ordem informada."""
+    for name in names:
+        value = os.environ.get(name, '').strip()
+        if value:
+            return value
+    return ''
+
+
+def resolve_db_backend():
+    """Resolve o backend de banco configurado para o WMS."""
+    backend = _get_env_value('WMS_DB_BACKEND').lower()
+    if backend in (ACCESS_BACKEND, MYSQL_BACKEND):
+        return backend
+    if _get_env_value(
+        'WMS_MYSQL_DATABASE',
+        'WMS_MYSQL_DATABASE_PROD',
+        'WMS_MYSQL_DATABASE_TEST',
+    ):
+        return MYSQL_BACKEND
+    return ACCESS_BACKEND
+
+
+DB_BACKEND = resolve_db_backend()
+
+
+def _resolve_mysql_mode_config(mode: str):
+    """Monta a configuracao do MySQL para producao ou teste."""
+    suffix = '_TEST' if str(mode).strip().lower() == 'test' else '_PROD'
+
+    host = _get_env_value(f'WMS_MYSQL_HOST{suffix}', 'WMS_MYSQL_HOST') or '127.0.0.1'
+    port_text = _get_env_value(f'WMS_MYSQL_PORT{suffix}', 'WMS_MYSQL_PORT') or '3306'
+    user = _get_env_value(f'WMS_MYSQL_USER{suffix}', 'WMS_MYSQL_USER')
+    password = _get_env_value(f'WMS_MYSQL_PASSWORD{suffix}', 'WMS_MYSQL_PASSWORD')
+    database = _get_env_value(f'WMS_MYSQL_DATABASE{suffix}', 'WMS_MYSQL_DATABASE')
+
+    try:
+        port = int(port_text)
+    except Exception:
+        port = 3306
+
+    return {
+        'host': host,
+        'port': port,
+        'user': user,
+        'password': password,
+        'database': database,
+    }
+
+
+def _format_mysql_target(config):
+    """Retorna identificador legivel do alvo MySQL atual."""
+    host = config.get('host') or '127.0.0.1'
+    port = config.get('port') or 3306
+    database = config.get('database') or 'wms'
+    return f'mysql://{host}:{port}/{database}'
+
+
+def _is_mysql_target(target: str) -> bool:
+    return str(target or '').strip().lower().startswith('mysql://')
+
+
+def _current_mode_from_target(target: str) -> str:
+    return 'test' if str(target or '') == str(DB_PATH_TEST or '') else 'production'
+
+
+def _resolve_current_mysql_config():
+    return _resolve_mysql_mode_config(_current_mode_from_target(DB_PATH))
+
+
+def _replace_cstr_calls(sql: str) -> str:
+    return re.sub(r'\bCStr\(([^()]+)\)', r'CAST(\1 AS CHAR)', sql, flags=re.IGNORECASE)
+
+
+def _translate_mysql_sql(sql: str) -> str:
+    """Traduz o subconjunto de SQL legado do Access para MySQL."""
+    translated = str(sql or '')
+    translated = re.sub(r'\[([^\]]+)\]', r'`\1`', translated)
+    translated = re.sub(r'\bUCASE\s*\(', 'UPPER(', translated, flags=re.IGNORECASE)
+    translated = re.sub(r'@@IDENTITY\b', 'LAST_INSERT_ID()', translated, flags=re.IGNORECASE)
+    translated = re.sub(r'\bCOUNTER\b', 'INT AUTO_INCREMENT', translated, flags=re.IGNORECASE)
+    translated = re.sub(r'\bTEXT\((\d+)\)', r'VARCHAR(\1)', translated, flags=re.IGNORECASE)
+    translated = re.sub(r'\bAUTOINCREMENT\b', 'AUTO_INCREMENT', translated, flags=re.IGNORECASE)
+    translated = _replace_cstr_calls(translated)
+
+    top_match = re.match(r'^(\s*SELECT\s+)TOP\s+(\d+)\s+', translated, flags=re.IGNORECASE | re.DOTALL)
+    if top_match:
+        prefix = top_match.group(1)
+        limit = top_match.group(2)
+        translated = re.sub(
+            r'^(\s*SELECT\s+)TOP\s+\d+\s+',
+            prefix,
+            translated,
+            count=1,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        stripped = translated.rstrip().rstrip(';')
+        if ' LIMIT ' not in stripped.upper():
+            translated = f'{stripped} LIMIT {limit}'
+        else:
+            translated = stripped
+
+    translated = translated.replace('?', '%s')
+    return translated
+
+
+class CompatCursor:
+    """Cursor com camada minima de compatibilidade entre Access e MySQL."""
+
+    def __init__(self, raw_cursor, backend):
+        self._raw_cursor = raw_cursor
+        self._backend = backend
+
+    @property
+    def description(self):
+        return self._raw_cursor.description
+
+    @property
+    def rowcount(self):
+        return self._raw_cursor.rowcount
+
+    def execute(self, sql, params=None):
+        if self._backend == MYSQL_BACKEND:
+            sql = _translate_mysql_sql(sql)
+        if params is None:
+            self._raw_cursor.execute(sql)
+        else:
+            self._raw_cursor.execute(sql, tuple(params))
+        return self
+
+    def fetchone(self):
+        return self._raw_cursor.fetchone()
+
+    def fetchall(self):
+        return self._raw_cursor.fetchall()
+
+    def close(self):
+        return self._raw_cursor.close()
+
+    def columns(self, table=None, column=None):
+        if self._backend != MYSQL_BACKEND:
+            return self._raw_cursor.columns(table=table, column=column)
+
+        sql = (
+            'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS '
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s'
+        )
+        params = [table]
+        if column is not None:
+            sql += ' AND COLUMN_NAME = %s'
+            params.append(column)
+        sql += ' LIMIT 1'
+        self._raw_cursor.execute(sql, tuple(params))
+        return self
+
+    def tables(self, table=None, tableType='TABLE'):
+        if self._backend != MYSQL_BACKEND:
+            return self._raw_cursor.tables(table=table, tableType=tableType)
+
+        mysql_type = 'BASE TABLE' if str(tableType or '').upper() == 'TABLE' else str(tableType or '')
+        sql = (
+            'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES '
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND TABLE_TYPE = %s '
+            'LIMIT 1'
+        )
+        self._raw_cursor.execute(sql, (table, mysql_type))
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self._raw_cursor, name)
+
+
+class CompatConnection:
+    """Conexao que devolve cursores compatíveis e preserva a API usada no projeto."""
+
+    def __init__(self, raw_connection, backend):
+        self._raw_connection = raw_connection
+        self._backend = backend
+
+    @property
+    def autocommit(self):
+        return self._raw_connection.autocommit
+
+    @autocommit.setter
+    def autocommit(self, value):
+        self._raw_connection.autocommit = value
+
+    def cursor(self):
+        return CompatCursor(self._raw_connection.cursor(), self._backend)
+
+    def execute(self, sql, params=None):
+        cursor = self.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
+    def commit(self):
+        return self._raw_connection.commit()
+
+    def close(self):
+        return self._raw_connection.close()
+
+    def __getattr__(self, name):
+        return getattr(self._raw_connection, name)
+
+
+def resolve_db_path():
+    """Resolve o alvo do banco de producao.
+
+    Em MySQL retorna um DSN legível; em Access mantém a resolução do MDB.
     """
+    if DB_BACKEND == MYSQL_BACKEND:
+        return _format_mysql_target(_resolve_mysql_mode_config('production'))
+
     # Variavel de ambiente tem prioridade maxima (permite override em qualquer maquina).
     env_override = os.environ.get('WMS_MDB_PATH_PROD', '').strip()
     if not env_override:
@@ -89,10 +336,13 @@ def resolve_db_path():
 
 
 def resolve_db_path_test():
-    """Resolve caminho do MDB de teste.
+    """Resolve o alvo do banco de teste.
 
-    Prioridade: WMS_MDB_PATH_TEST (env) → mesmo diretório do prod com sufixo _test.
+    Em MySQL retorna um DSN legível; em Access mantém a resolução do MDB.
     """
+    if DB_BACKEND == MYSQL_BACKEND:
+        return _format_mysql_target(_resolve_mysql_mode_config('test'))
+
     env_override = os.environ.get('WMS_MDB_PATH_TEST', '').strip()
     if env_override:
         if os.path.isdir(env_override):
@@ -125,6 +375,11 @@ def switch_database(new_path: str):
 def get_db_path():
     """Retorna o caminho do banco atualmente ativo."""
     return DB_PATH
+
+
+def get_db_backend():
+    """Retorna o backend de banco configurado."""
+    return DB_BACKEND
 
 
 def get_db_path_prod():
@@ -188,7 +443,7 @@ def _table_exists(cursor, table_name):
 
 
 def _run_ddl_on_conn(conn, sql):
-    """Executa DDL no Access via autocommit na conexão existente."""
+    """Executa DDL no backend atual via autocommit na conexão existente."""
     try:
         old_autocommit = conn.autocommit
         conn.autocommit = True
@@ -424,6 +679,8 @@ def _ensure_triage_schema(conn):
 @lru_cache(maxsize=1)
 def get_access_driver_name():
     """Resolve o melhor driver ODBC do Access disponível no Windows."""
+    if pyodbc is None:
+        return None
     installed = [driver.strip() for driver in pyodbc.drivers()]
     if not installed:
         return None
@@ -446,13 +703,7 @@ def get_access_driver_name():
     return None
 
 def get_connection():
-    """Retorna uma conexão com o banco de dados MDB (reutiliza por thread)"""
-    if pyodbc is None:
-        raise RuntimeError(
-            'O pacote pyodbc nao esta instalado neste ambiente Python. '
-            'Instale com "pip install pyodbc" e garanta o driver ODBC do Access. '
-            f'Detalhe: {_PYODBC_IMPORT_ERROR}'
-        )
+    """Retorna uma conexão com o banco configurado (reutiliza por thread)."""
 
     conn = getattr(_thread_local, 'connection', None)
     conn_gen = getattr(_thread_local, 'db_generation', -1)
@@ -466,7 +717,7 @@ def get_connection():
         conn = None
         _thread_local.connection = None
 
-    if not os.path.exists(DB_PATH):
+    if DB_BACKEND == ACCESS_BACKEND and not os.path.exists(DB_PATH):
         raise RuntimeError(
             f'Arquivo MDB nao encontrado no caminho configurado: "{DB_PATH}". '
             'Use o banco oficial em C:\\APPS MASTER\\WMS\\WMS_BD\\wms_database.mdb '
@@ -489,21 +740,62 @@ def get_connection():
                 pass
             _thread_local.connection = None
 
-    driver_name = get_access_driver_name()
-    if not driver_name:
-        raise RuntimeError(
-            'Nenhum driver ODBC do Microsoft Access foi encontrado. '
-            'Instale o "Microsoft Access Database Engine" (x64) para usar arquivos .mdb/.accdb.'
-        )
+    if DB_BACKEND == MYSQL_BACKEND:
+        if _MYSQL_IMPORT_ERROR is not None:
+            raise RuntimeError(
+                'O pacote mysql-connector-python nao esta instalado neste ambiente Python. '
+                'Instale com "pip install mysql-connector-python". '
+                f'Detalhe: {_MYSQL_IMPORT_ERROR}'
+            )
 
-    conn_str = f'Driver={{{driver_name}}};DBQ={DB_PATH};'
-    try:
-        _thread_local.connection = pyodbc.connect(conn_str)
-    except pyodbc.Error as exc:
-        raise RuntimeError(
-            f'Falha ao conectar no banco MDB usando driver "{driver_name}" em "{DB_PATH}". '
-            f'Detalhe: {exc}'
-        ) from exc
+        config = _resolve_current_mysql_config()
+        if not config.get('user') or not config.get('database'):
+            raise RuntimeError(
+                'Configuracao MySQL incompleta. Defina ao menos WMS_MYSQL_USER e '
+                'WMS_MYSQL_DATABASE (ou suas variantes _PROD/_TEST) no .env.'
+            )
+
+        try:
+            raw_connection = mysql.connector.connect(
+                host=config['host'],
+                port=config['port'],
+                user=config['user'],
+                password=config['password'],
+                database=config['database'],
+                autocommit=False,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f'Falha ao conectar no MySQL em "{DB_PATH}". Detalhe: {exc}'
+            ) from exc
+
+        _thread_local.connection = CompatConnection(raw_connection, MYSQL_BACKEND)
+    else:
+        if pyodbc is None:
+            raise RuntimeError(
+                'O pacote pyodbc nao esta instalado neste ambiente Python. '
+                'Instale com "pip install pyodbc" e garanta o driver ODBC do Access. '
+                f'Detalhe: {_PYODBC_IMPORT_ERROR}'
+            )
+
+        driver_name = get_access_driver_name()
+        if not driver_name:
+            raise RuntimeError(
+                'Nenhum driver ODBC do Microsoft Access foi encontrado. '
+                'Instale o "Microsoft Access Database Engine" (x64) para usar arquivos .mdb/.accdb.'
+            )
+
+        conn_str = f'Driver={{{driver_name}}};DBQ={DB_PATH};'
+        try:
+            raw_connection = pyodbc.connect(conn_str)
+        except pyodbc.Error as exc:
+            raise RuntimeError(
+                f'Falha ao conectar no banco MDB usando driver "{driver_name}" em "{DB_PATH}". '
+                f'Detalhe: {exc}'
+            ) from exc
+
+        _thread_local.connection = CompatConnection(raw_connection, ACCESS_BACKEND)
+
     _thread_local.db_generation = _db_generation
     _ensure_unit_schema(_thread_local.connection)
     _ensure_triage_schema(_thread_local.connection)

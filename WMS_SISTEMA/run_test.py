@@ -1,4 +1,4 @@
-"""
+r"""
 WMS - Servidor de TESTE local (porta 5001)
 NUNCA altere o banco de produção.
 
@@ -60,7 +60,8 @@ from web_app import app, start_daily_backup_scheduler, start_telegram_schedulers
 print("=" * 60)
 print("WMS Web Application - MODO TESTE (banco de rede)")
 print("=" * 60)
-print(f"[INFO] Banco MDB teste : {db_mdb.get_db_path()}")
+print(f"[INFO] Backend teste   : {db_mdb.get_db_backend()}")
+print(f"[INFO] Banco teste     : {db_mdb.get_db_path()}")
 
 try:
     stats = db_mdb.get_database_stats()
