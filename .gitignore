@@ -46,3 +46,4 @@ xref-*.html
 localpycs/
 *.txt
 *.pdf
+*.md

@@ -231,6 +231,11 @@
     <div class="login-brand">
         <div class="login-brand-logo">
             <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" height="120" style="object-fit: contain;">
+            {% if has_custom_logo_global and client_logo_url %}
+            <div class="mt-2" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+                <img src="{{ client_logo_url }}" alt="Logo do cliente" style="height:34px;max-width:180px;object-fit:contain;">
+            </div>
+            {% endif %}
         </div>
         <div class="login-brand-body">
             <h2>Gestão da sua indústria<br>sem complicação.</h2>

@@ -7,3 +7,4 @@ Regras:
 - Reutilizar Services existentes.
 - Não duplicar lógica.
 - Seguir a estrutura atual do projeto.
+- Sempre utilizar o DESIGN-apple.md para criar novas telas ou editar o front-end.

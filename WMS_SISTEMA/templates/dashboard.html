@@ -175,6 +175,11 @@
     <div class="col-md-12">
         <div class="text-center mb-4">
             <img src="{{ url_for('static', filename='images/nismosystem_logo_png_preto.png') }}" alt="Logo NISMO" height="150" loading="lazy" style="object-fit: contain;">
+            {% if has_custom_logo_global and client_logo_url %}
+            <div class="mt-2 d-flex align-items-center justify-content-center gap-2">
+                <img src="{{ client_logo_url }}" alt="Logo do cliente" height="54" loading="lazy" style="object-fit: contain; max-width: 220px;">
+            </div>
+            {% endif %}
         </div>
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
             <h1 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h1>

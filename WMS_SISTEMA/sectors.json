@@ -69,5 +69,15 @@
       "etiquetas",
       "etiq_criar"
     ]
+  },
+  "TS": {
+    "name": "TS",
+    "description": "ts",
+    "status": "active",
+    "created_at": "09/07/2026 09:40:56",
+    "permissions": [
+      "search",
+      "search_cross_sector"
+    ]
   }
 }

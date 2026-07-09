@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}Início - NISMO{% endblock %}
+
+{% block content %}
+<style>
+    .start-shell {
+        max-width: 1240px;
+        margin: 0 auto;
+    }
+
+    .start-hero {
+        position: relative;
+        overflow: hidden;
+        border: 0;
+        border-radius: 24px;
+        background:
+            radial-gradient(circle at 15% 15%, rgba(255, 255, 255, 0.26), transparent 32%),
+            radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.18), transparent 28%),
+            linear-gradient(120deg, #0b2540 0%, #154f75 48%, #2f8f9d 100%);
+        color: #fff;
+        box-shadow: 0 24px 64px rgba(7, 28, 53, 0.26);
+    }
+
+    .start-hero::after {
+        content: "";
+        position: absolute;
+        right: -64px;
+        bottom: -92px;
+        width: 250px;
+        height: 250px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .start-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.38rem 0.78rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        background: rgba(255, 255, 255, 0.12);
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+        font-weight: 700;
+    }
+
+    .start-title {
+        margin-top: 1rem;
+        margin-bottom: 0.65rem;
+        color: #fff;
+        font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+        font-weight: 900;
+        letter-spacing: -0.035em;
+    }
+
+    .start-lead {
+        margin-bottom: 1.4rem;
+        max-width: 760px;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 1rem;
+        line-height: 1.7;
+    }
+
+    .start-meta-wrap {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.8rem;
+    }
+
+    .start-meta {
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(6, 18, 32, 0.32);
+        padding: 0.7rem 0.8rem;
+    }
+
+    .start-meta small {
+        display: block;
+        font-size: 0.74rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.72);
+        margin-bottom: 0.12rem;
+    }
+
+    .start-meta strong {
+        display: block;
+        color: #fff;
+        font-size: 0.98rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+    }
+
+    .start-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .start-card {
+        position: relative;
+        border: 1px solid #dde3ea;
+        border-radius: 18px;
+        background: linear-gradient(170deg, #ffffff 0%, #f8fbff 100%);
+        padding: 1rem;
+        box-shadow: 0 14px 34px rgba(16, 24, 40, 0.08);
+        text-decoration: none;
+        color: inherit;
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        min-height: 168px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+    }
+
+    .start-card:hover,
+    .start-card:focus-visible {
+        transform: translateY(-3px);
+        box-shadow: 0 18px 40px rgba(16, 24, 40, 0.13);
+        border-color: #c4d0dd;
+    }
+
+    .start-card-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        color: #fff;
+    }
+
+    .start-card h3 {
+        margin: 0;
+        font-size: 1.06rem;
+        letter-spacing: -0.02em;
+    }
+
+    .start-card p {
+        margin: 0;
+        color: #506176;
+        line-height: 1.55;
+        font-size: 0.92rem;
+        flex: 1;
+    }
+
+    .start-card-cta {
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: #1f4f9c;
+    }
+
+    .tone-ocean .start-card-icon { background: linear-gradient(135deg, #0f4fa8, #2176d2); }
+    .tone-mint .start-card-icon { background: linear-gradient(135deg, #0f766e, #14b8a6); }
+    .tone-sun .start-card-icon { background: linear-gradient(135deg, #d97706, #f59e0b); }
+    .tone-sky .start-card-icon { background: linear-gradient(135deg, #0369a1, #0ea5e9); }
+    .tone-violet .start-card-icon { background: linear-gradient(135deg, #6d28d9, #8b5cf6); }
+    .tone-ember .start-card-icon { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+    .tone-teal .start-card-icon { background: linear-gradient(135deg, #0f766e, #14b8a6); }
+    .tone-steel .start-card-icon { background: linear-gradient(135deg, #334155, #64748b); }
+    .tone-grape .start-card-icon { background: linear-gradient(135deg, #7e22ce, #a855f7); }
+    .tone-stone .start-card-icon { background: linear-gradient(135deg, #57534e, #78716c); }
+    .tone-copper .start-card-icon { background: linear-gradient(135deg, #9a3412, #ea580c); }
+    .tone-ink .start-card-icon { background: linear-gradient(135deg, #1f2937, #374151); }
+
+    .start-empty {
+        border: 1px dashed #c7d2df;
+        border-radius: 16px;
+        padding: 1.2rem;
+        background: #f8fafc;
+        color: #475569;
+    }
+
+    .start-hero .btn {
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+    }
+
+    .start-hero .btn:hover {
+        background: rgba(255, 255, 255, 0.22);
+        color: #fff;
+    }
+
+    @media (max-width: 991.98px) {
+        .start-meta-wrap { grid-template-columns: 1fr 1fr; }
+        .start-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 767.98px) {
+        .start-meta-wrap { grid-template-columns: 1fr; }
+        .start-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="start-shell">
+    <section class="start-hero mb-4">
+        <div class="card-body p-4 p-lg-5 position-relative">
+            <div class="start-kicker">
+                <i class="bi bi-stars"></i>
+                Painel Inicial
+            </div>
+            <h1 class="start-title">Olá, {{ current_user }}. Vamos começar seu turno.</h1>
+            <p class="start-lead">
+                Este é o seu ponto de partida no NISMO. Aqui você abre apenas os módulos que
+                seu setor já possui habilitados, sem cair em bloqueios de permissão.
+            </p>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                {% if can_open_dashboard %}
+                <a class="btn" href="{{ url_for('dashboard') }}">
+                    <i class="bi bi-speedometer2 me-1"></i> Abrir Dashboard
+                </a>
+                {% endif %}
+                <a class="btn" href="{{ url_for('about') }}">
+                    <i class="bi bi-info-circle me-1"></i> Sobre o Sistema
+                </a>
+            </div>
+            <div class="start-meta-wrap">
+                <div class="start-meta">
+                    <small>Unidade</small>
+                    <strong>{{ current_unit }}</strong>
+                </div>
+                <div class="start-meta">
+                    <small>Setor ativo</small>
+                    <strong>{{ sector_label }}</strong>
+                </div>
+                <div class="start-meta">
+                    <small>Contexto</small>
+                    <strong>{{ sector_description }}</strong>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h2 class="mb-0"><i class="bi bi-grid"></i> Módulos disponíveis</h2>
+            <small class="text-muted">{{ available_actions|length }} atalhos liberados para o seu perfil</small>
+        </div>
+
+        {% if available_actions %}
+        <div class="start-grid">
+            {% for action in available_actions %}
+            <a class="start-card tone-{{ action.tone }}" href="{{ action.url }}">
+                <span class="start-card-icon"><i class="bi {{ action.icon }}"></i></span>
+                <h3>{{ action.title }}</h3>
+                <p>{{ action.description }}</p>
+                <span class="start-card-cta">Entrar no módulo <i class="bi bi-arrow-right-short"></i></span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="start-empty">
+            Nenhum módulo operacional está habilitado para este setor no momento.
+            Solicite ao administrador a liberação das permissões necessárias.
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

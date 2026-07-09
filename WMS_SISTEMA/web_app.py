@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from functools import wraps
 from datetime import datetime, timedelta
 import json
+import imghdr
 import logging
 import os
 import re
@@ -17,6 +18,7 @@ import time
 import unicodedata
 import uuid
 from logging.handlers import RotatingFileHandler
+from werkzeug.utils import secure_filename
 
 # Carrega variáveis do arquivo .env ANTES de importar db_mdb,
 # para que WMS_MDB_PATH já esteja disponível quando DB_PATH for resolvido.
@@ -83,6 +85,11 @@ OPTO_SCHEDULER_PATH = os.path.join(DATA_BASE_DIR, 'opto_scheduler.json')
 DB_MODE_FILE           = os.path.join(DATA_BASE_DIR, 'db_mode.json')
 IP_ACL_PATH            = os.path.join(DATA_BASE_DIR, 'ip_acl.json')
 AUDIT_HISTORY_PATH     = os.path.join(DATA_BASE_DIR, 'conference_history.json')
+BRANDING_DIR           = os.path.join(DATA_BASE_DIR, 'branding')
+BRANDING_LOGO_META     = os.path.join(BRANDING_DIR, 'logo_meta.json')
+
+BRANDING_ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
+BRANDING_MAX_LOGO_SIZE = 3 * 1024 * 1024
 
 AUDIT_HISTORY_LOCK = threading.Lock()
 AUDIT_HISTORY_LIMIT = 5
@@ -99,6 +106,146 @@ OPTO_OS_PREFIXES = ('9MA', '2BA', '6VA')
 # PERMISSION_FLAGS será carregado dinamicamente de load_permissions()
 # Inicializar com padrão vazio para evitar erro antes do Flask estar pronto
 PERMISSION_FLAGS = {}
+
+
+def _ensure_branding_dir():
+    os.makedirs(BRANDING_DIR, exist_ok=True)
+
+
+def _load_branding_logo_meta():
+    if not os.path.exists(BRANDING_LOGO_META):
+        return {}
+    try:
+        with open(BRANDING_LOGO_META, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_branding_logo_meta(filename):
+    _ensure_branding_dir()
+    payload = {
+        'filename': filename,
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    tmp = BRANDING_LOGO_META + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, BRANDING_LOGO_META)
+
+
+def _get_branding_logo_path():
+    meta = _load_branding_logo_meta()
+    filename = str(meta.get('filename', '')).strip()
+    if filename:
+        candidate = os.path.join(BRANDING_DIR, filename)
+        if os.path.exists(candidate):
+            return candidate
+    # Fallback para instalações antigas: procura arquivo com prefixo conhecido.
+    if os.path.isdir(BRANDING_DIR):
+        for name in os.listdir(BRANDING_DIR):
+            low = name.lower()
+            if low.startswith('client_logo') and os.path.splitext(low)[1] in BRANDING_ALLOWED_EXTENSIONS:
+                return os.path.join(BRANDING_DIR, name)
+    return None
+
+
+def _save_branding_logo(file_storage):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        return False, 'Selecione um arquivo de logo para enviar.'
+
+    raw_name = secure_filename(file_storage.filename)
+    ext = os.path.splitext(raw_name)[1].lower()
+    if ext not in BRANDING_ALLOWED_EXTENSIONS:
+        return False, 'Formato inválido. Use PNG, JPG, JPEG ou WEBP.'
+
+    try:
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = file_storage.stream.tell()
+        file_storage.stream.seek(0)
+    except Exception:
+        size = 0
+
+    if size <= 0:
+        return False, 'Arquivo vazio ou inválido.'
+    if size > BRANDING_MAX_LOGO_SIZE:
+        return False, 'Arquivo muito grande. Tamanho máximo: 3 MB.'
+
+    # Validação de conteúdo para evitar upload com extensão forjada.
+    try:
+        header = file_storage.stream.read(1024)
+        file_storage.stream.seek(0)
+        detected = imghdr.what(None, header)
+    except Exception:
+        detected = None
+
+    detected_ext_map = {
+        'png': '.png',
+        'jpeg': '.jpg',
+        'webp': '.webp',
+    }
+    detected_ext = detected_ext_map.get(detected)
+    if not detected_ext:
+        return False, 'Arquivo inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.'
+    if ext in ('.jpg', '.jpeg') and detected_ext != '.jpg':
+        return False, 'Conteúdo do arquivo não corresponde à extensão JPG/JPEG.'
+    if ext not in ('.jpg', '.jpeg') and detected_ext != ext:
+        return False, 'Conteúdo do arquivo não corresponde à extensão informada.'
+
+    _ensure_branding_dir()
+    # Remove logo anterior para evitar acúmulo de arquivos não utilizados.
+    old_logo = _get_branding_logo_path()
+    if old_logo and os.path.exists(old_logo):
+        try:
+            os.remove(old_logo)
+        except Exception:
+            pass
+
+    filename = f'client_logo{ext}'
+    final_path = os.path.join(BRANDING_DIR, filename)
+    file_storage.save(final_path)
+    _save_branding_logo_meta(filename)
+    return True, 'Logo atualizada com sucesso.'
+
+
+def _remove_branding_logo():
+    removed = False
+    current = _get_branding_logo_path()
+    if current and os.path.exists(current):
+        try:
+            os.remove(current)
+            removed = True
+        except Exception:
+            pass
+
+    if os.path.exists(BRANDING_LOGO_META):
+        try:
+            os.remove(BRANDING_LOGO_META)
+        except Exception:
+            pass
+    return removed
+
+
+def _guess_mime_from_ext(path):
+    ext = os.path.splitext(path.lower())[1]
+    if ext == '.png':
+        return 'image/png'
+    if ext in ('.jpg', '.jpeg'):
+        return 'image/jpeg'
+    if ext == '.webp':
+        return 'image/webp'
+    return 'application/octet-stream'
+
+
+def get_branding_logo_version():
+    logo_path = _get_branding_logo_path()
+    if logo_path and os.path.exists(logo_path):
+        try:
+            return str(int(os.path.getmtime(logo_path)))
+        except Exception:
+            return '1'
+    return '0'
 
 # ============================================================================
 # LOGGER WMS
@@ -1251,6 +1398,127 @@ ETIQ_FEATURE_PERMISSIONS = (
     'etiq_reimprimir',
 )
 
+START_PAGE_ACTION_SPECS = [
+    {
+        'feature': 'dashboard',
+        'title': 'Dashboard',
+        'description': 'Visualize prateleiras, lotação e movimentação ativa do setor.',
+        'icon': 'bi-speedometer2',
+        'endpoint': 'dashboard',
+        'tone': 'ocean'
+    },
+    {
+        'feature': 'search',
+        'title': 'Buscar',
+        'description': 'Pesquise pedidos, caixas e posições com filtros rápidos.',
+        'icon': 'bi-search',
+        'endpoint': 'search_orders',
+        'tone': 'mint'
+    },
+    {
+        'feature': 'audit',
+        'title': 'Conferência',
+        'description': 'Valide endereços e salve auditorias por setor.',
+        'icon': 'bi-clipboard2-check',
+        'endpoint': 'audit_select',
+        'tone': 'sun'
+    },
+    {
+        'feature': 'triage',
+        'title': 'Triagem',
+        'description': 'Acesse o recebimento e a visualização da triagem.',
+        'icon': 'bi-clipboard-check',
+        'endpoint': 'triage_receiving',
+        'tone': 'sky'
+    },
+    {
+        'feature': 'etiquetas_bundle',
+        'title': 'Etiquetas',
+        'description': 'Gere e reimprima etiquetas para expedição e roteiros.',
+        'icon': 'bi-tag-fill',
+        'endpoint': 'etiquetas.index',
+        'tone': 'violet'
+    },
+    {
+        'feature': 'checkout',
+        'title': 'Saída',
+        'description': 'Finalize pedidos e registre a expedição no sistema.',
+        'icon': 'bi-box-arrow-up',
+        'endpoint': 'checkout_order',
+        'tone': 'ember'
+    },
+    {
+        'feature': 'confirmations',
+        'title': 'Conferência de OS',
+        'description': 'Registre validações de OS e acompanhe o histórico.',
+        'icon': 'bi-check2-circle',
+        'endpoint': 'confirmations.confirmations_page',
+        'tone': 'teal'
+    },
+    {
+        'feature': 'expedicao',
+        'title': 'Expedição',
+        'description': 'Execute check-in, picking, doublecheck e embalagem.',
+        'icon': 'bi-truck',
+        'endpoint': 'expedicao.index',
+        'tone': 'steel'
+    },
+    {
+        'feature': 'users',
+        'title': 'Usuários',
+        'description': 'Gerencie acessos, setores e status de usuários.',
+        'icon': 'bi-people',
+        'endpoint': 'list_users',
+        'tone': 'grape'
+    },
+    {
+        'feature': 'movements',
+        'title': 'Histórico',
+        'description': 'Consulte trilhas de auditoria e eventos operacionais.',
+        'icon': 'bi-clock-history',
+        'endpoint': 'view_movements',
+        'tone': 'stone'
+    },
+    {
+        'feature': 'settings',
+        'title': 'Configurações',
+        'description': 'Ajuste parâmetros do sistema e notificações.',
+        'icon': 'bi-gear',
+        'endpoint': 'settings',
+        'tone': 'copper'
+    },
+]
+
+
+def build_start_page_actions():
+    """Monta ações da tela inicial com base nas permissões do usuário logado."""
+    actions = []
+    for spec in START_PAGE_ACTION_SPECS:
+        feature = spec['feature']
+        if feature == 'etiquetas_bundle':
+            enabled = can_access_any_feature(ETIQ_FEATURE_PERMISSIONS)
+        else:
+            enabled = can_access_feature(feature)
+        if not enabled:
+            continue
+
+        actions.append({
+            'title': spec['title'],
+            'description': spec['description'],
+            'icon': spec['icon'],
+            'url': url_for(spec['endpoint']),
+            'tone': spec['tone']
+        })
+
+    actions.append({
+        'title': 'Sobre o Sistema',
+        'description': 'Leia visão geral da plataforma e informações de suporte.',
+        'icon': 'bi-info-circle',
+        'url': url_for('about'),
+        'tone': 'ink'
+    })
+    return actions
+
 
 def get_search_sector_scope():
     """Retorna o setor usado na busca; None libera pesquisa em todos os setores."""
@@ -1264,12 +1532,22 @@ def require_feature_access(feature, message=None, redirect_endpoint='dashboard')
         return None
     flash(message or 'Acesso restrito para este setor.', 'danger')
     if redirect_endpoint:
-        return redirect(url_for(redirect_endpoint))
+        target_endpoint = redirect_endpoint if redirect_endpoint in app.view_functions else get_home_endpoint()
+        return redirect(url_for(target_endpoint))
     return render_template(
         'error.html',
         title='Acesso restrito',
         message=message or 'Acesso restrito para este setor.'
     ), 403
+
+
+def get_home_endpoint():
+    """Resolve endpoint inicial seguro para evitar BuildError em deploy parcial."""
+    if 'start_page' in app.view_functions:
+        return 'start_page'
+    if 'dashboard' in app.view_functions:
+        return 'dashboard'
+    return 'index'
 
 
 app.jinja_env.globals['can_access_feature'] = can_access_feature
@@ -1280,12 +1558,19 @@ def inject_admin_context():
     """Injeta variáveis globais úteis em todos os templates."""
     sectors = load_sectors()
     current_sec = session.get('sector', DEFAULT_SECTOR)
+    home_endpoint = get_home_endpoint()
+    try:
+        home_url = url_for(home_endpoint)
+    except Exception:
+        home_url = '/'
     # Carregar permissões - versão simplificada para evitar problemas
     try:
         permissions = load_permissions()
     except:
         permissions = {}
     permission_labels = {perm_id: perm['name'] for perm_id, perm in permissions.items()}
+    logo_version = get_branding_logo_version()
+    has_custom_logo = logo_version != '0'
     return {
         'is_admin': session.get('user', '').lower() == 'admin',
         'all_units': AVAILABLE_UNITS,
@@ -1312,6 +1597,10 @@ def inject_admin_context():
         'can_access_expedicao_doublecheck': can_access_feature('expedicao_doublecheck'),
         'can_access_expedicao_embalagem': can_access_feature('expedicao_embalagem'),
         'can_access_shelf_level_clients': can_access_feature('shelf_level_clients'),
+        'home_endpoint': home_endpoint,
+        'home_url': home_url,
+        'client_logo_url': url_for('get_logo', v=logo_version) if has_custom_logo else None,
+        'has_custom_logo_global': has_custom_logo,
         'permission_labels': permission_labels,
         'all_permissions': permissions,
     }
@@ -2202,8 +2491,13 @@ def api_best_position(zone):
 
 @app.route('/logo')
 def get_logo():
-    """Serve a logo NISMO a partir do diretório de estáticos do projeto."""
+    """Serve a logo do cliente (quando configurada) com fallback padrão."""
+    custom_logo = _get_branding_logo_path()
+    if custom_logo and os.path.exists(custom_logo):
+        return send_file(custom_logo, mimetype=_guess_mime_from_ext(custom_logo))
+
     logo_paths = [
+        os.path.join(get_resource_base_dir(), 'static', 'images', 'nismosystem_logo_png_sem_fundo.png'),
         os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.jpg'),
         os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.png'),
         os.path.join(get_resource_base_dir(), 'static', 'images', 'nismo_logo_jpg.webp'),
@@ -2238,8 +2532,34 @@ def get_logo():
 def index():
     """Página inicial - redireciona para dashboard ou login"""
     if 'user' in session:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('start_page'))
     return redirect(url_for('login'))
+
+
+@app.route('/inicio')
+@login_required
+def start_page():
+    """Tela inicial pós-login com atalhos conforme permissões do setor."""
+    actions = build_start_page_actions()
+
+    sectors = load_sectors()
+    active_sector = session.get('sector', DEFAULT_SECTOR)
+    if active_sector == 'ALL':
+        sector_label = 'Todos os setores'
+        sector_description = 'Acesso administrativo com visão global da unidade.'
+    else:
+        sector_label = active_sector
+        sector_description = sectors.get(active_sector, {}).get('description') or 'Setor operacional da unidade atual.'
+
+    return render_template(
+        'start_page.html',
+        current_user=session.get('user', ''),
+        current_unit=session.get('unit', DEFAULT_UNIT),
+        sector_label=sector_label,
+        sector_description=sector_description,
+        available_actions=actions,
+        can_open_dashboard=can_access_feature('dashboard')
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -2302,7 +2622,7 @@ def login():
                 session['permissions'] = list(get_sector_permissions(session['sector']))
             flash(f'Bem-vindo, {username}!', 'success')
             wms_logger.info(f'LOGIN OK | user={username} unit={session["unit"]} ip={request.remote_addr}')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('start_page'))
         
         wms_logger.warning(f'LOGIN FALHOU | user={username} unit={unit} ip={request.remote_addr}')
         flash('Usuário ou senha incorretos', 'danger')
@@ -2681,9 +3001,8 @@ def delete_permission(perm_id):
 @login_required
 def dashboard():
     """Dashboard principal com visualização de prateleiras e pedidos"""
-    access_denied = require_feature_access('dashboard', 'Acesso restrito ao dashboard/prateleiras.', redirect_endpoint=None)
-    if access_denied:
-        return access_denied
+    if not can_access_feature('dashboard'):
+        return redirect(url_for(get_home_endpoint()))
     try:
         unit = get_current_unit()
         sector = get_current_sector()
@@ -5218,29 +5537,46 @@ def settings():
     if request.method == 'POST':
         form_type = request.form.get('form_type', 'thresholds')
 
-        if form_type == 'telegram' and is_admin_user():
-            tg_cfg['notify_status_alerts'] = 'notify_status_alerts' in request.form
-            tg_cfg['notify_daily_report']  = 'notify_daily_report'  in request.form
-            raw_tiers = request.form.getlist('notify_tiers')
-            tg_cfg['notify_tiers'] = [t for t in raw_tiers if t in ('attention', 'urgent', 'critical')]
-            try:
-                tg_cfg['daily_report_hour'] = max(0, min(23, int(request.form.get('daily_report_hour', 8))))
-            except (ValueError, TypeError):
-                tg_cfg['daily_report_hour'] = 8
-            # Relatório de período
-            tg_cfg['scheduled_report_enabled']   = 'scheduled_report_enabled' in request.form
-            tg_cfg['scheduled_report_mode']       = request.form.get('scheduled_report_mode', 'month_to_date')
-            if tg_cfg['scheduled_report_mode'] not in ('month_to_date', 'full_month', 'custom_days'):
-                tg_cfg['scheduled_report_mode'] = 'month_to_date'
-            try:
-                tg_cfg['scheduled_report_hour']      = max(0, min(23, int(request.form.get('scheduled_report_hour', 8))))
-                tg_cfg['scheduled_report_start_day'] = max(1, min(28, int(request.form.get('scheduled_report_start_day', 1))))
-                tg_cfg['scheduled_report_end_day']   = max(0, min(31, int(request.form.get('scheduled_report_end_day', 0))))
-            except (ValueError, TypeError):
-                pass
-            save_telegram_config(tg_cfg)
-            flash('Configurações do Telegram salvas!', 'success')
-        else:
+        if form_type == 'branding':
+            if not is_admin_user():
+                flash('Somente administradores podem alterar a logo.', 'danger')
+            else:
+                action = request.form.get('branding_action', 'upload')
+                if action == 'remove':
+                    removed = _remove_branding_logo()
+                    if removed:
+                        flash('Logo personalizada removida. Logo padrão restaurada.', 'success')
+                    else:
+                        flash('Nenhuma logo personalizada para remover.', 'warning')
+                else:
+                    ok, msg = _save_branding_logo(request.files.get('client_logo'))
+                    flash(msg, 'success' if ok else 'danger')
+        elif form_type == 'telegram':
+            if not is_admin_user():
+                flash('Somente administradores podem alterar o Telegram.', 'danger')
+            else:
+                tg_cfg['notify_status_alerts'] = 'notify_status_alerts' in request.form
+                tg_cfg['notify_daily_report']  = 'notify_daily_report'  in request.form
+                raw_tiers = request.form.getlist('notify_tiers')
+                tg_cfg['notify_tiers'] = [t for t in raw_tiers if t in ('attention', 'urgent', 'critical')]
+                try:
+                    tg_cfg['daily_report_hour'] = max(0, min(23, int(request.form.get('daily_report_hour', 8))))
+                except (ValueError, TypeError):
+                    tg_cfg['daily_report_hour'] = 8
+                # Relatório de período
+                tg_cfg['scheduled_report_enabled'] = 'scheduled_report_enabled' in request.form
+                tg_cfg['scheduled_report_mode'] = request.form.get('scheduled_report_mode', 'month_to_date')
+                if tg_cfg['scheduled_report_mode'] not in ('month_to_date', 'full_month', 'custom_days'):
+                    tg_cfg['scheduled_report_mode'] = 'month_to_date'
+                try:
+                    tg_cfg['scheduled_report_hour'] = max(0, min(23, int(request.form.get('scheduled_report_hour', 8))))
+                    tg_cfg['scheduled_report_start_day'] = max(1, min(28, int(request.form.get('scheduled_report_start_day', 1))))
+                    tg_cfg['scheduled_report_end_day'] = max(0, min(31, int(request.form.get('scheduled_report_end_day', 0))))
+                except (ValueError, TypeError):
+                    pass
+                save_telegram_config(tg_cfg)
+                flash('Configurações do Telegram salvas!', 'success')
+        elif form_type == 'thresholds':
             try:
                 green_days  = int(request.form.get('green_days',  thresholds['green_days']))
                 yellow_days = int(request.form.get('yellow_days', thresholds['yellow_days']))
@@ -5253,11 +5589,14 @@ def settings():
                     thresholds = load_time_thresholds()
             except (ValueError, TypeError):
                 flash('Valores inválidos. Informe números inteiros.', 'danger')
+        else:
+            flash('Tipo de configuração inválido.', 'warning')
 
     import telegram_notifier as tg
     db_mode = load_db_mode()
     active_users = get_active_users() if is_admin_user() else []
     opto_cfg = load_opto_scheduler_config()
+    custom_logo_path = _get_branding_logo_path()
     return render_template('settings.html',
                            thresholds=thresholds,
                            backup_log=get_backup_log_tail(),
@@ -5271,7 +5610,9 @@ def settings():
                            active_users=active_users,
                            ip_acl=get_ip_acl(),
                            maintenance_state=get_maintenance_state(),
-                           opto_cfg=opto_cfg)
+                           opto_cfg=opto_cfg,
+                           has_custom_logo=bool(custom_logo_path),
+                           logo_preview_url=url_for('get_logo', v=get_branding_logo_version()))
 
 
 @app.route('/admin/set-db-mode', methods=['POST'])

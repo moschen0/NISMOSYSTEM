@@ -24,6 +24,9 @@
         <!-- Tabs -->
         <ul class="nav nav-tabs mb-4" id="cfgTabs" role="tablist">
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabBanco" type="button"><i class="bi bi-database-gear"></i> Banco</button></li>
+            {% if is_admin %}
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabMarca" type="button"><i class="bi bi-image"></i> Marca</button></li>
+            {% endif %}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTelegram" type="button"><i class="bi bi-telegram"></i> Telegram</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabLimites" type="button"><i class="bi bi-clock-history"></i> Limites</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBackup" type="button"><i class="bi bi-archive"></i> Backup</button></li>
@@ -34,6 +37,64 @@
         </ul>
 
         <div class="tab-content">
+
+            {# ── TAB MARCA ────────────────────────────────────────────── #}
+            {% if is_admin %}
+            <div class="tab-pane fade" id="tabMarca">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-palette"></i> Logo do Cliente (Co-branding)
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            A logo da <strong>NISMO permanece fixa</strong>. A logo enviada aqui aparece como marca secundária do cliente no topo do sistema.
+                        </p>
+
+                        <div class="d-flex align-items-center flex-wrap gap-3 mb-3">
+                            <div>
+                                <div class="small text-muted mb-1">Logo NISMO (fixa)</div>
+                                <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" style="height:52px;object-fit:contain;">
+                            </div>
+                            <div class="vr"></div>
+                            <div>
+                                <div class="small text-muted mb-1">Logo do cliente (atual)</div>
+                                {% if has_custom_logo %}
+                                <img src="{{ logo_preview_url }}" alt="Logo do cliente" style="height:52px;max-width:220px;object-fit:contain;">
+                                {% else %}
+                                <span class="badge bg-secondary">Nenhuma logo enviada</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <form method="POST" action="{{ url_for('settings') }}" enctype="multipart/form-data" class="mb-2">
+                            <input type="hidden" name="form_type" value="branding">
+                            <input type="hidden" name="branding_action" value="upload">
+                            <div class="row g-3 align-items-end">
+                                <div class="col-md-8">
+                                    <label class="form-label small">Enviar nova logo do cliente (PNG/JPG/JPEG/WEBP, até 3 MB)</label>
+                                    <input type="file" name="client_logo" class="form-control" accept=".png,.jpg,.jpeg,.webp" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-upload"></i> Salvar Logo
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+
+                        {% if has_custom_logo %}
+                        <form method="POST" action="{{ url_for('settings') }}" onsubmit="return confirm('Remover apenas a logo do cliente e manter identidade NISMO?');">
+                            <input type="hidden" name="form_type" value="branding">
+                            <input type="hidden" name="branding_action" value="remove">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                <i class="bi bi-trash"></i> Remover Logo do Cliente
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
 
             {# ── TAB BANCO ────────────────────────────────────────────── #}
             <div class="tab-pane fade show active" id="tabBanco">

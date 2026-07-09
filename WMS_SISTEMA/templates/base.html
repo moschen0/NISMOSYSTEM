@@ -554,13 +554,18 @@
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
     <div class="container-fluid">
-        {% if can_access_dashboard %}
-        <a class="navbar-brand d-flex align-items-center" href="{{ url_for('dashboard') }}">
+        {% if session.user %}
+        <a class="navbar-brand d-flex align-items-center" href="{{ home_url }}">
         {% else %}
         <span class="navbar-brand d-flex align-items-center">
         {% endif %}
             <img src="{{ url_for('static', filename='images/nismosystem_logo_png_sem_fundo.png') }}" alt="Logo NISMO" height="60" style="object-fit: contain;">
-        {% if can_access_dashboard %}</a>{% else %}</span>{% endif %}
+            {% if has_custom_logo_global and client_logo_url %}
+            <span style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid rgba(255,255,255,0.22);">
+                <img src="{{ client_logo_url }}" alt="Logo do cliente" height="26" style="object-fit:contain;max-width:120px;">
+            </span>
+            {% endif %}
+        {% if session.user %}</a>{% else %}</span>{% endif %}
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -645,6 +650,11 @@
                     </a>
                 </li>
                 {% endif %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ home_url }}">
+                        <i class="bi bi-house-door"></i> Início
+                    </a>
+                </li>
                 {% if can_access_search %}
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('search_orders') }}">
@@ -713,6 +723,7 @@
                         <i class="bi bi-person-circle"></i> {{ session.user }}
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><a class="dropdown-item" href="{{ home_url }}"><i class="bi bi-house-door"></i> Início</a></li>
                         {% if can_access_dashboard %}<li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="bi bi-house"></i> Dashboard</a></li>{% endif %}
                         {% if can_access_users %}<li><a class="dropdown-item" href="{{ url_for('list_users') }}"><i class="bi bi-people"></i> Usuários</a></li>{% endif %}
                         {% if can_access_movements %}<li><a class="dropdown-item" href="{{ url_for('view_movements') }}"><i class="bi bi-clock-history"></i> Histórico</a></li>{% endif %}
@@ -835,7 +846,7 @@
         if      (key === 'n') { e.preventDefault(); window.location.href = "{{ url_for('add_order', bipador=1, quick=1) }}"; }
         else if (key === 's') { e.preventDefault(); window.location.href = "{{ url_for('search_orders') }}"; }
         else if (key === 'o') { e.preventDefault(); window.location.href = "{{ url_for('checkout_order') }}"; }
-        else if (key === 'd') { e.preventDefault(); window.location.href = "{{ url_for('dashboard') }}"; }
+        else if (key === 'd') { e.preventDefault(); window.location.href = "{{ url_for('dashboard') if can_access_dashboard else home_url }}"; }
     });
 
     // Konami Code
