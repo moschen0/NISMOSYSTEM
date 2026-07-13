@@ -5,6 +5,7 @@ import os
 import sys
 from functools import wraps
 from io import BytesIO
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -236,11 +237,59 @@ def _normalize_horario(value: Any) -> str:
         return value.strftime("%H:%M")
     if isinstance(value, _dt.timedelta):
         total = int(value.total_seconds())
-        return f"{total // 3600:02d}:{(total % 3600) // 60:02d}"
+        if total < 0:
+            total = 0
+        hours = (total // 3600) % 24
+        minutes = (total % 3600) // 60
+        return f"{hours:02d}:{minutes:02d}"
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            as_decimal = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return str(value).strip()
+        # Excel stores time as day fraction (e.g. 14:20 -> 0.59722...)
+        if Decimal("0") <= as_decimal < Decimal("1"):
+            total_minutes = int((as_decimal * Decimal("1440")).quantize(Decimal("1")))
+            hours = (total_minutes // 60) % 24
+            minutes = total_minutes % 60
+            return f"{hours:02d}:{minutes:02d}"
     raw = str(value).strip()
+    if not raw:
+        return ""
+    if "day" in raw and "," in raw:
+        raw = raw.split(",", 1)[1].strip()
+    if re.fullmatch(r"\d+(?:\.0+)?", raw):
+        numeric = raw.split(".", 1)[0]
+        if len(numeric) in {3, 4}:
+            hh = int(numeric[:-2])
+            mm = int(numeric[-2:])
+            if 0 <= hh <= 23 and 0 <= mm <= 59:
+                return f"{hh:02d}:{mm:02d}"
     parts = raw.split(":")
     if len(parts) == 3:
-        return f"{parts[0]}:{parts[1]}"
+        try:
+            return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        except ValueError:
+            return f"{parts[0]}:{parts[1]}"
+    if len(parts) == 2:
+        try:
+            hh = int(parts[0])
+            mm = int(parts[1])
+            if 0 <= hh <= 23 and 0 <= mm <= 59:
+                return f"{hh:02d}:{mm:02d}"
+        except ValueError:
+            pass
+    float_match = re.fullmatch(r"\d+\.\d+", raw)
+    if float_match:
+        try:
+            as_decimal = Decimal(raw)
+            if Decimal("0") <= as_decimal < Decimal("1"):
+                total_minutes = int((as_decimal * Decimal("1440")).quantize(Decimal("1")))
+                hours = (total_minutes // 60) % 24
+                minutes = total_minutes % 60
+                return f"{hours:02d}:{minutes:02d}"
+        except InvalidOperation:
+            pass
     return raw
 
 
@@ -250,7 +299,17 @@ def _normalize_numero_cliente(value: Any) -> int | None:
     try:
         return int(value)
     except (TypeError, ValueError):
+        pass
+    raw = str(value).strip()
+    if not raw:
         return None
+    try:
+        as_decimal = Decimal(raw)
+        if as_decimal == as_decimal.to_integral_value():
+            return int(as_decimal)
+    except (InvalidOperation, ValueError):
+        return None
+    return None
 
 
 def get_db_path() -> str:
@@ -597,7 +656,12 @@ def fetch_client_label_base(numero_cliente: int) -> tuple[Any, Any, Any, Any]:
     row = cursor.fetchone()
     if not row:
         return None, None, None, None
-    return row[0], row[1], row[2], row[3] or ""
+    return (
+        _normalize_numero_cliente(row[0]),
+        _normalize_text(row[1]),
+        _normalize_horario(row[2]),
+        _normalize_text(row[3]),
+    )
 
 
 def fetch_all_clients() -> list[dict[str, Any]]:
@@ -881,6 +945,10 @@ def upsert_client(
     cnpj: str = "",
 ) -> None:
     ensure_database_ready()
+    numero_cliente_norm = _normalize_numero_cliente(numero_cliente)
+    if numero_cliente_norm is None:
+        raise ValueError("Numero do cliente invalido.")
+    horario_roteiro_norm = _normalize_horario(horario_roteiro)
     with DB_FILE_LOCK:
         conn = db_mdb.get_connection()
         cursor = conn.cursor()
@@ -891,7 +959,7 @@ def upsert_client(
             WHERE numero_cliente = ?
             ORDER BY id DESC
             """,
-            (int(numero_cliente),),
+            (int(numero_cliente_norm),),
         )
         row = cursor.fetchone()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -907,7 +975,7 @@ def upsert_client(
                 (
                     nome_cliente or None,
                     cor_roteiro.upper(),
-                    horario_roteiro or None,
+                    horario_roteiro_norm or None,
                     entregador or None,
                     endereco or None,
                     numero or None,
@@ -931,10 +999,10 @@ def upsert_client(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    int(numero_cliente),
+                    int(numero_cliente_norm),
                     nome_cliente or None,
                     cor_roteiro.upper(),
-                    horario_roteiro or None,
+                    horario_roteiro_norm or None,
                     entregador or None,
                     endereco or None,
                     numero or None,
@@ -987,7 +1055,7 @@ def _create_or_get_roteiro(cor: str, entregador: str, horario: str, nome: str | 
             # normalize
             cor_n = (cor or "").strip()
             entregador_n = (entregador or "").strip()
-            horario_n = (horario or "").strip()
+            horario_n = _normalize_horario(horario)
             nome_n = (nome or "").strip() or None
 
             # try to find an existing roteiro with same cor+entregador+horario
