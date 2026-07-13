@@ -45,6 +45,15 @@ _SCHEMA_LOCK = Lock()
 _schema_ready = False
 
 
+def _get_runtime_data_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+SECTORS_PATH = os.path.join(_get_runtime_data_dir(), "sectors.json")
+
+
 def _import_integrador_opto():
     """Importa integrador_opto adicionando OPTO_INTEGRATIONS ao sys.path.
 
@@ -1184,6 +1193,60 @@ def _user_matches_current_sector(user_sector: str, current_sector: str) -> bool:
     return current_sector in sectors or user_sector == current_sector
 
 
+def _parse_user_sectors(user_sector: str) -> list[str]:
+    cleaned = str(user_sector or "").strip().upper()
+    if not cleaned:
+        return []
+    if cleaned == "ALL":
+        return ["ALL"]
+    return [part.strip().upper() for part in re.split(r"[;,|/]", cleaned) if part.strip()]
+
+
+def _load_sector_permissions() -> dict[str, set[str]]:
+    try:
+        with open(SECTORS_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    parsed: dict[str, set[str]] = {}
+    for sector_name, sector in raw.items():
+        if not isinstance(sector_name, str) or not isinstance(sector, dict):
+            continue
+        permissions = sector.get("permissions", [])
+        if isinstance(permissions, list):
+            parsed[sector_name.strip().upper()] = {
+                str(permission).strip()
+                for permission in permissions
+                if str(permission).strip()
+            }
+    return parsed
+
+
+def _user_has_missing_release_permission(user: dict[str, Any]) -> bool:
+    if str(user.get("username", "") or "").strip().lower() == "admin":
+        return True
+
+    sectors = _parse_user_sectors(user.get("sector", ""))
+    if "ALL" in sectors:
+        return True
+    if not sectors:
+        return False
+
+    sector_permissions = _load_sector_permissions()
+    if not sector_permissions:
+        return False
+
+    required_permission = "expedicao_doublecheck_autorizar_falta"
+    for sector_name in sectors:
+        if required_permission in sector_permissions.get(sector_name, set()):
+            return True
+    return False
+
+
 def _validate_doublecheck_leader(username: str, password: str) -> tuple[bool, str]:
     username = str(username or "").strip()
     password = str(password or "")
@@ -1209,6 +1272,8 @@ def _validate_doublecheck_leader(username: str, password: str) -> tuple[bool, st
     if username.lower() != "admin":
         if not _user_matches_current_sector(user.get("sector", ""), get_current_sector()):
             return False, "Líder não pertence ao setor atual."
+        if not _user_has_missing_release_permission(user):
+            return False, "Usuário sem permissão para autorizar finalização com falta."
 
     return True, "OK"
 
