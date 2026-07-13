@@ -915,10 +915,21 @@ def get_all_shelves(unit=None, sector=None):
     shelves = dicts_from_rows(cursor, rows)
     return shelves
 
+
+def normalize_shelf_zone(zone):
+    return str(zone or '').strip().upper()
+
+
+def normalize_shelf_module(module):
+    text = str(module or '').strip()
+    return text.zfill(2) if text.isdigit() else text.upper()
+
 def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DEFAULT_SECTOR, row_heights=None):
     """Adiciona uma nova prateleira"""
     unit = normalize_unit(unit)
     sector = sector or DEFAULT_SECTOR
+    zone = normalize_shelf_zone(zone)
+    module = normalize_shelf_module(module)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -929,6 +940,8 @@ def add_shelf(zone, module, levels, columns, slots, unit=DEFAULT_UNIT, sector=DE
 
 def get_shelf_level_clients(zone, module, unit=None, sector=None):
     """Retorna o dict {andar(str): client_number} vinculado a esta prateleira."""
+    zone = normalize_shelf_zone(zone)
+    module = normalize_shelf_module(module)
     conn = get_connection()
     cursor = conn.cursor()
     conditions = ["zone = ?", "module = ?"]
@@ -951,6 +964,8 @@ def get_shelf_level_clients(zone, module, unit=None, sector=None):
 
 def set_shelf_level_client(zone, module, level, client_number, unit=None, sector=None):
     """Vincula (ou remove, se client_number vazio) um client_number a um andar fixo."""
+    zone = normalize_shelf_zone(zone)
+    module = normalize_shelf_module(module)
     level_clients = get_shelf_level_clients(zone, module, unit=unit, sector=sector)
     level_key = str(level)
     client_number = (client_number or '').strip()
@@ -981,6 +996,8 @@ def set_shelf_level_client(zone, module, level, client_number, unit=None, sector
 
 def delete_shelf(zone, module, unit=None):
     """Remove uma prateleira"""
+    zone = normalize_shelf_zone(zone)
+    module = normalize_shelf_module(module)
     conn = get_connection()
     cursor = conn.cursor()
     if unit is not None:

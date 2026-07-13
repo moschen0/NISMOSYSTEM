@@ -1711,11 +1711,23 @@ def find_user(username, unit=None):
     """Encontra usuário no banco de dados"""
     return db_mdb.get_user_by_username(username, unit=unit)
 
+
+def normalize_shelf_zone_module(zone, module):
+    """Padroniza identificadores de prateleira para comparações estáveis."""
+    zone_n = str(zone or '').strip().upper()
+    module_raw = str(module or '').strip()
+    module_n = module_raw.zfill(2) if module_raw.isdigit() else module_raw.upper()
+    return zone_n, module_n
+
 def find_shelf(zone, module, unit=None, sector=None):
     """Encontra prateleira específica"""
+    target_zone, target_module = normalize_shelf_zone_module(zone, module)
     shelves = db_mdb.get_all_shelves(unit=unit, sector=sector)
-    return next((s for s in shelves 
-                if s.get('zone') == zone and s.get('module') == module), None)
+    for shelf in shelves:
+        shelf_zone, shelf_module = normalize_shelf_zone_module(shelf.get('zone'), shelf.get('module'))
+        if shelf_zone == target_zone and shelf_module == target_module:
+            return shelf
+    return None
 
 def find_client_conflict(client_number, unit, sector, exclude_zone=None, exclude_module=None, exclude_level=None):
     """Verifica se client_number já está vinculado a outro andar/prateleira.
@@ -1724,10 +1736,11 @@ def find_client_conflict(client_number, unit, sector, exclude_zone=None, exclude
     conflito encontrado, ou None se o client_number estiver livre (ou só
     vinculado ao próprio andar sendo salvo, via exclude_*).
     """
+    client_number_n = str(client_number or '').strip()
+    exclude_zone_n, exclude_module_n = normalize_shelf_zone_module(exclude_zone, exclude_module)
     exclude_level_str = str(exclude_level) if exclude_level is not None else None
     for shelf in db_mdb.get_all_shelves(unit=unit, sector=sector):
-        zone = shelf.get('zone')
-        module = shelf.get('module')
+        zone, module = normalize_shelf_zone_module(shelf.get('zone'), shelf.get('module'))
         try:
             level_clients = json.loads(shelf.get('level_clients') or '{}')
         except Exception:
@@ -1735,9 +1748,9 @@ def find_client_conflict(client_number, unit, sector, exclude_zone=None, exclude
         if not isinstance(level_clients, dict):
             continue
         for level_key, linked_client in level_clients.items():
-            if linked_client != client_number:
+            if str(linked_client or '').strip() != client_number_n:
                 continue
-            if zone == exclude_zone and module == exclude_module and level_key == exclude_level_str:
+            if zone == exclude_zone_n and module == exclude_module_n and level_key == exclude_level_str:
                 continue
             return {'zone': zone, 'module': module, 'level': level_key}
     return None
@@ -3022,11 +3035,10 @@ def dashboard():
         # Preparar dados das prateleiras (otimizado - evita N+1 queries)
         shelf_data = []
         for shelf in shelves:
-            zone = shelf.get('zone', '').strip()
-            module = shelf.get('module', '').strip()
-            levels = int(shelf.get('levels', 1) or 1)
-            columns = int(shelf.get('columns', 1) or 1)
-            slots = int(shelf.get('slots', 7) or 7)
+            zone, module = normalize_shelf_zone_module(shelf.get('zone', ''), shelf.get('module', ''))
+            levels = parse_int(shelf.get('levels', 1), default=1)
+            columns = parse_int(shelf.get('columns', 1), default=1)
+            slots = parse_int(shelf.get('slots', 7), default=7)
             
             positions = get_shelf_positions(zone, module, levels, columns)
             
