@@ -43,6 +43,7 @@ PICKING_SCANS_TABLE = "expedicao_picking_scans"
 
 _SCHEMA_LOCK = Lock()
 _schema_ready = False
+_schema_ready_key: tuple[str, int] | None = None
 
 
 def _get_runtime_data_dir() -> str:
@@ -282,99 +283,24 @@ def _ensure_expedicao_schema(conn: Any) -> None:
 
 
 def ensure_database_ready() -> None:
-    global _schema_ready
-    if _schema_ready:
+    global _schema_ready, _schema_ready_key
+    db_key = (str(db_mdb.get_db_path()), int(getattr(db_mdb, '_db_generation', 0)))
+    if _schema_ready and _schema_ready_key == db_key:
         return
     with _SCHEMA_LOCK:
-        if _schema_ready:
+        db_key = (str(db_mdb.get_db_path()), int(getattr(db_mdb, '_db_generation', 0)))
+        if _schema_ready and _schema_ready_key == db_key:
             return
         conn = db_mdb.get_connection()
         _ensure_expedicao_schema(conn)
         _schema_ready = True
+        _schema_ready_key = db_key
 
 
 @expedicao_bp.before_request
 def _prepare_database():
     try:
         ensure_database_ready()
-    except Exception:
-        pass
-
-    # After faturamento, if this lote is part of one or more ondas, check
-    # whether all lotes de cada onda já estão faturados. If so, mark a onda
-    # como fechada and include closed onda ids in the response.
-    closed_ondas = []
-    try:
-        conn = db_mdb.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT DISTINCT onda_id FROM {ONDA_LOTES_TABLE} WHERE lote_id = ?", (lote_id,))
-        rows = cursor.fetchall()
-        for row in rows:
-            try:
-                onda_id = row[0]
-                if not onda_id:
-                    continue
-                lotes = get_onda_lotes(onda_id)
-                if not lotes:
-                    continue
-                all_faturado = all((l.get("status") == "faturado") for l in lotes)
-                if all_faturado:
-                    update_onda_status(onda_id, "fechada")
-                    closed_ondas.append(onda_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # After faturamento, if this lote is part of one or more ondas, check
-    # whether all lotes de cada onda já estão faturados. If so, mark a onda
-    # como fechada and include closed onda ids in the response.
-    closed_ondas = []
-    try:
-        conn = db_mdb.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT DISTINCT onda_id FROM {ONDA_LOTES_TABLE} WHERE lote_id = ?", (lote_id,))
-        rows = cursor.fetchall()
-        for row in rows:
-            try:
-                onda_id = row[0]
-                if not onda_id:
-                    continue
-                lotes = get_onda_lotes(onda_id)
-                if not lotes:
-                    continue
-                all_faturado = all((l.get("status") == "faturado") for l in lotes)
-                if all_faturado:
-                    update_onda_status(onda_id, "fechada")
-                    closed_ondas.append(onda_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # After faturamento, if this lote is part of one or more ondas, check
-    # whether all lotes de cada onda já estão faturados. If so, mark a onda
-    # como fechada and include closed onda ids in the response.
-    closed_ondas = []
-    try:
-        conn = db_mdb.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT DISTINCT onda_id FROM {ONDA_LOTES_TABLE} WHERE lote_id = ?", (lote_id,))
-        rows = cursor.fetchall()
-        for row in rows:
-            try:
-                onda_id = row[0]
-                if not onda_id:
-                    continue
-                lotes = get_onda_lotes(onda_id)
-                if not lotes:
-                    continue
-                all_faturado = all((l.get("status") == "faturado") for l in lotes)
-                if all_faturado:
-                    update_onda_status(onda_id, "fechada")
-                    closed_ondas.append(onda_id)
-            except Exception:
-                pass
     except Exception:
         pass
 

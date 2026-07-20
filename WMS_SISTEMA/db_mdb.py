@@ -366,10 +366,12 @@ _db_gen_lock   = threading.Lock()
 
 def switch_database(new_path: str):
     """Troca o banco ativo em runtime e invalida todas as conexoes cacheadas."""
-    global DB_PATH, _db_generation
+    global DB_PATH, _db_generation, _schema_checked
     with _db_gen_lock:
         DB_PATH = new_path
         _db_generation += 1
+        # Forca revalidacao de schema no novo alvo (producao/teste).
+        _schema_checked = False
 
 
 def get_db_path():
@@ -762,7 +764,8 @@ def get_connection():
                 user=config['user'],
                 password=config['password'],
                 database=config['database'],
-                autocommit=False,
+                # Evita transacoes longas por thread e snapshot stale entre requisicoes.
+                autocommit=True,
             )
         except Exception as exc:
             raise RuntimeError(
