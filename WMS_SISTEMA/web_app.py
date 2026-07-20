@@ -1683,6 +1683,22 @@ def is_valid_triage_os(order_id):
     return bool(re.fullmatch(r'\d{8}', str(order_id or '').strip()))
 
 
+def is_valid_general_order_id(order_id):
+    """ID geral de pedido (setores nao-triagem)."""
+    value = str(order_id or '').strip()
+    if not value:
+        return False
+    # Aceita codigos alfanumericos comuns (ex.: OPTO) com separadores usuais.
+    return bool(re.fullmatch(r'[A-Za-z0-9._\-/]{1,40}', value))
+
+
+def is_valid_order_id_for_sector(order_id, sector):
+    """Valida ID de pedido conforme regra do setor atual."""
+    if str(sector or '').strip().upper() == TRIAGE_SECTOR:
+        return is_valid_triage_os(order_id)
+    return is_valid_general_order_id(order_id)
+
+
 def is_valid_opto_os(os_opto):
     """OS OPTO deve começar com uma das siglas permitidas."""
     value = str(os_opto or '').strip().upper()
@@ -1706,6 +1722,19 @@ def is_triage_zone(zone, unit):
         if shelf_zone == normalized_zone:
             return True
     return False
+
+
+def _resolve_active_order_by_id_and_position(order_id, position, unit, sector):
+    """Resolve pedido ativo pelo par (order_id, position), tolerando legado."""
+    target_position = str(position or '').strip().upper()
+    if not target_position:
+        return None
+    candidates = db_mdb.get_active_orders_by_order_ids([order_id], unit=unit, sector=sector)
+    for candidate in candidates:
+        candidate_position = str(candidate.get('position', '')).strip().upper()
+        if candidate_position == target_position:
+            return candidate
+    return None
 
 def find_user(username, unit=None):
     """Encontra usuário no banco de dados"""
@@ -4223,8 +4252,11 @@ def add_order():
         else:
             os_opto = ''
 
-        if not is_valid_triage_os(order_id):
-            flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
+        if not is_valid_order_id_for_sector(order_id, sector):
+            if is_triage_sector or zone in triage_zones_for_unit:
+                flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
+            else:
+                flash('ID do pedido invalido. Use apenas letras, numeros, ponto, traço, barra ou underscore.', 'danger')
             return redirect_add_order(zone_value=zone, bipador=bipador_mode, quick=quick_mode)
 
         if not is_valid_box_number(box):
@@ -4827,8 +4859,11 @@ def checkout_order():
             flash('Digite o ID do pedido', 'danger')
             return redirect(url_for('checkout_order'))
 
-        if not is_valid_triage_os(order_id):
-            flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
+        if not is_valid_order_id_for_sector(order_id, sector):
+            if is_triage_sector:
+                flash('A OS/ID do pedido deve conter exatamente 8 digitos numericos', 'danger')
+            else:
+                flash('ID do pedido invalido para este setor.', 'danger')
             return redirect(url_for('checkout_order'))
 
         # Bloquear saída no modo "Todos os setores" — setor ambíguo
@@ -4886,7 +4921,7 @@ def remove_order():
     order_id = request.form.get('order_id', '').strip()
     order_sector = get_current_sector()  # pode ser None em modo ALL
 
-    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=order_sector)
+    order = _resolve_active_order_by_id_and_position(order_id, position, unit=unit, sector=order_sector)
 
     if order and order.get('position') == position:
         actual_sector = order.get('sector') or order_sector or DEFAULT_SECTOR
@@ -5024,7 +5059,12 @@ def api_remove_order():
     order_id = request.form.get('order_id', '').strip()
     if not position or not order_id:
         return jsonify({'ok': False, 'message': 'Dados insuficientes'}), 400
-    order = db_mdb.get_order_by_id(order_id, unit=unit, sector=get_current_sector())
+    order = _resolve_active_order_by_id_and_position(
+        order_id,
+        position,
+        unit=unit,
+        sector=get_current_sector(),
+    )
     if not order or order.get('position') != position:
         return jsonify({'ok': False, 'message': 'Pedido não encontrado'}), 404
     api_remove_sector = order.get('sector') or get_current_sector() or DEFAULT_SECTOR

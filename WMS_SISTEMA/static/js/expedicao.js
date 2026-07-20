@@ -247,7 +247,12 @@ const Expedicao = (() => {
         showAlert('picking-alert', 'Selecione um horário.', 'danger');
         return;
       }
-      const { ok, data } = await postJson('/expedicao/api/picking/gerar-onda', { horario });
+      const { ok, status, data } = await postJson('/expedicao/api/picking/gerar-onda', { horario });
+      if (!ok && status === 404) {
+        // Compatibilidade com servidores antigos sem endpoint API de gerar onda.
+        window.location.href = `/expedicao/picking?horario=${encodeURIComponent(horario)}`;
+        return;
+      }
       if (!ok) {
         showAlert('picking-alert', data.error || 'Erro ao gerar onda.', 'danger');
         return;
