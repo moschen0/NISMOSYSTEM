@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-PATH_OS_SIOU = r"\\192.168.1.210\siou\ImpOs\BkpImpOS"
+PATH_OS_SIOU = r"/home/integracao/Arquivos/Siou/ImpOS/"
 
 ACCEPTED_FIELDS_TRATAMENTOS = {
     "OPTO CLASS",

@@ -257,6 +257,21 @@ def _normalize_horario(value: Any) -> str:
     raw = str(value).strip()
     if not raw:
         return ""
+
+    # Access pode retornar horários em formato 12h (ex.: "2:30:00 PM").
+    # Normaliza para 24h para manter consistência no sistema.
+    ampm_match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp]\.?[Mm]\.?)", raw)
+    if ampm_match:
+        hh = int(ampm_match.group(1)) % 12
+        mm = int(ampm_match.group(2))
+        sec_raw = ampm_match.group(3)
+        ss = int(sec_raw) if sec_raw is not None else 0
+        marker = ampm_match.group(4).upper().replace('.', '')
+        if 0 <= mm <= 59 and 0 <= ss <= 59:
+            if marker == 'PM':
+                hh += 12
+            return f"{hh:02d}:{mm:02d}"
+
     if "day" in raw and "," in raw:
         raw = raw.split(",", 1)[1].strip()
     if re.fullmatch(r"\d+(?:\.0+)?", raw):
