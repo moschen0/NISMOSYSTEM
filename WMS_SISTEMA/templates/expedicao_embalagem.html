@@ -53,6 +53,8 @@
           <th>Lote</th>
           <th>Cliente</th>
           <th>Status</th>
+          <th>Embalado por</th>
+          <th>Embalado em</th>
           <th class="text-end">Ações</th>
         </tr>
       </thead>
@@ -70,6 +72,8 @@
             <span class="badge bg-primary">Embalado</span>
             {% endif %}
           </td>
+          <td>{{ lote.embalado_by or '—' }}</td>
+          <td>{{ lote.embalado_at or '—' }}</td>
           <td class="text-end">
             {% if lote.status in ('separado_completo', 'separado_com_falta') %}
             <button class="btn btn-sm btn-primary" onclick="Expedicao.Embalagem.embalar({{ lote.id }})">

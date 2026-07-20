@@ -1122,11 +1122,15 @@ def expedicao_label_preview_page():
     cliente_data = _fetch_expedicao_label_client(cliente_codigo)
     cliente_nome = cliente_data.get("cliente_nome", request.args.get("cliente_nome", ""))
     cliente_endereco = cliente_data.get("cliente_endereco", request.args.get("cliente_endereco", ""))
+    embalado_by = request.args.get("embalado_by") or request.args.get("enviado_por") or session.get("user", "")
+    embalado_at = request.args.get("embalado_at") or request.args.get("data_envio", "")
     return render_template(
         "etiq/expedicao_label_100x150.html",
         cliente_nome=cliente_nome,
         cliente_codigo=cliente_codigo,
         cliente_endereco=cliente_endereco,
+        embalado_by=embalado_by,
+        embalado_at=embalado_at,
     )
 
 

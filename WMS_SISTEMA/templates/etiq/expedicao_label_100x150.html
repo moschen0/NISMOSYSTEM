@@ -17,15 +17,35 @@
 
   .exp-shell { max-width: 980px; margin: 20px auto; font-family: Arial, Helvetica, sans-serif; }
   .exp-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 18px; }
-  .form-row { display:flex; gap:12px; flex-wrap:wrap; }
-  .form-row label { flex:1 1 220px; display:flex; flex-direction:column; font-weight:600; font-size:.95rem; }
-  .form-row input { padding:8px 10px; border-radius:8px; border:1px solid #c6cdd5; font:inherit; }
-  .btns { margin-top:12px; display:flex; gap:10px; }
-  .btn-primary, .btn-secondary { padding:10px 16px; border-radius:8px; border:0; cursor:pointer; font-weight:700; }
-  .btn-primary { background:linear-gradient(120deg,#1a73d9,#0e57b4); color:#fff; }
-  .btn-secondary { background:#e8edf2; }
-
-  .preview-wrap { margin-top:18px; }
+  .preview-wrap { margin-top: 18px; }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px 14px;
+    margin: 10px 0 16px;
+  }
+  .meta-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #f8fafc;
+  }
+  .meta-label {
+    display: block;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  .meta-value {
+    display: block;
+    font-size: .98rem;
+    font-weight: 600;
+    color: #111827;
+    word-break: break-word;
+  }
   #labelPreview {
     width: 150mm;
     height: 100mm;
@@ -103,118 +123,96 @@
     font-weight: 700;
   }
 
-  .label-code-label,
-  .label-info-label {
-    display: none;
+  .preview-toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
   }
-
-  .label-info-inline {
-    display: inline;
+  .preview-toolbar a,
+  .preview-toolbar button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 0;
+    cursor: pointer;
+    font-weight: 700;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
+  .btn-primary { background: linear-gradient(120deg, #1a73d9, #0e57b4); color: #fff; }
+  .btn-secondary { background: #e8edf2; color: #111827; }
 
   @media print {
     .exp-shell, .exp-card { border: 0; box-shadow: none; margin: 0; padding: 0; }
-    .exp-card > :not(.preview-wrap) { display: none; }
+    .preview-toolbar, .meta-grid { display: none !important; }
   }
 
 </style>
 
 <div class="exp-shell">
   <div class="exp-card">
-    <h2>Etiqueta — Expedição (150 × 100 mm)</h2>
+    <h2>Etiqueta de Expedição</h2>
+    <p class="text-muted mb-0">Visualização somente leitura da etiqueta gerada no fluxo de expedição.</p>
 
-    <form id="expLabelForm" onsubmit="return false;">
-      <div class="form-row">
-        <label>Nome do Cliente
-          <input type="text" name="cliente_nome" id="cliente_nome" value="{{ cliente_nome or '' }}" placeholder="Nome do Cliente">
-        </label>
-        <label>Código do Cliente
-          <input type="text" name="cliente_codigo" id="cliente_codigo" value="{{ cliente_codigo or '' }}" placeholder="123456">
-        </label>
-        <label>Endereço do Cliente
-          <input type="text" name="cliente_endereco" id="cliente_endereco" value="{{ cliente_endereco or '' }}" placeholder="Rua, nº / Prateleira">
-        </label>
+    <div class="meta-grid" aria-label="Dados da etiqueta">
+      <div class="meta-item">
+        <span class="meta-label">Nome do Cliente</span>
+        <span class="meta-value">{{ cliente_nome or '—' }}</span>
       </div>
-
-      <div class="btns">
-        <button class="btn-primary" id="previewBtn">&#128065; Atualizar Preview</button>
-        <button class="btn-primary" id="printBtn">&#128424; Imprimir Etiqueta</button>
-        <button class="btn-secondary" id="resetBtn" type="button">Limpar</button>
-        <a href="/expedicao/embalagem" class="btn-secondary" style="padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700;">&#9654; Continuar para Embalagem</a>
+      <div class="meta-item">
+        <span class="meta-label">Código do Cliente</span>
+        <span class="meta-value">{{ cliente_codigo or '—' }}</span>
       </div>
-    </form>
+      <div class="meta-item">
+        <span class="meta-label">Endereço do Cliente</span>
+        <span class="meta-value">{{ cliente_endereco or '—' }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Embalado por</span>
+        <span class="meta-value">{{ embalado_by or '—' }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Embalado em</span>
+        <span class="meta-value">{{ embalado_at or '—' }}</span>
+      </div>
+    </div>
 
     <div class="preview-wrap">
       <h3>Preview</h3>
       <div id="labelPreview" aria-label="Preview da etiqueta">
         <div class="label-inner">
           <div class="label-top">
-            <div class="label-client-code" id="preview_codigo">{{ cliente_codigo or 'NUMERO DO CLIENTE' }}</div>
+            <div class="label-client-code">{{ cliente_codigo or 'NUMERO DO CLIENTE' }}</div>
           </div>
           <div class="label-bottom">
-            <div class="label-info" id="preview_endereco">{{ cliente_nome or 'INFORMACOES DO CLIENTE NOME RUA BAIRRO E ETC' }}{% if cliente_endereco %}
+            <div class="label-info">{{ cliente_nome or 'INFORMACOES DO CLIENTE NOME RUA BAIRRO E ETC' }}{% if cliente_endereco %}
 {{ cliente_endereco }}{% endif %}</div>
-            <div class="label-footer" id="preview_footer">
-              <strong><span id="preview_data_envio">{{ data_envio or '—' }}</span></strong> - <strong><span id="preview_usuario">{{ enviado_por or session.get('user', '') if session else '' }}</span></strong>
+            <div class="label-footer">
+              <strong>Embalado em:</strong> {{ embalado_at or '—' }}<br>
+              <strong>Embalado por:</strong> {{ embalado_by or '—' }}
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="preview-toolbar">
+        <button class="btn-primary" id="printBtn" type="button">&#128424; Imprimir Etiqueta</button>
+        <a href="/expedicao/embalagem" class="btn-secondary">&#9654; Continuar para Embalagem</a>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-(function (){
-  const previewRoot = document.getElementById('labelPreview');
-  const nomeInp = document.getElementById('cliente_nome');
-  const codigoInp = document.getElementById('cliente_codigo');
-  const enderecoInp = document.getElementById('cliente_endereco');
-  const previewCodigo = document.getElementById('preview_codigo');
-  const previewEndereco = document.getElementById('preview_endereco');
-  const previewFooter = document.getElementById('preview_footer');
-  const previewDataEnvio = document.getElementById('preview_data_envio');
-  const previewUsuario = document.getElementById('preview_usuario');
-  const previewBtn = document.getElementById('previewBtn');
+(function () {
   const printBtn = document.getElementById('printBtn');
-  const resetBtn = document.getElementById('resetBtn');
-
-  function buildInfoText() {
-    const nome = nomeInp.value.trim();
-    const endereco = enderecoInp.value.trim();
-    const partes = [];
-    if (nome) partes.push(nome);
-    if (endereco) partes.push(endereco);
-    return partes.join(' ');
+  if (printBtn) {
+    printBtn.addEventListener('click', function () {
+      window.print();
+    });
   }
-
-  function formatDateTime(value) {
-    if (!value) return '—';
-    return value;
-  }
-
-  function updatePreview(){
-    const c = codigoInp.value.trim() || 'CODIGO DO CLIENTE';
-    const nome = nomeInp.value.trim();
-    const endereco = enderecoInp.value.trim();
-    const e = [nome, endereco].filter(Boolean).join(' ') || 'INFORMACOES DO CLIENTE NOME RUA BAIRRO E ETC';
-    previewCodigo.textContent = c.toUpperCase();
-    previewEndereco.textContent = e.toUpperCase();
-  }
-
-  function setPreviewDefaults() {
-    if (previewRoot) {
-      previewRoot.style.display = 'block';
-    }
-  }
-
-  previewBtn.addEventListener('click', function(){ updatePreview(); });
-  resetBtn.addEventListener('click', function(){ nomeInp.value=''; codigoInp.value=''; enderecoInp.value=''; updatePreview(); });
-  printBtn.addEventListener('click', function(){ updatePreview(); window.print(); });
-
-  // initialize
-  setPreviewDefaults();
-  updatePreview();
 })();
 </script>
 
